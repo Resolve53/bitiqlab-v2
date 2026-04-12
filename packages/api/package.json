@@ -12,9 +12,9 @@
   },
   "dependencies": {
     "@anthropic-ai/sdk": "^0.20.0",
+    "@bitiqlab/autoresearch": "workspace:*",
     "@bitiqlab/backtest-engine": "workspace:*",
     "@bitiqlab/core": "workspace:*",
-    "@bitiqlab/llm-research": "workspace:*",
     "@bitiqlab/paper-trading": "workspace:*",
     "@bitiqlab/tradingview-mcp": "workspace:*",
     "@supabase/supabase-js": "^2.38.0",

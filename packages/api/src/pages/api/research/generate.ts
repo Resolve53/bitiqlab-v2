@@ -3,7 +3,7 @@
  */
 
 import type { NextApiRequest, NextApiResponse } from "next";
-import { StrategyGenerator } from "@bitiqlab/llm-research";
+import { StrategyGenerator } from "@bitiqlab/autoresearch";
 import { getDB } from "@/lib/db";
 import { sendSuccess, sendError, asyncHandler } from "@/lib/utils";
 
