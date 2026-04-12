@@ -66,9 +66,9 @@ bitiqlab-v2/
 │   ├── api/                     # Next.js backend API
 │   ├── web/                     # Admin dashboard
 │   ├── backtest-engine/         # Backtesting engine
-│   ├── tradingview-mcp/         # TradingView MCP integration
+│   ├── tradingview-mcp/         # TradingView MCP integration (external repo)
 │   ├── paper-trading/           # Paper trading simulator
-│   └── llm-research/            # LLM research & improvement loop
+│   └── autoresearch/            # ML research & optimization (external repo)
 │
 ├── migrations/                  # Database schema (Supabase)
 ├── PROJECT_ARCHITECTURE.md      # Detailed system design
@@ -98,12 +98,13 @@ Tracks all strategies through their lifecycle:
 - Version history and git commit tracking
 - Performance metrics snapshot at each stage
 
-### 4. **LLM Research Layer** (`@bitiqlab/llm-research`)
+### 4. **Autoresearch Layer** (`@bitiqlab/autoresearch`)
 Autonomous strategy discovery and optimization:
-- Strategy generation from natural language prompts
+- Strategy generation from natural language prompts (Claude API)
 - Autoresearch loop that iteratively improves strategies
 - Metric-based decisions (keep if Sharpe improved, revert if not)
 - Git integration for version control
+- ML-based optimization using PyTorch (from Karpathy's autoresearch)
 
 ### 5. **Paper Trading Simulator** (`@bitiqlab/paper-trading`)
 Real-time validation on Binance testnet:
@@ -277,7 +278,9 @@ All strategies are evaluated on:
 - `PROJECT_ARCHITECTURE.md` - Complete system design
 - `packages/core/README.md` - Type definitions
 - `packages/backtest-engine/README.md` - Backtesting guide
-- `packages/llm-research/README.md` - LLM integration guide
+- `packages/autoresearch/README.md` - Autoresearch and ML optimization
+- `VERCEL_SETUP.md` - Deployment guide
+- `API_ENDPOINTS.md` - REST API reference
 
 ## 🤝 Contributing
 

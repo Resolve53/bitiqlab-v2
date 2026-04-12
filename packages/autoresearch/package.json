@@ -1,0 +1,30 @@
+{
+  "name": "@bitiqlab/autoresearch",
+  "version": "0.1.0",
+  "private": true,
+  "description": "ML-powered autonomous strategy research and optimization (Python-based)",
+  "type": "module",
+  "main": "wrapper.js",
+  "exports": {
+    ".": "./wrapper.js"
+  },
+  "scripts": {
+    "setup": "pip install -e .",
+    "train": "python train.py",
+    "prepare": "python prepare.py"
+  },
+  "dependencies": {
+    "child_process": "^1.0.2"
+  },
+  "devDependencies": {
+    "python": "^0.0.4"
+  },
+  "python": {
+    "requires": "3.10",
+    "dependencies": [
+      "torch>=2.0.0",
+      "transformers>=4.40.0",
+      "numpy>=1.24.0"
+    ]
+  }
+}
