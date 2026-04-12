@@ -1,0 +1,71 @@
+# Dependencies
+node_modules/
+/.pnp
+.pnp.js
+yarn.lock
+package-lock.json
+pnpm-lock.yaml
+
+# Build outputs
+dist/
+build/
+out/
+.next/
+*.tsbuildinfo
+
+# Environment variables
+.env
+.env.local
+.env.development.local
+.env.test.local
+.env.production.local
+
+# IDE
+.vscode/
+.idea/
+*.swp
+*.swo
+*~
+.DS_Store
+.vscode-test/
+
+# Testing
+coverage/
+.nyc_output/
+junit.xml
+*.lcov
+
+# Logs
+logs/
+*.log
+npm-debug.log*
+yarn-debug.log*
+yarn-error.log*
+lerna-debug.log*
+
+# Temporary files
+tmp/
+temp/
+.tmp/
+
+# OS
+.DS_Store
+Thumbs.db
+
+# IDE plugins
+.vscode/launch.json
+.vscode/settings.json
+
+# Turbo
+.turbo/
+
+# Generated files
+*.generated.ts
+*.generated.js
+
+# Python virtual environments
+venv/
+env/
+__pycache__/
+*.py[cod]
+*.egg-info/
