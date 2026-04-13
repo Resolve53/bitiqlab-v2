@@ -1,21 +1,19 @@
 {
-  "name": "bitiqlab-v2",
-  "version": "0.1.0",
+  "name": "bitiqlab",
+  "version": "1.0.0",
   "private": true,
-  "description": "Autonomous trading strategy research and optimization lab",
-  "workspaces": [
-    "packages/*"
-  ],
+  "description": "Bitiq Lab - Autonomous Trading Strategy Research Platform",
   "scripts": {
-    "dev": "turbo run dev --parallel",
-    "build": "turbo run build",
-    "test": "turbo run test",
-    "lint": "turbo run lint",
-    "clean": "turbo run clean && rm -rf node_modules"
+    "dev:backend": "cd backend && npm install && npm run dev",
+    "dev:frontend": "cd frontend && npm install && npm run dev",
+    "dev": "npm run dev:backend & npm run dev:frontend",
+    "build:backend": "cd backend && npm install && npm run build",
+    "build:frontend": "cd frontend && npm install && npm run build",
+    "build": "npm run build:backend && npm run build:frontend",
+    "start:backend": "cd backend && npm run start",
+    "start:frontend": "cd frontend && npm run start"
   },
   "devDependencies": {
-    "turbo": "^1.13.0",
     "typescript": "^5.4.0"
-  },
-  "dependencies": {}
+  }
 }
