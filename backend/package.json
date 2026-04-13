@@ -3,11 +3,10 @@
   "version": "1.0.0",
   "private": true,
   "description": "Bitiq Lab - Autonomous Trading Strategy Research Platform (Backend)",
-  "type": "module",
   "scripts": {
     "dev": "next dev",
     "build": "next build",
-    "start": "next start",
+    "start": "node server.js",
     "lint": "eslint src --ext .ts,.tsx",
     "type-check": "tsc --noEmit"
   },
