@@ -4,7 +4,7 @@
  */
 
 import { createClient, SupabaseClient } from "@supabase/supabase-js";
-import { Strategy, BacktestRun, Trade, PaperTradingSession } from "../../core";
+import { Strategy, BacktestRun, Trade, PaperTradingSession } from "../core";
 
 export type Database = {
   public: {
