@@ -4,7 +4,7 @@
  */
 
 import type { NextApiRequest, NextApiResponse } from "next";
-import { Strategy } from "../../core";
+import { Strategy } from "../../../core";
 import { getDB } from "@/lib/db";
 import { sendSuccess, sendError, asyncHandler } from "@/lib/utils";
 
