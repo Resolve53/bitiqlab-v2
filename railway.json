@@ -3,7 +3,7 @@
   "build": {
     "builder": "nixpacks",
     "rootDirectory": "./backend",
-    "buildCommand": "npm run build"
+    "buildCommand": "cd backend && npm run build"
   },
   "deploy": {
     "restartPolicyType": "on_failure",
