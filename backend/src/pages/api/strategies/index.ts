@@ -80,8 +80,6 @@ export default asyncHandler(async (req: NextApiRequest, res: NextApiResponse) =>
       status: "draft",
       version: 1,
       backtest_count: 0,
-      created_at: new Date(),
-      updated_at: new Date(),
       created_by: created_by || "system",
     });
 

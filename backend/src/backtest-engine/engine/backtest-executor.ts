@@ -128,7 +128,7 @@ export class BacktestExecutor {
       direction: signal.direction as TradeDirection,
       entry_price,
       entry_time: bar.timestamp,
-      entry_conditions: signal.conditions,
+      entry_conditions: signal.conditions || {},
       stop_loss: signal.stop_loss || 0,
       take_profit: signal.take_profit || 0,
       exit_price: 0,
