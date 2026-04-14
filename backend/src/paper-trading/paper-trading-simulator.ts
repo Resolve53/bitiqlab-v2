@@ -9,8 +9,8 @@ import {
   PaperTradingSession,
   PaperTradingSignal,
   PaperTradingSessionStatus,
-} from "../../core";
-import { StrategySignal } from "../../backtest-engine";
+} from "@/core";
+import { StrategySignal } from "@/backtest-engine";
 
 export interface PaperTradingConfig {
   strategy_id: string;
@@ -56,6 +56,11 @@ export class PaperTradingSimulator {
       loss_rate: 0,
       total_pnl: 0,
       total_pnl_percent: 0,
+      max_drawdown: 0,
+      max_concurrent_positions: config.max_concurrent_positions,
+      average_winning_trade: 0,
+      average_losing_trade: 0,
+      profit_factor: 0,
       trades: [],
       meets_min_trades: false,
       meets_min_duration: false,
@@ -116,7 +121,7 @@ export class PaperTradingSimulator {
       direction: signal.direction || "long",
       entry_price: entryPrice,
       entry_time: new Date(),
-      entry_conditions: signal.conditions,
+      entry_conditions: signal.conditions || {},
       stop_loss: signal.stop_loss || 0,
       take_profit: signal.take_profit || 0,
       exit_price: 0,
@@ -144,7 +149,7 @@ export class PaperTradingSimulator {
       quantity: positionSize,
       position_size_usd: positionSize * entryPrice,
       risk_amount: riskAmount,
-      indicators: signal.conditions,
+      indicators: signal.conditions || {},
       timeframe: "1h",
       status: "executed",
       execution_price: entryPrice,

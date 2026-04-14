@@ -3,8 +3,8 @@
  */
 
 import type { NextApiRequest, NextApiResponse } from "next";
-import { BacktestExecutor } from "../../../backtest-engine/engine/backtest-executor";
-import { TradingViewDataFetcher, SignalGenerator } from "../../../tradingview-mcp/adapter.js";
+import { BacktestExecutor } from "@/backtest-engine/engine/backtest-executor";
+import { TradingViewDataFetcher, SignalGenerator } from "@/tradingview-mcp/adapter";
 import { getDB } from "@/lib/db";
 import { sendSuccess, sendError, asyncHandler } from "@/lib/utils";
 

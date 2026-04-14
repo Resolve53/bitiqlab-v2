@@ -61,15 +61,17 @@ export default asyncHandler(async (req: NextApiRequest, res: NextApiResponse) =>
       loss_rate: 0,
       total_pnl: 0,
       total_pnl_percent: 0,
+      max_drawdown: 0,
       max_concurrent_positions: 0,
+      average_winning_trade: 0,
+      average_losing_trade: 0,
+      profit_factor: 0,
       meets_min_trades: false,
       meets_min_duration: false,
       passes_stability_checks: false,
       validation_status: "pending",
       use_testnet: use_testnet !== false,
       trades: [],
-      created_at: new Date(),
-      updated_at: new Date(),
     });
 
     // Update strategy status

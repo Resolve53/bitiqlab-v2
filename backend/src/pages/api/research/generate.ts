@@ -3,7 +3,7 @@
  */
 
 import type { NextApiRequest, NextApiResponse } from "next";
-import { StrategyGenerator } from "../../autoresearch/wrapper.js";
+import { StrategyGenerator } from "@/autoresearch/wrapper";
 import { getDB } from "@/lib/db";
 import { sendSuccess, sendError, asyncHandler } from "@/lib/utils";
 
@@ -46,21 +46,21 @@ export default asyncHandler(async (req: NextApiRequest, res: NextApiResponse) =>
 
   try {
     // Generate strategy using Claude
-    const generator = new StrategyGenerator(process.env.ANTHROPIC_API_KEY);
-    const strategy = await generator.generate({
+    const generator = new StrategyGenerator(process.env.ANTHROPIC_API_KEY!);
+    const strategy = (await generator.generate({
       prompt,
       symbol,
       timeframe: timeframe as any,
       market_type,
       leverage: leverage || (market_type === "spot" ? 1 : 3),
-    });
+    })) as any;
 
     // Save to database
     const db = getDB();
     const savedStrategy = await db.createStrategy({
       ...strategy,
       created_by: created_by || "system",
-    });
+    } as any);
 
     // Log audit
     await db.createAuditLog({

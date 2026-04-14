@@ -3,6 +3,8 @@
  * Defines the data structures for trading strategies in Bitiq Lab
  */
 
+import type { BacktestRun } from './backtest';
+
 export type StrategyStatus =
   | "draft"
   | "backtested"
