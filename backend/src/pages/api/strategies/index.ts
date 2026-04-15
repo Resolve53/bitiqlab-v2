@@ -5,7 +5,7 @@
 
 import type { NextApiRequest, NextApiResponse } from "next";
 import { getDB } from "@/lib/db";
-import { sendSuccess, sendError, asyncHandler } from "@/lib/utils";
+import { sendSuccess, sendError, asyncHandler, handleCORSPreflight } from "@/lib/utils";
 
 interface ListQuery {
   status?: string;
@@ -14,6 +14,11 @@ interface ListQuery {
 }
 
 export default asyncHandler(async (req: NextApiRequest, res: NextApiResponse) => {
+  // Handle CORS preflight
+  if (handleCORSPreflight(req, res)) {
+    return;
+  }
+
   const db = getDB();
 
   if (req.method === "GET") {
