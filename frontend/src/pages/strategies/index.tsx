@@ -23,6 +23,7 @@ interface Strategy {
 }
 
 export default function StrategiesPage() {
+  // BitiqLab - Dark theme with emerald green accents
   const [strategies, setStrategies] = useState<Strategy[]>([]);
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState<string | null>(null);
