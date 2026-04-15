@@ -56,12 +56,20 @@ export default function StrategiesPage() {
             <h1 className="text-3xl font-bold text-gray-900">Strategies</h1>
             <p className="mt-2 text-gray-600">Manage and monitor trading strategies</p>
           </div>
-          <a
-            href="/strategies/new"
-            className="bg-blue-500 hover:bg-blue-600 text-white font-bold py-2 px-4 rounded"
-          >
-            New Strategy
-          </a>
+          <div className="flex gap-2">
+            <a
+              href="/strategies/claude-generate"
+              className="bg-purple-500 hover:bg-purple-600 text-white font-bold py-2 px-4 rounded"
+            >
+              ✨ Claude AI
+            </a>
+            <a
+              href="/strategies/new"
+              className="bg-blue-500 hover:bg-blue-600 text-white font-bold py-2 px-4 rounded"
+            >
+              + Manual
+            </a>
+          </div>
         </div>
       </header>
 
