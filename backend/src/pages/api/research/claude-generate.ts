@@ -7,7 +7,7 @@ import type { NextApiRequest, NextApiResponse } from "next";
 import { Anthropic } from "@anthropic-ai/sdk";
 import { getDB } from "@/lib/db";
 import { sendSuccess, sendError, asyncHandler, handleCORSPreflight } from "@/lib/utils";
-import { generateMockOHLCVData, calculateIndicators } from "@/lib/tradingview-mock";
+import { BinanceDataFetcher, calculateIndicators } from "@/lib/binance-fetcher";
 
 interface ClaudeGenerateRequest {
   symbol: string;
@@ -46,12 +46,13 @@ export default asyncHandler(async (req: NextApiRequest, res: NextApiResponse) =>
   }
 
   try {
-    // Generate mock OHLCV data (or fetch from real TradingView MCP when available)
+    // Fetch real OHLCV data from Binance
     const endDate = new Date();
     const startDate = new Date(endDate);
     startDate.setDate(startDate.getDate() - 90); // 90 days of data
 
-    const ohlcvData = generateMockOHLCVData(symbol, timeframe, startDate, endDate);
+    const fetcher = new BinanceDataFetcher();
+    const ohlcvData = await fetcher.getOHLCV(symbol, timeframe, startDate, endDate);
     const indicators = calculateIndicators(ohlcvData);
 
     // Format data for Claude
