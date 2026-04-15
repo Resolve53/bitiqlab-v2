@@ -1,6 +1,19 @@
 import { useEffect, useState } from "react";
 import axios from "axios";
-import { Strategy } from "@bitiqlab/core";
+
+interface Strategy {
+  id: string;
+  name: string;
+  description: string;
+  symbol: string;
+  timeframe: string;
+  market_type: string;
+  leverage: number;
+  status: string;
+  current_sharpe?: number;
+  current_max_drawdown?: number;
+  backtest_count: number;
+}
 
 export default function StrategiesPage() {
   const [strategies, setStrategies] = useState<Strategy[]>([]);
