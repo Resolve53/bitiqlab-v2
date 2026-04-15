@@ -1,5 +1,4 @@
 {
-  "extends": "../../tsconfig.json",
   "compilerOptions": {
     "lib": ["ES2020", "dom", "dom.iterable"],
     "target": "ES2020",
@@ -13,10 +12,10 @@
     "resolveJsonModule": true,
     "isolatedModules": true,
     "noEmit": true,
+    "incremental": true,
     "baseUrl": "./src",
     "paths": {
-      "@/*": ["./*"],
-      "@bitiqlab/*": ["../../packages/*/src"]
+      "@/*": ["./*"]
     }
   },
   "include": ["next-env.d.ts", "**/*.ts", "**/*.tsx"],
