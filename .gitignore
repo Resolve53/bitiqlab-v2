@@ -69,3 +69,4 @@ env/
 __pycache__/
 *.py[cod]
 *.egg-info/
+next-env.d.ts
