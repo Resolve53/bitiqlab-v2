@@ -4,15 +4,21 @@ import axios from "axios";
 interface Strategy {
   id: string;
   name: string;
-  description: string;
+  description?: string;
   symbol: string;
   timeframe: string;
   market_type: string;
-  leverage: number;
   status: string;
-  current_sharpe?: number;
-  current_max_drawdown?: number;
+  current_sharpe: number;
+  max_drawdown: number;
+  win_rate: number;
+  confidence_score: number;
   backtest_count: number;
+  winning_trades: number;
+  losing_trades: number;
+  total_return: number;
+  created_at: string;
+  updated_at: string;
 }
 
 export default function StrategiesPage() {
@@ -98,11 +104,9 @@ interface StrategyCardProps {
 function StrategyCard({ strategy }: StrategyCardProps) {
   const statusColors: Record<string, string> = {
     draft: "bg-gray-100 text-gray-800",
-    backtested: "bg-blue-100 text-blue-800",
-    optimized: "bg-green-100 text-green-800",
-    paper_trading: "bg-purple-100 text-purple-800",
+    testing: "bg-blue-100 text-blue-800",
     approved: "bg-emerald-100 text-emerald-800",
-    disabled: "bg-red-100 text-red-800",
+    failed: "bg-red-100 text-red-800",
   };
 
   return (
@@ -110,37 +114,42 @@ function StrategyCard({ strategy }: StrategyCardProps) {
       <div className="flex justify-between items-start">
         <div className="flex-1">
           <h3 className="text-lg font-bold text-gray-900">{strategy.name}</h3>
-          <p className="text-gray-600 text-sm mt-1">{strategy.description}</p>
+          {strategy.description && (
+            <p className="text-gray-600 text-sm mt-1">{strategy.description}</p>
+          )}
 
           <div className="mt-4 flex gap-4 text-sm text-gray-600">
             <span>📊 {strategy.symbol}</span>
             <span>⏱️ {strategy.timeframe}</span>
             <span>💰 {strategy.market_type}</span>
-            <span>📈 Leverage: {strategy.leverage}x</span>
           </div>
 
-          {strategy.current_sharpe && (
-            <div className="mt-4 grid grid-cols-3 gap-4">
-              <div>
-                <p className="text-xs text-gray-500">Sharpe Ratio</p>
-                <p className="text-lg font-bold text-gray-900">
-                  {strategy.current_sharpe.toFixed(2)}
-                </p>
-              </div>
-              <div>
-                <p className="text-xs text-gray-500">Max Drawdown</p>
-                <p className="text-lg font-bold text-gray-900">
-                  {(strategy.current_max_drawdown! * 100).toFixed(1)}%
-                </p>
-              </div>
-              <div>
-                <p className="text-xs text-gray-500">Backtests</p>
-                <p className="text-lg font-bold text-gray-900">
-                  {strategy.backtest_count}
-                </p>
-              </div>
+          <div className="mt-4 grid grid-cols-4 gap-4">
+            <div>
+              <p className="text-xs text-gray-500">Sharpe Ratio</p>
+              <p className="text-lg font-bold text-gray-900">
+                {strategy.current_sharpe.toFixed(2)}
+              </p>
             </div>
-          )}
+            <div>
+              <p className="text-xs text-gray-500">Max Drawdown</p>
+              <p className="text-lg font-bold text-gray-900">
+                {(strategy.max_drawdown * 100).toFixed(1)}%
+              </p>
+            </div>
+            <div>
+              <p className="text-xs text-gray-500">Win Rate</p>
+              <p className="text-lg font-bold text-gray-900">
+                {strategy.win_rate.toFixed(1)}%
+              </p>
+            </div>
+            <div>
+              <p className="text-xs text-gray-500">Backtests</p>
+              <p className="text-lg font-bold text-gray-900">
+                {strategy.backtest_count}
+              </p>
+            </div>
+          </div>
         </div>
 
         <div className="ml-4">
@@ -151,15 +160,6 @@ function StrategyCard({ strategy }: StrategyCardProps) {
           >
             {strategy.status}
           </span>
-
-          <div className="mt-4 space-y-2">
-            <a
-              href={`/strategies/${strategy.id}`}
-              className="block text-center text-blue-500 hover:text-blue-700 font-semibold text-sm"
-            >
-              View Details
-            </a>
-          </div>
         </div>
       </div>
     </div>
