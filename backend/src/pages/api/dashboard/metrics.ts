@@ -27,7 +27,7 @@ export default asyncHandler(async (req: NextApiRequest, res: NextApiResponse) =>
 
     sendSuccess(res, {
       total_strategies: metrics.total_strategies,
-      active_paper_trading: metrics.active_paper_trading,
+      active_trading: metrics.active_trading,
       approved_strategies: metrics.approved_strategies,
       average_sharpe: avgSharpe,
       total_backtests: strategies.reduce((sum, s) => sum + (s.backtest_count || 0), 0),

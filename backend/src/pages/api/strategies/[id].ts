@@ -12,67 +12,68 @@ export default asyncHandler(async (req: NextApiRequest, res: NextApiResponse) =>
   const { id } = req.query as { id: string };
   const db = getDB();
 
-  if (req.method === "GET") {
-    // Get strategy details
-    const strategy = await db.getStrategy(id);
-    sendSuccess(res, strategy);
-  } else if (req.method === "PATCH") {
-    // Update strategy
-    const strategy = await db.getStrategy(id);
+  try {
+    if (req.method === "GET") {
+      // Get strategy details
+      const strategy = await db.getStrategy(id);
+      sendSuccess(res, strategy);
+    } else if (req.method === "PATCH") {
+      // Update strategy
+      const strategy = await db.getStrategy(id);
 
-    const updates = {
-      ...req.body,
-      updated_at: new Date(),
-    };
-
-    // Validate status if provided
-    if (updates.status) {
-      const validStatuses = [
-        "draft",
-        "backtested",
-        "optimized",
-        "paper_trading",
-        "approved",
-        "disabled",
-      ];
-      if (!validStatuses.includes(updates.status)) {
-        return sendError(res, `Invalid status. Must be one of: ${validStatuses.join(", ")}`, 400);
+      // Validate status if provided
+      if (req.body.status) {
+        const validStatuses = ["draft", "testing", "approved", "failed"];
+        if (!validStatuses.includes(req.body.status)) {
+          return sendError(
+            res,
+            `Invalid status. Must be one of: ${validStatuses.join(", ")}`,
+            400
+          );
+        }
       }
+
+      const updated = await db.updateStrategy(id, req.body);
+
+      // Log audit
+      await db.createStrategyAuditLog({
+        strategy_id: id,
+        action: "UPDATE",
+        old_values: strategy,
+        new_values: updated,
+        changed_by: req.body.updated_by || "system",
+      });
+
+      sendSuccess(res, updated);
+    } else if (req.method === "DELETE") {
+      // Get current strategy first
+      const strategy = await db.getStrategy(id);
+
+      // Soft delete by setting status to 'failed'
+      const updated = await db.updateStrategy(id, {
+        status: "failed",
+      });
+
+      // Log audit
+      await db.createStrategyAuditLog({
+        strategy_id: id,
+        action: "DELETE",
+        old_values: strategy,
+        new_values: updated,
+        changed_by: req.body.deleted_by || "system",
+      });
+
+      sendSuccess(res, { message: "Strategy deleted", id });
+    } else {
+      res.setHeader("Allow", ["GET", "PATCH", "DELETE"]);
+      sendError(res, "Method not allowed", 405);
     }
-
-    const updated = await db.updateStrategy(id, updates);
-
-    // Log audit
-    await db.createAuditLog({
-      action: "UPDATE",
-      entity_type: "strategy",
-      entity_id: id,
-      user_id: req.body.updated_by,
-      old_values: strategy,
-      new_values: updated,
-      description: `Updated strategy: ${updated.name}`,
-    });
-
-    sendSuccess(res, updated);
-  } else if (req.method === "DELETE") {
-    // Delete strategy (soft delete by setting status to 'disabled')
-    const updated = await db.updateStrategy(id, {
-      status: "disabled",
-      updated_at: new Date(),
-    });
-
-    // Log audit
-    await db.createAuditLog({
-      action: "DELETE",
-      entity_type: "strategy",
-      entity_id: id,
-      user_id: req.body.deleted_by,
-      description: `Deleted strategy: ${updated.name}`,
-    });
-
-    sendSuccess(res, { message: "Strategy deleted", id });
-  } else {
-    res.setHeader("Allow", ["GET", "PATCH", "DELETE"]);
-    sendError(res, "Method not allowed", 405);
+  } catch (error) {
+    console.error("Strategy API error:", error);
+    sendError(
+      res,
+      `Error processing request: ${error instanceof Error ? error.message : "Unknown error"}`,
+      500
+    );
   }
 });

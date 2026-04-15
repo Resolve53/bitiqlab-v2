@@ -4,7 +4,6 @@
  */
 
 import type { NextApiRequest, NextApiResponse } from "next";
-import { Strategy } from "../../../core";
 import { getDB } from "@/lib/db";
 import { sendSuccess, sendError, asyncHandler } from "@/lib/utils";
 
@@ -44,56 +43,60 @@ export default asyncHandler(async (req: NextApiRequest, res: NextApiResponse) =>
       symbol,
       timeframe,
       market_type,
-      leverage,
       entry_rules,
       exit_rules,
-      position_sizing,
       created_by,
     } = req.body;
 
     // Validate required fields
-    if (!name || !symbol || !timeframe || !entry_rules || !exit_rules) {
+    if (!name || !symbol || !timeframe) {
       return sendError(
         res,
-        "Missing required fields: name, symbol, timeframe, entry_rules, exit_rules",
+        "Missing required fields: name, symbol, timeframe",
         400
       );
     }
 
-    if (!["spot", "futures"].includes(market_type)) {
+    // Validate market_type if provided
+    if (market_type && !["spot", "futures"].includes(market_type)) {
       return sendError(res, "Invalid market_type. Must be 'spot' or 'futures'", 400);
     }
 
-    const strategy = await db.createStrategy({
-      name,
-      description: description || "",
-      symbol,
-      timeframe,
-      market_type: market_type || "spot",
-      leverage: leverage || (market_type === "spot" ? 1 : 3),
-      entry_rules,
-      exit_rules,
-      position_sizing: position_sizing || {
-        risk_per_trade: 2,
-        max_concurrent_positions: 5,
-      },
-      status: "draft",
-      version: 1,
-      backtest_count: 0,
-      created_by: created_by || "system",
-    });
+    // Validate timeframe if needed (1h, 4h, 1d, 1w)
+    const validTimeframes = ["1h", "4h", "1d", "1w"];
+    if (!validTimeframes.includes(timeframe)) {
+      return sendError(
+        res,
+        `Invalid timeframe. Must be one of: ${validTimeframes.join(", ")}`,
+        400
+      );
+    }
 
-    // Log audit
-    await db.createAuditLog({
-      action: "CREATE",
-      entity_type: "strategy",
-      entity_id: strategy.id,
-      user_id: created_by,
-      new_values: strategy,
-      description: `Created strategy: ${name}`,
-    });
+    try {
+      const strategy = await db.createStrategy({
+        name,
+        description,
+        symbol,
+        timeframe,
+        market_type: market_type || "spot",
+        entry_rules,
+        exit_rules,
+        created_by,
+      });
 
-    sendSuccess(res, strategy, 201);
+      // Log audit
+      await db.createStrategyAuditLog({
+        strategy_id: strategy.id,
+        action: "CREATE",
+        new_values: strategy,
+        changed_by: created_by || "system",
+      });
+
+      sendSuccess(res, strategy, 201);
+    } catch (error) {
+      console.error("Failed to create strategy:", error);
+      sendError(res, `Failed to create strategy: ${error instanceof Error ? error.message : "Unknown error"}`, 500);
+    }
   } else {
     res.setHeader("Allow", ["GET", "POST"]);
     sendError(res, "Method not allowed", 405);

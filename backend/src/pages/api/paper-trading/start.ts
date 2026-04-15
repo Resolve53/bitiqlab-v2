@@ -36,67 +36,40 @@ export default asyncHandler(async (req: NextApiRequest, res: NextApiResponse) =>
   try {
     const db = getDB();
 
-    // Verify strategy exists and is in valid state
+    // Verify strategy exists
     const strategy = await db.getStrategy(strategy_id);
 
-    if (!["backtested", "optimized"].includes(strategy.status)) {
-      return sendError(
-        res,
-        `Strategy must be backtested or optimized before paper trading. Current status: ${strategy.status}`,
-        400
-      );
-    }
-
     // Create paper trading session
-    const session = await db.createPaperTradingSession({
+    const session = await db.createTradingSession({
       strategy_id,
-      version: version || strategy.version,
-      start_date: new Date(),
-      status: "active",
-      paper_account_id: `paper_${Date.now()}`,
+      session_name: `Paper Trading - ${strategy.name}`,
       initial_balance: initial_balance || 10000,
-      current_balance: initial_balance || 10000,
-      total_trades: 0,
-      win_rate: 0,
-      loss_rate: 0,
-      total_pnl: 0,
-      total_pnl_percent: 0,
-      max_drawdown: 0,
-      max_concurrent_positions: 0,
-      average_winning_trade: 0,
-      average_losing_trade: 0,
-      profit_factor: 0,
-      meets_min_trades: false,
-      meets_min_duration: false,
-      passes_stability_checks: false,
-      validation_status: "pending",
-      use_testnet: use_testnet !== false,
-      trades: [],
+      exchange: "binance",
+      is_testnet: use_testnet !== false,
     });
 
     // Update strategy status
     await db.updateStrategy(strategy_id, {
-      status: "paper_trading",
-      updated_at: new Date(),
+      status: "testing",
     });
 
     // Log audit
-    await db.createAuditLog({
+    await db.createStrategyAuditLog({
+      strategy_id,
       action: "START_PAPER_TRADING",
-      entity_type: "paper_trading_session",
-      entity_id: session.id,
-      user_id: created_by,
       new_values: session,
-      description: `Started paper trading for strategy: ${strategy.name}`,
+      changed_by: created_by || "system",
     });
 
     sendSuccess(
       res,
       {
         session_id: session.id,
-        account_id: session.paper_account_id,
+        strategy_id: session.strategy_id,
         initial_balance: session.initial_balance,
-        use_testnet: session.use_testnet,
+        current_balance: session.current_balance,
+        exchange: session.exchange,
+        is_testnet: session.is_testnet,
         message: "Paper trading session started",
       },
       201
