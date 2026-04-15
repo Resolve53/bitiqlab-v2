@@ -3,7 +3,7 @@
   "build": {
     "builder": "nixpacks",
     "rootDirectory": "./backend",
-    "buildCommand": "npm ci --prefer-offline && npm run build"
+    "buildCommand": "npm install && npm run build"
   },
   "deploy": {
     "restartPolicyType": "on_failure",
