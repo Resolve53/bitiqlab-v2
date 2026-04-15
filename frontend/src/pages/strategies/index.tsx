@@ -48,24 +48,24 @@ export default function StrategiesPage() {
   };
 
   return (
-    <div className="min-h-screen bg-gray-50">
+    <div className="min-h-screen bg-gradient-to-b from-slate-950 via-slate-900 to-slate-950">
       {/* Header */}
-      <header className="bg-white shadow">
-        <div className="max-w-7xl mx-auto px-4 sm:px-6 lg:px-8 py-6 flex justify-between items-center">
+      <header className="border-b border-slate-800 bg-slate-950/50 backdrop-blur">
+        <div className="max-w-7xl mx-auto px-4 sm:px-6 lg:px-8 py-8 flex justify-between items-center">
           <div>
-            <h1 className="text-3xl font-bold text-gray-900">Strategies</h1>
-            <p className="mt-2 text-gray-600">Manage and monitor trading strategies</p>
+            <h1 className="text-4xl font-bold text-white">Strategies</h1>
+            <p className="mt-2 text-slate-400">Manage and monitor your AI-powered trading strategies</p>
           </div>
-          <div className="flex gap-2">
+          <div className="flex gap-3">
             <a
               href="/strategies/claude-generate"
-              className="bg-purple-500 hover:bg-purple-600 text-white font-bold py-2 px-4 rounded"
+              className="bg-emerald-500 hover:bg-emerald-600 text-white font-semibold py-2 px-6 rounded-lg transition-colors flex items-center gap-2"
             >
               ✨ Claude AI
             </a>
             <a
               href="/strategies/new"
-              className="bg-blue-500 hover:bg-blue-600 text-white font-bold py-2 px-4 rounded"
+              className="bg-slate-700 hover:bg-slate-600 text-white font-semibold py-2 px-6 rounded-lg transition-colors flex items-center gap-2"
             >
               + Manual
             </a>
@@ -76,24 +76,32 @@ export default function StrategiesPage() {
       {/* Main Content */}
       <main className="max-w-7xl mx-auto px-4 sm:px-6 lg:px-8 py-8">
         {error && (
-          <div className="mb-4 p-4 bg-red-50 border border-red-200 rounded-lg">
-            <p className="text-red-800">Error: {error}</p>
+          <div className="mb-4 p-4 bg-red-900/20 border border-red-800 rounded-lg">
+            <p className="text-red-300">Error: {error}</p>
           </div>
         )}
 
         {loading ? (
-          <div className="text-center py-8">
-            <p className="text-gray-600">Loading strategies...</p>
+          <div className="text-center py-16">
+            <p className="text-slate-400 text-lg">Loading strategies...</p>
           </div>
         ) : strategies.length === 0 ? (
-          <div className="text-center py-8">
-            <p className="text-gray-600 mb-4">No strategies yet</p>
-            <a
-              href="/strategies/new"
-              className="inline-block bg-blue-500 hover:bg-blue-600 text-white font-bold py-2 px-4 rounded"
-            >
-              Create First Strategy
-            </a>
+          <div className="text-center py-16">
+            <p className="text-slate-400 mb-6 text-lg">No strategies yet. Create your first one!</p>
+            <div className="flex gap-4 justify-center">
+              <a
+                href="/strategies/claude-generate"
+                className="bg-emerald-500 hover:bg-emerald-600 text-white font-semibold py-3 px-8 rounded-lg transition-colors"
+              >
+                Generate with Claude AI
+              </a>
+              <a
+                href="/strategies/new"
+                className="bg-slate-700 hover:bg-slate-600 text-white font-semibold py-3 px-8 rounded-lg transition-colors"
+              >
+                Create Manually
+              </a>
+            </div>
           </div>
         ) : (
           <div className="grid grid-cols-1 gap-4">
@@ -144,22 +152,22 @@ interface StrategyCardProps {
 
 function StrategyCard({ strategy, onRunBacktest }: StrategyCardProps) {
   const statusColors: Record<string, string> = {
-    draft: "bg-gray-100 text-gray-800",
-    testing: "bg-blue-100 text-blue-800",
-    approved: "bg-emerald-100 text-emerald-800",
-    failed: "bg-red-100 text-red-800",
+    draft: "bg-slate-700 text-slate-200",
+    testing: "bg-blue-900/50 text-blue-300 border border-blue-700",
+    approved: "bg-emerald-900/50 text-emerald-300 border border-emerald-700",
+    failed: "bg-red-900/50 text-red-300 border border-red-700",
   };
 
   return (
-    <div className="bg-white rounded-lg shadow p-6 hover:shadow-lg transition-shadow">
+    <div className="bg-slate-800/50 border border-slate-700 rounded-lg p-6 hover:bg-slate-800/70 hover:border-slate-600 transition-all">
       <div className="flex justify-between items-start">
         <div className="flex-1">
-          <h3 className="text-lg font-bold text-gray-900">{strategy.name}</h3>
+          <h3 className="text-lg font-bold text-white">{strategy.name}</h3>
           {strategy.description && (
-            <p className="text-gray-600 text-sm mt-1">{strategy.description}</p>
+            <p className="text-slate-400 text-sm mt-1">{strategy.description}</p>
           )}
 
-          <div className="mt-4 flex gap-4 text-sm text-gray-600">
+          <div className="mt-4 flex gap-4 text-sm text-slate-400">
             <span>📊 {strategy.symbol}</span>
             <span>⏱️ {strategy.timeframe}</span>
             <span>💰 {strategy.market_type}</span>
@@ -167,26 +175,26 @@ function StrategyCard({ strategy, onRunBacktest }: StrategyCardProps) {
 
           <div className="mt-4 grid grid-cols-4 gap-4">
             <div>
-              <p className="text-xs text-gray-500">Sharpe Ratio</p>
-              <p className="text-lg font-bold text-gray-900">
+              <p className="text-xs text-slate-500">Sharpe Ratio</p>
+              <p className="text-lg font-bold text-emerald-400">
                 {strategy.current_sharpe.toFixed(2)}
               </p>
             </div>
             <div>
-              <p className="text-xs text-gray-500">Max Drawdown</p>
-              <p className="text-lg font-bold text-gray-900">
+              <p className="text-xs text-slate-500">Max Drawdown</p>
+              <p className="text-lg font-bold text-red-400">
                 {(strategy.max_drawdown * 100).toFixed(1)}%
               </p>
             </div>
             <div>
-              <p className="text-xs text-gray-500">Win Rate</p>
-              <p className="text-lg font-bold text-gray-900">
+              <p className="text-xs text-slate-500">Win Rate</p>
+              <p className="text-lg font-bold text-blue-400">
                 {strategy.win_rate.toFixed(1)}%
               </p>
             </div>
             <div>
-              <p className="text-xs text-gray-500">Backtests</p>
-              <p className="text-lg font-bold text-gray-900">
+              <p className="text-xs text-slate-500">Backtests</p>
+              <p className="text-lg font-bold text-slate-200">
                 {strategy.backtest_count}
               </p>
             </div>
@@ -196,7 +204,7 @@ function StrategyCard({ strategy, onRunBacktest }: StrategyCardProps) {
         <div className="ml-4 flex flex-col gap-2">
           <span
             className={`inline-block px-3 py-1 rounded-full text-sm font-semibold ${
-              statusColors[strategy.status] || "bg-gray-100 text-gray-800"
+              statusColors[strategy.status] || "bg-slate-700 text-slate-200"
             }`}
           >
             {strategy.status}
@@ -204,7 +212,7 @@ function StrategyCard({ strategy, onRunBacktest }: StrategyCardProps) {
 
           <button
             onClick={onRunBacktest}
-            className="bg-blue-500 hover:bg-blue-600 text-white px-3 py-1 rounded text-sm font-medium whitespace-nowrap"
+            className="bg-emerald-600 hover:bg-emerald-500 text-white px-3 py-1 rounded-lg text-sm font-medium whitespace-nowrap transition-colors"
           >
             🔄 Run Backtest
           </button>
