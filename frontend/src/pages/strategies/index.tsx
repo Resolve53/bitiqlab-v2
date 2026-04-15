@@ -1,5 +1,6 @@
 import { useEffect, useState } from "react";
 import axios from "axios";
+import BacktestModal from "@/components/BacktestModal";
 
 interface Strategy {
   id: string;
@@ -25,6 +26,7 @@ export default function StrategiesPage() {
   const [strategies, setStrategies] = useState<Strategy[]>([]);
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState<string | null>(null);
+  const [selectedStrategyForBacktest, setSelectedStrategyForBacktest] = useState<Strategy | null>(null);
 
   useEffect(() => {
     fetchStrategies();
@@ -88,20 +90,51 @@ export default function StrategiesPage() {
         ) : (
           <div className="grid grid-cols-1 gap-4">
             {strategies.map((strategy) => (
-              <StrategyCard key={strategy.id} strategy={strategy} />
+              <StrategyCard
+                key={strategy.id}
+                strategy={strategy}
+                onRunBacktest={() => setSelectedStrategyForBacktest(strategy)}
+              />
             ))}
           </div>
         )}
       </main>
+
+      {selectedStrategyForBacktest && (
+        <BacktestModal
+          strategyId={selectedStrategyForBacktest.id}
+          symbol={selectedStrategyForBacktest.symbol}
+          onClose={() => setSelectedStrategyForBacktest(null)}
+          onSuccess={(results) => {
+            // Update strategy with new metrics
+            setStrategies(
+              strategies.map((s) =>
+                s.id === selectedStrategyForBacktest.id
+                  ? {
+                      ...s,
+                      current_sharpe: results.sharpe_ratio || 0,
+                      max_drawdown: results.max_drawdown || 0,
+                      total_return: results.total_return || 0,
+                      win_rate: results.win_rate || 0,
+                      backtest_count: (s.backtest_count || 0) + 1,
+                    }
+                  : s
+              )
+            );
+            setSelectedStrategyForBacktest(null);
+          }}
+        />
+      )}
     </div>
   );
 }
 
 interface StrategyCardProps {
   strategy: Strategy;
+  onRunBacktest: () => void;
 }
 
-function StrategyCard({ strategy }: StrategyCardProps) {
+function StrategyCard({ strategy, onRunBacktest }: StrategyCardProps) {
   const statusColors: Record<string, string> = {
     draft: "bg-gray-100 text-gray-800",
     testing: "bg-blue-100 text-blue-800",
@@ -152,7 +185,7 @@ function StrategyCard({ strategy }: StrategyCardProps) {
           </div>
         </div>
 
-        <div className="ml-4">
+        <div className="ml-4 flex flex-col gap-2">
           <span
             className={`inline-block px-3 py-1 rounded-full text-sm font-semibold ${
               statusColors[strategy.status] || "bg-gray-100 text-gray-800"
@@ -160,6 +193,13 @@ function StrategyCard({ strategy }: StrategyCardProps) {
           >
             {strategy.status}
           </span>
+
+          <button
+            onClick={onRunBacktest}
+            className="bg-blue-500 hover:bg-blue-600 text-white px-3 py-1 rounded text-sm font-medium whitespace-nowrap"
+          >
+            🔄 Run Backtest
+          </button>
         </div>
       </div>
     </div>
