@@ -12,6 +12,28 @@ export interface ApiResponse<T = any> {
 }
 
 /**
+ * Enable CORS for API routes
+ */
+export function enableCORS(res: NextApiResponse) {
+  res.setHeader("Access-Control-Allow-Origin", "*");
+  res.setHeader("Access-Control-Allow-Methods", "GET, POST, PUT, PATCH, DELETE, OPTIONS");
+  res.setHeader("Access-Control-Allow-Headers", "Content-Type, Authorization");
+  res.setHeader("Access-Control-Max-Age", "86400");
+}
+
+/**
+ * Handle CORS preflight requests
+ */
+export function handleCORSPreflight(req: any, res: NextApiResponse) {
+  if (req.method === "OPTIONS") {
+    enableCORS(res);
+    res.status(200).end();
+    return true;
+  }
+  return false;
+}
+
+/**
  * Send success response
  */
 export function sendSuccess<T>(
@@ -19,6 +41,7 @@ export function sendSuccess<T>(
   data: T,
   statusCode: number = 200
 ) {
+  enableCORS(res);
   res.status(statusCode).json({
     success: true,
     data,
@@ -34,6 +57,7 @@ export function sendError(
   error: string | Error,
   statusCode: number = 500
 ) {
+  enableCORS(res);
   const message = typeof error === "string" ? error : error.message;
 
   res.status(statusCode).json({
