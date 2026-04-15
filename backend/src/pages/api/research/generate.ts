@@ -12,7 +12,6 @@ interface GenerateRequest {
   symbol: string;
   timeframe: string;
   market_type: "spot" | "futures";
-  leverage?: number;
   created_by?: string;
 }
 
@@ -27,7 +26,6 @@ export default asyncHandler(async (req: NextApiRequest, res: NextApiResponse) =>
     symbol,
     timeframe,
     market_type,
-    leverage,
     created_by,
   }: GenerateRequest = req.body;
 
@@ -52,24 +50,27 @@ export default asyncHandler(async (req: NextApiRequest, res: NextApiResponse) =>
       symbol,
       timeframe: timeframe as any,
       market_type,
-      leverage: leverage || (market_type === "spot" ? 1 : 3),
     })) as any;
 
     // Save to database
     const db = getDB();
     const savedStrategy = await db.createStrategy({
-      ...strategy,
+      name: strategy.name,
+      description: strategy.description,
+      symbol,
+      timeframe,
+      market_type,
+      entry_rules: strategy.entry_rules,
+      exit_rules: strategy.exit_rules,
       created_by: created_by || "system",
-    } as any);
+    });
 
     // Log audit
-    await db.createAuditLog({
+    await db.createStrategyAuditLog({
+      strategy_id: savedStrategy.id,
       action: "GENERATE",
-      entity_type: "strategy",
-      entity_id: savedStrategy.id,
-      user_id: created_by,
       new_values: savedStrategy,
-      description: `Generated strategy from prompt: ${prompt.substring(0, 100)}...`,
+      changed_by: created_by || "system",
     });
 
     sendSuccess(

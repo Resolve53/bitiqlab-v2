@@ -1,37 +1,11 @@
 /**
  * Supabase Database Service
  * Handles all database operations for Bitiq Lab
+ * Aligned with 004_bitiqlab_complete_schema.sql
  */
 
 import { createClient, SupabaseClient } from "@supabase/supabase-js";
-import { Strategy, BacktestRun, Trade, PaperTradingSession } from "../core";
-
-export type Database = {
-  public: {
-    Tables: {
-      strategies: {
-        Row: Strategy;
-        Insert: Omit<Strategy, "id" | "created_at" | "updated_at">;
-        Update: Partial<Strategy>;
-      };
-      backtest_runs: {
-        Row: BacktestRun;
-        Insert: Omit<BacktestRun, "id" | "created_at">;
-        Update: Partial<BacktestRun>;
-      };
-      trades: {
-        Row: Trade;
-        Insert: Omit<Trade, "id" | "created_at">;
-        Update: Partial<Trade>;
-      };
-      paper_trading_sessions: {
-        Row: PaperTradingSession;
-        Insert: Omit<PaperTradingSession, "id" | "created_at" | "updated_at">;
-        Update: Partial<PaperTradingSession>;
-      };
-    };
-  };
-};
+import { Strategy, CreateStrategyRequest } from "../core";
 
 /**
  * Database Service
@@ -41,13 +15,35 @@ export class DatabaseService {
   private client: SupabaseClient;
 
   constructor(supabaseUrl: string, supabaseKey: string) {
-    this.client = createClient<Database>(supabaseUrl, supabaseKey);
+    this.client = createClient(supabaseUrl, supabaseKey);
   }
 
   /**
    * Strategy Operations
    */
-  async createStrategy(strategy: Omit<Strategy, "id" | "created_at" | "updated_at">) {
+  async createStrategy(input: CreateStrategyRequest) {
+    const strategy = {
+      name: input.name,
+      description: input.description || null,
+      symbol: input.symbol,
+      timeframe: input.timeframe,
+      market_type: input.market_type || "spot",
+      entry_rules: input.entry_rules || null,
+      exit_rules: input.exit_rules || null,
+      status: "draft",
+      current_sharpe: 0,
+      backtest_count: 0,
+      winning_trades: 0,
+      losing_trades: 0,
+      total_return: 0,
+      max_drawdown: 0,
+      win_rate: 0,
+      confidence_score: 0,
+      ai_enhancement: null,
+      created_by: input.created_by || "system",
+      deployed_to_bitiq: false,
+    };
+
     const { data, error } = await this.client
       .from("strategies")
       .insert([strategy])
@@ -104,164 +100,197 @@ export class DatabaseService {
   /**
    * Backtest Operations
    */
-  async createBacktestRun(backtest: Omit<BacktestRun, "id" | "created_at">) {
+  async createBacktest(backtest: {
+    strategy_id: string;
+    symbol: string;
+    timeframe?: string;
+    start_date?: Date;
+    end_date?: Date;
+    initial_balance?: number;
+    final_balance?: number;
+    total_trades?: number;
+    winning_trades?: number;
+    losing_trades?: number;
+    win_rate?: number;
+    profit_factor?: number;
+    sharpe_ratio?: number;
+    max_drawdown?: number;
+    total_return?: number;
+    monthly_returns?: any;
+    trade_list?: any;
+  }) {
     const { data, error } = await this.client
-      .from("backtest_runs")
-      .insert([
-        {
-          ...backtest,
-          created_at: new Date(),
-        },
-      ])
+      .from("backtests")
+      .insert([{ ...backtest, status: "completed" }])
       .select()
       .single();
 
-    if (error) throw new Error(`Failed to create backtest run: ${error.message}`);
-    return data as BacktestRun;
+    if (error) throw new Error(`Failed to create backtest: ${error.message}`);
+    return data;
   }
 
-  async getBacktestRun(id: string) {
+  async getBacktest(id: string) {
     const { data, error } = await this.client
-      .from("backtest_runs")
+      .from("backtests")
       .select("*")
       .eq("id", id)
       .single();
 
-    if (error) throw new Error(`Failed to get backtest run: ${error.message}`);
-    return data as BacktestRun;
+    if (error) throw new Error(`Failed to get backtest: ${error.message}`);
+    return data;
   }
 
-  async listBacktestRuns(strategyId: string) {
+  async listBacktests(strategyId: string) {
     const { data, error } = await this.client
-      .from("backtest_runs")
+      .from("backtests")
       .select("*")
       .eq("strategy_id", strategyId)
       .order("created_at", { ascending: false });
 
-    if (error) throw new Error(`Failed to list backtest runs: ${error.message}`);
-    return data as BacktestRun[];
+    if (error) throw new Error(`Failed to list backtests: ${error.message}`);
+    return data;
   }
 
   /**
-   * Trade Operations
+   * Paper Trade Operations
    */
-  async createTrade(trade: Omit<Trade, "id" | "created_at">) {
+  async createPaperTrade(trade: {
+    session_id: string;
+    strategy_id: string;
+    symbol: string;
+    side: string;
+    entry_price: number;
+    quantity: number;
+    exit_price?: number;
+    exit_time?: Date;
+    status?: string;
+    pnl?: number;
+    pnl_percent?: number;
+    reason_entry?: string;
+    reason_exit?: string;
+    confidence_score?: number;
+    chart_analysis?: any;
+    on_chain_signal?: any;
+    macro_event?: string;
+  }) {
     const { data, error } = await this.client
-      .from("trades")
-      .insert([
-        {
-          ...trade,
-          created_at: new Date(),
-        },
-      ])
+      .from("paper_trades")
+      .insert([{ ...trade, status: trade.status || "open" }])
       .select()
       .single();
 
-    if (error) throw new Error(`Failed to create trade: ${error.message}`);
-    return data as Trade;
+    if (error) throw new Error(`Failed to create paper trade: ${error.message}`);
+    return data;
   }
 
-  async listTrades(sessionId: string) {
+  async listPaperTrades(sessionId: string) {
     const { data, error } = await this.client
-      .from("trades")
+      .from("paper_trades")
       .select("*")
       .eq("session_id", sessionId)
       .order("entry_time", { ascending: false });
 
-    if (error) throw new Error(`Failed to list trades: ${error.message}`);
-    return data as Trade[];
+    if (error) throw new Error(`Failed to list paper trades: ${error.message}`);
+    return data;
+  }
+
+  async updatePaperTrade(id: string, updates: any) {
+    const { data, error } = await this.client
+      .from("paper_trades")
+      .update(updates)
+      .eq("id", id)
+      .select()
+      .single();
+
+    if (error) throw new Error(`Failed to update paper trade: ${error.message}`);
+    return data;
   }
 
   /**
-   * Paper Trading Operations
+   * Trading Session Operations
    */
-  async createPaperTradingSession(
-    session: Omit<PaperTradingSession, "id" | "created_at" | "updated_at">
-  ) {
+  async createTradingSession(session: {
+    strategy_id: string;
+    session_name?: string;
+    initial_balance: number;
+    exchange?: string;
+    is_testnet?: boolean;
+  }) {
     const { data, error } = await this.client
-      .from("paper_trading_sessions")
+      .from("trading_sessions")
       .insert([
         {
           ...session,
-          created_at: new Date(),
-          updated_at: new Date(),
+          status: "active",
+          current_balance: session.initial_balance,
+          total_pnl: 0,
+          total_trades: 0,
+          winning_trades: 0,
+          losing_trades: 0,
         },
       ])
       .select()
       .single();
 
     if (error)
-      throw new Error(`Failed to create paper trading session: ${error.message}`);
-    return data as PaperTradingSession;
+      throw new Error(`Failed to create trading session: ${error.message}`);
+    return data;
   }
 
-  async getPaperTradingSession(id: string) {
+  async getTradingSession(id: string) {
     const { data, error } = await this.client
-      .from("paper_trading_sessions")
+      .from("trading_sessions")
       .select("*")
       .eq("id", id)
       .single();
 
     if (error)
-      throw new Error(`Failed to get paper trading session: ${error.message}`);
-    return data as PaperTradingSession;
+      throw new Error(`Failed to get trading session: ${error.message}`);
+    return data;
   }
 
-  async listPaperTradingSessions(filters?: {
+  async listTradingSessions(filters?: {
     strategy_id?: string;
     status?: string;
   }) {
-    let query = this.client.from("paper_trading_sessions").select("*");
+    let query = this.client.from("trading_sessions").select("*");
 
     if (filters?.strategy_id) query = query.eq("strategy_id", filters.strategy_id);
     if (filters?.status) query = query.eq("status", filters.status);
 
-    const { data, error } = await query.order("start_date", { ascending: false });
+    const { data, error } = await query.order("start_time", { ascending: false });
 
     if (error)
-      throw new Error(`Failed to list paper trading sessions: ${error.message}`);
-    return data as PaperTradingSession[];
+      throw new Error(`Failed to list trading sessions: ${error.message}`);
+    return data;
   }
 
-  async updatePaperTradingSession(
-    id: string,
-    updates: Partial<PaperTradingSession>
-  ) {
+  async updateTradingSession(id: string, updates: any) {
     const { data, error } = await this.client
-      .from("paper_trading_sessions")
-      .update({
-        ...updates,
-        updated_at: new Date(),
-      })
+      .from("trading_sessions")
+      .update(updates)
       .eq("id", id)
       .select()
       .single();
 
     if (error)
-      throw new Error(`Failed to update paper trading session: ${error.message}`);
-    return data as PaperTradingSession;
+      throw new Error(`Failed to update trading session: ${error.message}`);
+    return data;
   }
 
   /**
-   * Audit Log Operations
+   * Strategy Audit Log Operations
    */
-  async createAuditLog(log: {
+  async createStrategyAuditLog(log: {
+    strategy_id: string;
     action: string;
-    entity_type: string;
-    entity_id?: string;
-    user_id?: string;
-    old_values?: Record<string, any>;
-    new_values?: Record<string, any>;
-    description?: string;
+    old_values?: any;
+    new_values?: any;
+    changed_by?: string;
   }) {
     const { data, error } = await this.client
-      .from("audit_logs")
-      .insert([
-        {
-          ...log,
-          timestamp: new Date(),
-        },
-      ])
+      .from("strategy_audit_log")
+      .insert([log])
       .select()
       .single();
 
@@ -278,9 +307,9 @@ export class DatabaseService {
       .from("strategies")
       .select("*", { count: "exact", head: true });
 
-    // Get active paper trading sessions
-    const { count: activePaperTradingCount } = await this.client
-      .from("paper_trading_sessions")
+    // Get active trading sessions
+    const { count: activeTradingCount } = await this.client
+      .from("trading_sessions")
       .select("*", { count: "exact", head: true })
       .eq("status", "active");
 
@@ -292,7 +321,7 @@ export class DatabaseService {
 
     return {
       total_strategies: strategyCount || 0,
-      active_paper_trading: activePaperTradingCount || 0,
+      active_trading: activeTradingCount || 0,
       approved_strategies: approvedCount || 0,
       timestamp: new Date(),
     };
@@ -303,7 +332,7 @@ export class DatabaseService {
    */
   async getStrategyPerformance(strategyId: string) {
     const { data, error } = await this.client
-      .from("backtest_runs")
+      .from("backtests")
       .select("sharpe_ratio, max_drawdown, win_rate, total_trades")
       .eq("strategy_id", strategyId)
       .order("created_at", { ascending: false })

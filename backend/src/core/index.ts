@@ -8,14 +8,12 @@ export type {
   Strategy,
   StrategyStatus,
   MarketType,
-  Timeframe,
   TradeDirection,
-  ExitReason,
   EntryRules,
   ExitRules,
-  PositionSizing,
+  AIEnhancement,
+  CreateStrategyRequest,
   UpdateStrategyRequest,
-  StrategyVersion,
 } from "./types/strategy";
 
 // Backtest types

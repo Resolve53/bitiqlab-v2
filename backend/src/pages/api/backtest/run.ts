@@ -63,7 +63,6 @@ export default asyncHandler(async (req: NextApiRequest, res: NextApiResponse) =>
         entry_rules: strategy.entry_rules,
         exit_rules: strategy.exit_rules,
         market_type: strategy.market_type,
-        leverage: strategy.leverage,
       },
       fetcher
     );
@@ -74,58 +73,58 @@ export default asyncHandler(async (req: NextApiRequest, res: NextApiResponse) =>
     const executor = new BacktestExecutor(
       {
         strategy_id: strategy.id,
-        version: version || strategy.version,
         symbol: strategy.symbol,
-        timeframe: strategy.timeframe,
-        market_type: strategy.market_type,
-        leverage: strategy.leverage,
+        timeframe: strategy.timeframe as any,
+        market_type: strategy.market_type as "spot" | "futures",
+        version: 1,
+        leverage: strategy.market_type === "futures" ? 3 : 1,
       },
       10000 // Initial capital
     );
 
     const result = await executor.execute(bars, signals);
 
+    // Calculate trade statistics
+    const totalTrades = result.trades?.length || 0;
+    const winningTrades = result.trades?.filter((t: any) => (t.pnl || 0) > 0).length || 0;
+    const losingTrades = totalTrades - winningTrades;
+
     // Save backtest run to database
-    const backtestRun = await db.createBacktestRun({
+    const backtestRun = await db.createBacktest({
       strategy_id: strategy.id,
-      version: version || strategy.version,
-      window: (window || "12m") as "12m" | "6m" | "3m",
+      symbol: strategy.symbol,
+      timeframe: strategy.timeframe,
       start_date: startDate,
       end_date: endDate,
-      total_trades: result.total_trades,
-      win_rate: result.win_rate,
-      profit_factor: result.profit_factor,
-      sharpe_ratio: result.sharpe_ratio,
-      sortino_ratio: result.sortino_ratio,
-      max_drawdown: result.max_drawdown,
-      avg_r_r: result.avg_r_r,
-      total_return: result.total_return,
-      trades: result.trades,
-      daily_returns: result.daily_returns,
-      equity_curve: result.equity_curve,
-      data_points: result.data_points,
-      test_duration_minutes: result.test_duration_minutes,
+      initial_balance: 10000,
+      final_balance: (result as any).final_balance || 10000,
+      total_trades: totalTrades,
+      winning_trades: winningTrades,
+      losing_trades: losingTrades,
+      win_rate: (result as any).win_rate || 0,
+      profit_factor: (result as any).profit_factor || 0,
+      sharpe_ratio: (result as any).sharpe_ratio || 0,
+      max_drawdown: (result as any).max_drawdown || 0,
+      total_return: (result as any).total_return || 0,
+      monthly_returns: (result as any).monthly_returns,
+      trade_list: result.trades,
     });
-
-    // Save trades to database
-    for (const trade of result.trades) {
-      await db.createTrade(trade);
-    }
 
     // Update strategy metrics
     await db.updateStrategy(strategy.id, {
       current_sharpe: result.sharpe_ratio,
-      current_max_drawdown: result.max_drawdown,
+      max_drawdown: result.max_drawdown,
       backtest_count: (strategy.backtest_count || 0) + 1,
-      last_backtest_date: new Date(),
+      total_return: result.total_return,
+      win_rate: result.win_rate,
     });
 
     // Log audit
-    await db.createAuditLog({
+    await db.createStrategyAuditLog({
+      strategy_id: strategy.id,
       action: "BACKTEST",
-      entity_type: "strategy",
-      entity_id: strategy.id,
-      description: `Ran backtest for ${strategy.symbol}/${strategy.timeframe}, Sharpe: ${result.sharpe_ratio.toFixed(2)}`,
+      new_values: backtestRun,
+      changed_by: "system",
     });
 
     sendSuccess(

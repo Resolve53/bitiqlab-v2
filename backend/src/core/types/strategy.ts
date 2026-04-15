@@ -1,87 +1,86 @@
 /**
  * Core Strategy Types
  * Defines the data structures for trading strategies in Bitiq Lab
+ * Aligned with 004_bitiqlab_complete_schema.sql
  */
 
 import type { BacktestRun } from './backtest';
 
-export type StrategyStatus =
-  | "draft"
-  | "backtested"
-  | "optimized"
-  | "paper_trading"
-  | "approved"
-  | "disabled";
-
+export type StrategyStatus = "draft" | "testing" | "approved" | "failed";
 export type MarketType = "spot" | "futures";
-export type Timeframe = "1m" | "5m" | "15m" | "30m" | "1h" | "4h" | "1d" | "1w";
+export type Timeframe = "1h" | "4h" | "1d" | "1w";
 export type TradeDirection = "long" | "short";
-export type ExitReason = "stop_loss" | "take_profit" | "manual" | "timeout";
 
 /**
  * Entry and exit rule definitions
- * Can be expressed as JSON logic or indicator conditions
+ * Stored as JSONB in database for flexibility
  */
 export interface EntryRules {
   [key: string]: any;
-  // Example:
-  // conditions: "RSI < 30 AND MACD_histogram > 0"
-  // indicators: ["RSI", "MACD"]
-  // confirmation_timeframe?: "1h"
 }
 
 export interface ExitRules {
   [key: string]: any;
-  // Example:
-  // stop_loss_percent?: -2
-  // take_profit_percent?: 5
-  // time_based_exit?: "4h"
-  // trailing_stop?: true
 }
 
-export interface PositionSizing {
+export interface AIEnhancement {
   [key: string]: any;
-  // Example:
-  // risk_per_trade: 2,  // percent
-  // max_concurrent_positions: 5
-  // position_size: "fixed" | "kelly" | "volatility_adjusted"
-  // max_leverage?: 3
 }
 
 /**
  * Main Strategy Model
+ * Matches strategies table in migration
  */
 export interface Strategy {
   id: string;  // UUID
   name: string;
-  description: string;
+  description?: string;
 
   // Market Parameters
   symbol: string;  // BTCUSDT, ETHUSDT, etc.
-  timeframe: Timeframe;
-  market_type: MarketType;
-  leverage: number;  // 1 for spot, 1-5 for futures
+  timeframe: string;  // 1h, 4h, 1d, etc.
+  market_type: string;  // spot, futures
 
   // Strategy Rules (from LLM)
-  entry_rules: EntryRules;
-  exit_rules: ExitRules;
-  position_sizing: PositionSizing;
+  entry_rules?: EntryRules;
+  exit_rules?: ExitRules;
 
   // Lifecycle
   status: StrategyStatus;
-  version: number;
+  current_sharpe: number;
+  backtest_count: number;
+  winning_trades: number;
+  losing_trades: number;
+  total_return: number;
+  max_drawdown: number;
+  win_rate: number;
+  confidence_score: number;
+
+  // AI Enhancement tracking
+  ai_enhancement?: AIEnhancement;
 
   // Metadata
+  created_by?: string;
   created_at: Date;
   updated_at: Date;
-  created_by: string;  // User/admin ID
-  git_commit_hash?: string;  // Track strategy version control
 
-  // Performance tracking
-  current_sharpe?: number;
-  current_max_drawdown?: number;
-  backtest_count: number;
-  last_backtest_date?: Date;
+  // Deployment
+  deployed_to_bitiq: boolean;
+  deployed_at?: Date;
+}
+
+/**
+ * Strategy creation request
+ */
+export interface CreateStrategyRequest {
+  name: string;
+  description?: string;
+  symbol: string;
+  timeframe: string;
+  market_type?: string;
+  entry_rules?: EntryRules;
+  exit_rules?: ExitRules;
+  created_by?: string;
 }
 
 /**
@@ -92,20 +91,6 @@ export interface UpdateStrategyRequest {
   description?: string;
   entry_rules?: EntryRules;
   exit_rules?: ExitRules;
-  position_sizing?: PositionSizing;
   status?: StrategyStatus;
-}
-
-/**
- * Strategy Version History
- */
-export interface StrategyVersion {
-  version: number;
-  strategy_id: string;
-  git_commit_hash: string;
-  created_at: Date;
-  entry_rules: EntryRules;
-  exit_rules: ExitRules;
-  position_sizing: PositionSizing;
-  backtest_results?: BacktestRun;
+  ai_enhancement?: AIEnhancement;
 }
