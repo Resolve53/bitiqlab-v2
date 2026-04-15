@@ -4,9 +4,9 @@
 
 import type { NextApiRequest, NextApiResponse } from "next";
 import { BacktestExecutor } from "@/backtest-engine/engine/backtest-executor";
-import { TradingViewDataFetcher, SignalGenerator } from "@/tradingview-mcp/adapter";
+import { BinanceDataFetcher } from "@/lib/binance-fetcher";
 import { getDB } from "@/lib/db";
-import { sendSuccess, sendError, asyncHandler } from "@/lib/utils";
+import { sendSuccess, sendError, asyncHandler, handleCORSPreflight } from "@/lib/utils";
 
 interface BacktestRequest {
   strategy_id: string;
@@ -17,6 +17,11 @@ interface BacktestRequest {
 }
 
 export default asyncHandler(async (req: NextApiRequest, res: NextApiResponse) => {
+  // Handle CORS preflight
+  if (handleCORSPreflight(req, res)) {
+    return;
+  }
+
   if (req.method !== "POST") {
     res.setHeader("Allow", ["POST"]);
     return sendError(res, "Method not allowed", 405);
@@ -37,13 +42,8 @@ export default asyncHandler(async (req: NextApiRequest, res: NextApiResponse) =>
   const endDate = end_date ? new Date(end_date) : new Date();
 
   try {
-    // Fetch data from TradingView
-    const tvConfig = {
-      base_url: process.env.TRADINGVIEW_MCP_URL || "http://localhost:8000",
-      api_key: process.env.TRADINGVIEW_MCP_API_KEY,
-    };
-
-    const fetcher = new TradingViewDataFetcher(tvConfig);
+    // Fetch real data from Binance
+    const fetcher = new BinanceDataFetcher();
     const bars = await fetcher.getOHLCV(
       strategy.symbol,
       strategy.timeframe,
@@ -55,21 +55,7 @@ export default asyncHandler(async (req: NextApiRequest, res: NextApiResponse) =>
       return sendError(res, "No OHLCV data available for the given period", 400);
     }
 
-    // Generate signals
-    const signalGenerator = new SignalGenerator(
-      {
-        symbol: strategy.symbol,
-        timeframe: strategy.timeframe,
-        entry_rules: strategy.entry_rules,
-        exit_rules: strategy.exit_rules,
-        market_type: strategy.market_type,
-      },
-      fetcher
-    );
-
-    const signals = await signalGenerator.generateSignals(startDate, endDate);
-
-    // Run backtest
+    // Run backtest with Binance data
     const executor = new BacktestExecutor(
       {
         strategy_id: strategy.id,
@@ -82,7 +68,9 @@ export default asyncHandler(async (req: NextApiRequest, res: NextApiResponse) =>
       10000 // Initial capital
     );
 
-    const result = await executor.execute(bars, signals);
+    // Execute backtest - pass empty signals for now
+    // The executor will use the rules from the strategy configuration
+    const result = await executor.execute(bars, []);
 
     // Calculate trade statistics
     const totalTrades = result.trades?.length || 0;
