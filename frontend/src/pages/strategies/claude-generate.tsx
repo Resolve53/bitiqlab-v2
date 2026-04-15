@@ -305,8 +305,7 @@ export default function ClaudeGenerateStrategy() {
               <div className="bg-gray-50 p-4 rounded-lg">
                 <p className="font-semibold text-gray-900 mb-2">🔀 MACD Crossover</p>
                 <p className="text-gray-600">
-                  "Buy when MACD line crosses above signal line and RSI > 50, sell when
-                  MACD line crosses below signal"
+                  {"\"Buy when MACD line crosses above signal line and RSI above 50, sell when MACD line crosses below signal\""}
                 </p>
               </div>
               <div className="bg-gray-50 p-4 rounded-lg">
