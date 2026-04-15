@@ -8,9 +8,12 @@
   "deploy": {
     "restartPolicyType": "on_failure",
     "restartPolicyMaxRetries": 5,
-    "startCommand": "npm run start",
+    "startCommand": "cd backend && NODE_ENV=production node .next/standalone/server.js",
     "numReplicas": 1,
     "healthcheckPath": "/api/health",
-    "healthcheckTimeout": 30
+    "healthcheckTimeout": 30,
+    "env": {
+      "NODE_ENV": "production"
+    }
   }
 }
