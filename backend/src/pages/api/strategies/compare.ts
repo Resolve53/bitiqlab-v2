@@ -40,7 +40,7 @@ interface ComparisonResponse {
 export default asyncHandler(async (req: NextApiRequest, res: NextApiResponse) => {
   if (req.method !== "GET") {
     res.setHeader("Allow", ["GET"]);
-    return sendError(res, "Method not allowed", 405);
+    return sendError(res, "Method not allowed", 405, req);
   }
 
   try {
@@ -83,7 +83,7 @@ export default asyncHandler(async (req: NextApiRequest, res: NextApiResponse) =>
               sharpe_ratio: strategy.current_sharpe || 0,
               max_drawdown: (strategy.max_drawdown || 0) * 100,
               win_rate: (strategy.win_rate || 0) * 100,
-              profit_factor: strategy.profit_factor || 1.0,
+              profit_factor: 1.0,
               total_return: (strategy.total_return || 0) * 100,
             },
           });
@@ -127,7 +127,8 @@ export default asyncHandler(async (req: NextApiRequest, res: NextApiResponse) =>
     return sendError(
       res,
       error instanceof Error ? error.message : "Failed to compare strategies",
-      500
+      500,
+      req
     );
   }
 });
