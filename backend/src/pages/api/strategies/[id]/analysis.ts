@@ -61,7 +61,7 @@ export default asyncHandler(async (req: NextApiRequest, res: NextApiResponse) =>
     const { id } = req.query;
 
     if (!id || typeof id !== "string") {
-      return sendError(res, "Strategy ID is required", 400);
+      return sendError(res, "Strategy ID is required", 400, req);
     }
 
     const db = getDB();
@@ -70,7 +70,7 @@ export default asyncHandler(async (req: NextApiRequest, res: NextApiResponse) =>
     const strategy = await db.getStrategy(id);
 
     if (!strategy) {
-      return sendError(res, "Strategy not found", 404);
+      return sendError(res, "Strategy not found", 404, req);
     }
 
     // Generate synthetic equity curve based on metrics
@@ -127,7 +127,7 @@ export default asyncHandler(async (req: NextApiRequest, res: NextApiResponse) =>
 
     res.setHeader("Cache-Control", "public, max-age=300, s-maxage=300");
 
-    return sendSuccess(res, response);
+    return sendSuccess(res, response, 200, req);
   } catch (error) {
     console.error("Error in strategy analysis endpoint:", error);
     return sendError(

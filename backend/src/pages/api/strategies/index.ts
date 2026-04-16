@@ -39,7 +39,7 @@ export default asyncHandler(async (req: NextApiRequest, res: NextApiResponse) =>
     sendSuccess(res, {
       strategies,
       count: strategies.length,
-    });
+    }, 200, req);
   } else if (req.method === "POST") {
     // Create strategy
     const {
@@ -58,13 +58,14 @@ export default asyncHandler(async (req: NextApiRequest, res: NextApiResponse) =>
       return sendError(
         res,
         "Missing required fields: name, symbol, timeframe",
-        400
+        400,
+        req
       );
     }
 
     // Validate market_type if provided
     if (market_type && !["spot", "futures"].includes(market_type)) {
-      return sendError(res, "Invalid market_type. Must be 'spot' or 'futures'", 400);
+      return sendError(res, "Invalid market_type. Must be 'spot' or 'futures'", 400, req);
     }
 
     // Validate timeframe if needed (1h, 4h, 1d, 1w)
@@ -73,7 +74,8 @@ export default asyncHandler(async (req: NextApiRequest, res: NextApiResponse) =>
       return sendError(
         res,
         `Invalid timeframe. Must be one of: ${validTimeframes.join(", ")}`,
-        400
+        400,
+        req
       );
     }
 
@@ -97,13 +99,13 @@ export default asyncHandler(async (req: NextApiRequest, res: NextApiResponse) =>
         changed_by: created_by || "system",
       });
 
-      sendSuccess(res, strategy, 201);
+      sendSuccess(res, strategy, 201, req);
     } catch (error) {
       console.error("Failed to create strategy:", error);
-      sendError(res, `Failed to create strategy: ${error instanceof Error ? error.message : "Unknown error"}`, 500);
+      sendError(res, `Failed to create strategy: ${error instanceof Error ? error.message : "Unknown error"}`, 500, req);
     }
   } else {
     res.setHeader("Allow", ["GET", "POST"]);
-    sendError(res, "Method not allowed", 405);
+    sendError(res, "Method not allowed", 405, req);
   }
 });

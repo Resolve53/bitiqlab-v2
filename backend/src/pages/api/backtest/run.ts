@@ -33,7 +33,7 @@ export default asyncHandler(async (req: NextApiRequest, res: NextApiResponse) =>
 
   if (req.method !== "POST") {
     res.setHeader("Allow", ["POST"]);
-    return sendError(res, "Method not allowed", 405);
+    return sendError(res, "Method not allowed", 405, req);
   }
 
   try {
@@ -41,14 +41,14 @@ export default asyncHandler(async (req: NextApiRequest, res: NextApiResponse) =>
 
     // Validate required fields
     if (!strategy_id) {
-      return sendError(res, "Missing required field: strategy_id", 400);
+      return sendError(res, "Missing required field: strategy_id", 400, req);
     }
 
     const db = getDB();
     const strategy = await db.getStrategy(strategy_id);
 
     if (!strategy) {
-      return sendError(res, "Strategy not found", 404);
+      return sendError(res, "Strategy not found", 404, req);
     }
 
     // Parse dates
@@ -104,10 +104,10 @@ export default asyncHandler(async (req: NextApiRequest, res: NextApiResponse) =>
       total_trades: results.total_trades,
       winning_trades: results.winning_trades,
       losing_trades: results.losing_trades,
-    });
+    }, 200, req);
   } catch (error) {
     console.error("Backtest error:", error);
-    sendError(res, error instanceof Error ? error.message : "Backtest failed", 500);
+    sendError(res, error instanceof Error ? error.message : "Backtest failed", 500, req);
   }
 });
 

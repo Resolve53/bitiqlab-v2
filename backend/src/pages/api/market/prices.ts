@@ -26,7 +26,7 @@ interface PricesResponse {
 export default asyncHandler(async (req: NextApiRequest, res: NextApiResponse) => {
   if (req.method !== "GET") {
     res.setHeader("Allow", ["GET"]);
-    return sendError(res, "Method not allowed", 405);
+    return sendError(res, "Method not allowed", 405, req);
   }
 
   try {
@@ -34,7 +34,7 @@ export default asyncHandler(async (req: NextApiRequest, res: NextApiResponse) =>
     const { symbols } = req.query;
 
     if (!symbols || typeof symbols !== "string") {
-      return sendError(res, "symbols parameter is required (comma-separated list)", 400);
+      return sendError(res, "symbols parameter is required (comma-separated list)", 400, req);
     }
 
     const symbolList = symbols
@@ -43,7 +43,7 @@ export default asyncHandler(async (req: NextApiRequest, res: NextApiResponse) =>
       .filter((s) => s.length > 0);
 
     if (symbolList.length === 0) {
-      return sendError(res, "At least one symbol is required", 400);
+      return sendError(res, "At least one symbol is required", 400, req);
     }
 
     // Get price cache instance
@@ -70,13 +70,14 @@ export default asyncHandler(async (req: NextApiRequest, res: NextApiResponse) =>
     // Set cache headers
     res.setHeader("Cache-Control", "public, max-age=3, s-maxage=3");
 
-    return sendSuccess(res, response);
+    return sendSuccess(res, response, 200, req);
   } catch (error) {
     console.error("Error in prices endpoint:", error);
     return sendError(
       res,
       error instanceof Error ? error.message : "Failed to fetch prices",
-      500
+      500,
+      req
     );
   }
 });
