@@ -190,7 +190,7 @@ export default function StrategyComparePage() {
               <h3 className="text-lg font-bold text-emerald-300 mb-3">💡 Comparison Tips</h3>
               <ul className="space-y-2 text-emerald-200/80 text-sm">
                 <li>• Look for strategies with consistent positive returns and low drawdowns</li>
-                <li>• Sharpe ratio > 1 is generally considered good risk-adjusted performance</li>
+                <li>• Sharpe ratio &gt; 1 is generally considered good risk-adjusted performance</li>
                 <li>
                   • Compare strategies on the same symbol/timeframe for meaningful analysis
                 </li>
