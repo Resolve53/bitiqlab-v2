@@ -23,7 +23,6 @@ interface Strategy {
 }
 
 export default function StrategiesPage() {
-  // BitiqLab - Dark theme with emerald green accents
   const [strategies, setStrategies] = useState<Strategy[]>([]);
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState<string | null>(null);
@@ -51,22 +50,28 @@ export default function StrategiesPage() {
   return (
     <div className="min-h-screen bg-gradient-to-b from-slate-950 via-slate-900 to-slate-950">
       {/* Header */}
-      <header className="border-b border-slate-800 bg-slate-950/50 backdrop-blur">
-        <div className="max-w-7xl mx-auto px-4 sm:px-6 lg:px-8 py-8 flex justify-between items-center">
+      <header className="border-b border-slate-800 bg-slate-950/50 backdrop-blur sticky top-0 z-40">
+        <div className="max-w-7xl mx-auto px-4 sm:px-6 lg:px-8 py-6 flex justify-between items-center">
           <div>
             <h1 className="text-4xl font-bold text-white">Strategies</h1>
-            <p className="mt-2 text-slate-400">Manage and monitor your AI-powered trading strategies</p>
+            <p className="mt-2 text-slate-400">Manage and monitor trading strategies</p>
           </div>
           <div className="flex gap-3">
             <a
+              href="/trading"
+              className="bg-emerald-600 hover:bg-emerald-500 text-white font-bold py-2 px-4 rounded-lg transition"
+            >
+              📈 View Trading
+            </a>
+            <a
               href="/strategies/claude-generate"
-              className="bg-emerald-500 hover:bg-emerald-600 text-white font-semibold py-2 px-6 rounded-lg transition-colors flex items-center gap-2"
+              className="bg-blue-600 hover:bg-blue-500 text-white font-bold py-2 px-4 rounded-lg transition"
             >
               ✨ Claude AI
             </a>
             <a
               href="/strategies/new"
-              className="bg-slate-700 hover:bg-slate-600 text-white font-semibold py-2 px-6 rounded-lg transition-colors flex items-center gap-2"
+              className="bg-slate-700 hover:bg-slate-600 text-white font-bold py-2 px-4 rounded-lg transition"
             >
               + Manual
             </a>
@@ -77,32 +82,24 @@ export default function StrategiesPage() {
       {/* Main Content */}
       <main className="max-w-7xl mx-auto px-4 sm:px-6 lg:px-8 py-8">
         {error && (
-          <div className="mb-4 p-4 bg-red-900/20 border border-red-800 rounded-lg">
+          <div className="mb-4 p-4 bg-red-900/30 border border-red-700/50 rounded-lg">
             <p className="text-red-300">Error: {error}</p>
           </div>
         )}
 
         {loading ? (
-          <div className="text-center py-16">
-            <p className="text-slate-400 text-lg">Loading strategies...</p>
+          <div className="text-center py-8">
+            <p className="text-slate-400">Loading strategies...</p>
           </div>
         ) : strategies.length === 0 ? (
-          <div className="text-center py-16">
-            <p className="text-slate-400 mb-6 text-lg">No strategies yet. Create your first one!</p>
-            <div className="flex gap-4 justify-center">
-              <a
-                href="/strategies/claude-generate"
-                className="bg-emerald-500 hover:bg-emerald-600 text-white font-semibold py-3 px-8 rounded-lg transition-colors"
-              >
-                Generate with Claude AI
-              </a>
-              <a
-                href="/strategies/new"
-                className="bg-slate-700 hover:bg-slate-600 text-white font-semibold py-3 px-8 rounded-lg transition-colors"
-              >
-                Create Manually
-              </a>
-            </div>
+          <div className="text-center py-8">
+            <p className="text-slate-400 mb-4">No strategies yet</p>
+            <a
+              href="/strategies/claude-generate"
+              className="inline-block bg-blue-600 hover:bg-blue-500 text-white font-bold py-2 px-4 rounded-lg transition"
+            >
+              ✨ Generate First Strategy with Claude
+            </a>
           </div>
         ) : (
           <div className="grid grid-cols-1 gap-4">
@@ -153,14 +150,14 @@ interface StrategyCardProps {
 
 function StrategyCard({ strategy, onRunBacktest }: StrategyCardProps) {
   const statusColors: Record<string, string> = {
-    draft: "bg-slate-700 text-slate-200",
-    testing: "bg-blue-900/50 text-blue-300 border border-blue-700",
-    approved: "bg-emerald-900/50 text-emerald-300 border border-emerald-700",
-    failed: "bg-red-900/50 text-red-300 border border-red-700",
+    draft: "bg-slate-700/50 text-slate-300",
+    testing: "bg-blue-900/50 text-blue-300",
+    approved: "bg-emerald-900/50 text-emerald-300",
+    failed: "bg-red-900/50 text-red-300",
   };
 
   return (
-    <div className="bg-slate-800/50 border border-slate-700 rounded-lg p-6 hover:bg-slate-800/70 hover:border-slate-600 transition-all">
+    <div className="bg-slate-800/50 border border-slate-700 rounded-lg p-6 hover:border-emerald-500/50 transition">
       <div className="flex justify-between items-start">
         <div className="flex-1">
           <h3 className="text-lg font-bold text-white">{strategy.name}</h3>
@@ -183,19 +180,19 @@ function StrategyCard({ strategy, onRunBacktest }: StrategyCardProps) {
             </div>
             <div>
               <p className="text-xs text-slate-500">Max Drawdown</p>
-              <p className="text-lg font-bold text-red-400">
+              <p className="text-lg font-bold text-slate-300">
                 {(strategy.max_drawdown * 100).toFixed(1)}%
               </p>
             </div>
             <div>
               <p className="text-xs text-slate-500">Win Rate</p>
-              <p className="text-lg font-bold text-blue-400">
+              <p className="text-lg font-bold text-emerald-400">
                 {strategy.win_rate.toFixed(1)}%
               </p>
             </div>
             <div>
               <p className="text-xs text-slate-500">Backtests</p>
-              <p className="text-lg font-bold text-slate-200">
+              <p className="text-lg font-bold text-slate-300">
                 {strategy.backtest_count}
               </p>
             </div>
@@ -205,7 +202,7 @@ function StrategyCard({ strategy, onRunBacktest }: StrategyCardProps) {
         <div className="ml-4 flex flex-col gap-2">
           <span
             className={`inline-block px-3 py-1 rounded-full text-sm font-semibold ${
-              statusColors[strategy.status] || "bg-slate-700 text-slate-200"
+              statusColors[strategy.status] || "bg-slate-700/50 text-slate-300"
             }`}
           >
             {strategy.status}
@@ -213,7 +210,7 @@ function StrategyCard({ strategy, onRunBacktest }: StrategyCardProps) {
 
           <button
             onClick={onRunBacktest}
-            className="bg-emerald-600 hover:bg-emerald-500 text-white px-3 py-1 rounded-lg text-sm font-medium whitespace-nowrap transition-colors"
+            className="bg-blue-600 hover:bg-blue-500 text-white px-3 py-1 rounded text-sm font-medium whitespace-nowrap transition"
           >
             🔄 Run Backtest
           </button>

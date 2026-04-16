@@ -47,68 +47,77 @@ export default function Dashboard() {
       </header>
 
       {/* Main Content */}
-      <main className="max-w-7xl mx-auto px-4 sm:px-6 lg:px-8 py-8">
+      <main className="max-w-7xl mx-auto px-4 sm:px-6 lg:px-8 py-8 space-y-8">
+        {/* Featured Claude Trading Section */}
+        <div className="bg-gradient-to-r from-emerald-900/30 to-emerald-800/20 border border-emerald-700/50 rounded-lg p-8">
+          <div className="flex items-start justify-between">
+            <div>
+              <h2 className="text-3xl font-bold text-emerald-300 mb-2">🤖 Claude AI Trading</h2>
+              <p className="text-emerald-200/80 mb-4">
+                Watch Claude AI actively manage a live trading portfolio with real-time market analysis and autonomous trade execution
+              </p>
+              <a
+                href="/trading"
+                className="inline-block bg-emerald-600 hover:bg-emerald-500 text-white font-bold py-3 px-6 rounded-lg transition"
+              >
+                View Live Trading Dashboard →
+              </a>
+            </div>
+          </div>
+        </div>
+
         {/* Metrics Grid */}
         <div className="grid grid-cols-1 gap-6 sm:grid-cols-2 lg:grid-cols-5">
           <MetricCard
             title="Total Strategies"
             value={metrics?.total_strategies || 0}
             loading={loading}
-            color="bg-blue-50"
           />
           <MetricCard
             title="Active Paper Trading"
             value={metrics?.active_paper_trading || 0}
             loading={loading}
-            color="bg-green-50"
           />
           <MetricCard
             title="Approved Strategies"
             value={metrics?.approved_strategies || 0}
             loading={loading}
-            color="bg-purple-50"
           />
           <MetricCard
             title="Avg Sharpe Ratio"
             value={metrics?.average_sharpe.toFixed(2) || "0.00"}
             loading={loading}
-            color="bg-orange-50"
           />
           <MetricCard
             title="Total Backtests"
             value={metrics?.total_backtests || 0}
             loading={loading}
-            color="bg-pink-50"
           />
         </div>
 
         {/* Quick Actions */}
-        <div className="mt-8">
+        <div>
           <h2 className="text-2xl font-bold text-white mb-4">Quick Actions</h2>
           <div className="grid grid-cols-1 gap-4 sm:grid-cols-2 lg:grid-cols-4">
             <ActionCard
+              title="Claude Trading"
+              description="Watch AI actively trading"
+              href="/trading"
+            />
+            <ActionCard
               title="Generate Strategy"
-              description="Create a new strategy using AI"
-              href="/strategies/new"
-              color="bg-blue-500"
+              description="Create strategy with Claude"
+              href="/strategies/claude-generate"
             />
             <ActionCard
-              title="Run Backtest"
-              description="Test a strategy on historical data"
-              href="/strategies"
-              color="bg-green-500"
-            />
-            <ActionCard
-              title="Start Paper Trading"
-              description="Validate on Binance testnet"
+              title="Paper Trading"
+              description="Validate on testnet"
               href="/paper-trading"
-              color="bg-purple-500"
             />
             <ActionCard
               title="View Strategies"
               description="Browse all strategies"
               href="/strategies"
-              color="bg-orange-500"
             />
           </div>
         </div>
@@ -128,10 +137,9 @@ interface MetricCardProps {
   title: string;
   value: string | number;
   loading: boolean;
-  color: string;
 }
 
-function MetricCard({ title, value, loading, color }: MetricCardProps) {
+function MetricCard({ title, value, loading }: MetricCardProps) {
   return (
     <div className="bg-slate-900/50 border border-slate-800 rounded-lg p-6 backdrop-blur">
       <p className="text-slate-400 text-sm font-medium">{title}</p>
@@ -146,10 +154,9 @@ interface ActionCardProps {
   title: string;
   description: string;
   href: string;
-  color: string;
 }
 
-function ActionCard({ title, description, href, color }: ActionCardProps) {
+function ActionCard({ title, description, href }: ActionCardProps) {
   return (
     <a
       href={href}
