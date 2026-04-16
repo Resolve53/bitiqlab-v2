@@ -1,5 +1,6 @@
 import { useRouter } from "next/router";
 import { useState } from "react";
+import PaperTradingModal from "@/components/PaperTradingModal";
 
 export default function ClaudeGenerateStrategy() {
   const router = useRouter();
@@ -7,6 +8,7 @@ export default function ClaudeGenerateStrategy() {
   const [error, setError] = useState<string | null>(null);
   const [success, setSuccess] = useState(false);
   const [analysis, setAnalysis] = useState<any>(null);
+  const [showPaperTradingModal, setShowPaperTradingModal] = useState(false);
 
   const [formData, setFormData] = useState({
     symbol: "BTCUSDT",
@@ -144,7 +146,19 @@ export default function ClaudeGenerateStrategy() {
               </pre>
             </div>
 
+            <div className="bg-blue-900/20 border border-blue-700 rounded-lg p-4 mt-6">
+              <p className="text-blue-300 text-sm mb-4">
+                <strong>Next Step:</strong> Test your strategy with paper money (demo account) before trading with real capital.
+              </p>
+            </div>
+
             <div className="flex gap-4">
+              <button
+                onClick={() => setShowPaperTradingModal(true)}
+                className="flex-1 bg-blue-600 hover:bg-blue-500 text-white py-2 rounded-lg transition font-semibold"
+              >
+                🚀 Start Paper Trading
+              </button>
               <button
                 onClick={() => router.push("/strategies")}
                 className="flex-1 bg-emerald-600 hover:bg-emerald-500 text-white py-2 rounded-lg transition"
@@ -155,9 +169,25 @@ export default function ClaudeGenerateStrategy() {
                 onClick={() => router.push(`/strategies`)}
                 className="flex-1 bg-slate-700 hover:bg-slate-600 text-white py-2 rounded-lg transition"
               >
-                View All Strategies
+                View All
               </button>
             </div>
+          </div>
+        </main>
+
+        {showPaperTradingModal && analysis?.strategy && (
+          <PaperTradingModal
+            strategyId={analysis.strategy.id}
+            strategyName={analysis.strategy.name}
+            symbol={analysis.strategy.symbol}
+            timeframe={analysis.strategy.timeframe}
+            onClose={() => setShowPaperTradingModal(false)}
+            onSuccess={() => {
+              setShowPaperTradingModal(false);
+              router.push("/strategies");
+            }}
+          />
+        )}
           </div>
         </main>
       </div>
