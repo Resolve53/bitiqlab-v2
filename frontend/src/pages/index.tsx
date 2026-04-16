@@ -37,8 +37,8 @@ export default function Dashboard() {
   return (
     <div className="min-h-screen bg-gradient-to-b from-slate-950 via-slate-900 to-slate-950">
       {/* Header */}
-      <header className="border-b border-slate-800 bg-slate-950/50 backdrop-blur sticky top-0 z-40">
-        <div className="max-w-7xl mx-auto px-4 sm:px-6 lg:px-8 py-6">
+      <header className="border-b border-slate-800 bg-slate-950/50 backdrop-blur">
+        <div className="max-w-7xl mx-auto px-4 sm:px-6 lg:px-8 py-8">
           <h1 className="text-4xl font-bold text-white">Bitiq Lab Dashboard</h1>
           <p className="mt-2 text-slate-400">
             Autonomous Trading Strategy Research Platform
@@ -72,36 +72,26 @@ export default function Dashboard() {
             title="Total Strategies"
             value={metrics?.total_strategies || 0}
             loading={loading}
-            color="bg-blue-900/30"
-            textColor="text-blue-400"
           />
           <MetricCard
             title="Active Paper Trading"
             value={metrics?.active_paper_trading || 0}
             loading={loading}
-            color="bg-emerald-900/30"
-            textColor="text-emerald-400"
           />
           <MetricCard
             title="Approved Strategies"
             value={metrics?.approved_strategies || 0}
             loading={loading}
-            color="bg-purple-900/30"
-            textColor="text-purple-400"
           />
           <MetricCard
             title="Avg Sharpe Ratio"
             value={metrics?.average_sharpe.toFixed(2) || "0.00"}
             loading={loading}
-            color="bg-orange-900/30"
-            textColor="text-orange-400"
           />
           <MetricCard
             title="Total Backtests"
             value={metrics?.total_backtests || 0}
             loading={loading}
-            color="bg-pink-900/30"
-            textColor="text-pink-400"
           />
         </div>
 
@@ -113,32 +103,28 @@ export default function Dashboard() {
               title="Claude Trading"
               description="Watch AI actively trading"
               href="/trading"
-              color="bg-emerald-600 hover:bg-emerald-500"
             />
             <ActionCard
               title="Generate Strategy"
-              description="Create strategy with AI"
+              description="Create strategy with Claude"
               href="/strategies/claude-generate"
-              color="bg-blue-600 hover:bg-blue-500"
             />
             <ActionCard
               title="Paper Trading"
               description="Validate on testnet"
               href="/paper-trading"
-              color="bg-purple-600 hover:bg-purple-500"
             />
             <ActionCard
               title="View Strategies"
               description="Browse all strategies"
               href="/strategies"
-              color="bg-slate-700 hover:bg-slate-600"
             />
           </div>
         </div>
 
         {/* Error Display */}
         {error && (
-          <div className="p-4 bg-red-900/30 border border-red-700/50 rounded-lg">
+          <div className="mt-8 p-4 bg-red-900/20 border border-red-800 rounded-lg">
             <p className="text-red-300">Error: {error}</p>
           </div>
         )}
@@ -151,15 +137,13 @@ interface MetricCardProps {
   title: string;
   value: string | number;
   loading: boolean;
-  color: string;
-  textColor: string;
 }
 
-function MetricCard({ title, value, loading, color, textColor }: MetricCardProps) {
+function MetricCard({ title, value, loading }: MetricCardProps) {
   return (
-    <div className={`${color} border border-slate-700 rounded-lg p-6`}>
+    <div className="bg-slate-900/50 border border-slate-800 rounded-lg p-6 backdrop-blur">
       <p className="text-slate-400 text-sm font-medium">{title}</p>
-      <p className={`text-3xl font-bold ${textColor} mt-2`}>
+      <p className="text-3xl font-bold text-emerald-400 mt-2">
         {loading ? "..." : value}
       </p>
     </div>
@@ -170,17 +154,16 @@ interface ActionCardProps {
   title: string;
   description: string;
   href: string;
-  color: string;
 }
 
-function ActionCard({ title, description, href, color }: ActionCardProps) {
+function ActionCard({ title, description, href }: ActionCardProps) {
   return (
     <a
       href={href}
-      className={`${color} border border-slate-700 rounded-lg p-6 text-white transition font-semibold`}
+      className="bg-slate-900/50 border border-emerald-500/30 hover:border-emerald-500 hover:shadow-lg hover:shadow-emerald-500/20 transition-all rounded-lg p-6 text-white"
     >
-      <h3 className="text-lg">{title}</h3>
-      <p className="text-sm text-slate-300 mt-2">{description}</p>
+      <h3 className="font-bold text-lg text-emerald-400">{title}</h3>
+      <p className="text-sm text-slate-300 mt-1">{description}</p>
     </a>
   );
 }

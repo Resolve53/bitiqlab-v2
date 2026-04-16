@@ -70,30 +70,31 @@ export default function NewStrategy() {
   };
 
   return (
-    <div className="min-h-screen bg-gray-50">
-      <header className="bg-white shadow">
-        <div className="max-w-7xl mx-auto px-4 sm:px-6 lg:px-8 py-6">
+    <div className="min-h-screen bg-gradient-to-b from-slate-950 via-slate-900 to-slate-950">
+      <header className="border-b border-slate-800 bg-slate-950/50 backdrop-blur">
+        <div className="max-w-7xl mx-auto px-4 sm:px-6 lg:px-8 py-8">
           <button
             onClick={() => router.back()}
-            className="text-blue-500 hover:text-blue-700 mb-4"
+            className="text-emerald-400 hover:text-emerald-300 mb-4 font-semibold transition-colors"
           >
             ← Back
           </button>
-          <h1 className="text-3xl font-bold text-gray-900">Create New Strategy</h1>
+          <h1 className="text-4xl font-bold text-white">Create New Strategy</h1>
+          <p className="mt-2 text-slate-400">Set up a custom trading strategy</p>
         </div>
       </header>
 
-      <main className="max-w-7xl mx-auto px-4 sm:px-6 lg:px-8 py-8">
-        <div className="bg-white rounded-lg shadow p-6">
+      <main className="max-w-3xl mx-auto px-4 sm:px-6 lg:px-8 py-8">
+        <div className="bg-slate-800/50 border border-slate-700 rounded-lg p-8">
           {error && (
-            <div className="mb-4 p-4 bg-red-50 border border-red-200 rounded-lg">
-              <p className="text-red-800">{error}</p>
+            <div className="mb-6 p-4 bg-red-900/20 border border-red-800 rounded-lg">
+              <p className="text-red-300">{error}</p>
             </div>
           )}
 
           <form onSubmit={handleCreate} className="space-y-6">
             <div>
-              <label className="block text-sm font-medium text-gray-700">
+              <label className="block text-sm font-semibold text-white mb-2">
                 Strategy Name *
               </label>
               <input
@@ -101,14 +102,14 @@ export default function NewStrategy() {
                 name="name"
                 value={formData.name}
                 onChange={handleChange}
-                className="mt-1 block w-full rounded-md border border-gray-300 px-3 py-2"
+                className="w-full bg-slate-700/50 border border-slate-600 text-white rounded-lg px-4 py-2 placeholder-slate-500 focus:outline-none focus:ring-2 focus:ring-emerald-500 focus:border-transparent transition"
                 placeholder="e.g., RSI Mean Reversion"
                 required
               />
             </div>
 
             <div>
-              <label className="block text-sm font-medium text-gray-700">
+              <label className="block text-sm font-semibold text-white mb-2">
                 Symbol *
               </label>
               <input
@@ -116,21 +117,21 @@ export default function NewStrategy() {
                 name="symbol"
                 value={formData.symbol}
                 onChange={handleChange}
-                className="mt-1 block w-full rounded-md border border-gray-300 px-3 py-2"
+                className="w-full bg-slate-700/50 border border-slate-600 text-white rounded-lg px-4 py-2 placeholder-slate-500 focus:outline-none focus:ring-2 focus:ring-emerald-500 focus:border-transparent transition"
                 placeholder="e.g., BTCUSDT"
                 required
               />
             </div>
 
             <div>
-              <label className="block text-sm font-medium text-gray-700">
+              <label className="block text-sm font-semibold text-white mb-2">
                 Timeframe *
               </label>
               <select
                 name="timeframe"
                 value={formData.timeframe}
                 onChange={handleChange}
-                className="mt-1 block w-full rounded-md border border-gray-300 px-3 py-2"
+                className="w-full bg-slate-700/50 border border-slate-600 text-white rounded-lg px-4 py-2 focus:outline-none focus:ring-2 focus:ring-emerald-500 focus:border-transparent transition"
                 required
               >
                 <option value="1h">1 Hour</option>
@@ -141,14 +142,14 @@ export default function NewStrategy() {
             </div>
 
             <div>
-              <label className="block text-sm font-medium text-gray-700">
+              <label className="block text-sm font-semibold text-white mb-2">
                 Description
               </label>
               <textarea
                 name="description"
                 value={formData.description}
                 onChange={handleChange}
-                className="mt-1 block w-full rounded-md border border-gray-300 px-3 py-2"
+                className="w-full bg-slate-700/50 border border-slate-600 text-white rounded-lg px-4 py-2 placeholder-slate-500 focus:outline-none focus:ring-2 focus:ring-emerald-500 focus:border-transparent transition"
                 placeholder="Describe your strategy..."
                 rows={4}
               />
@@ -157,7 +158,7 @@ export default function NewStrategy() {
             <button
               type="submit"
               disabled={loading}
-              className="w-full bg-blue-500 text-white py-2 rounded-lg hover:bg-blue-600 disabled:opacity-50 disabled:cursor-not-allowed"
+              className="w-full bg-emerald-500 hover:bg-emerald-600 disabled:bg-slate-700 disabled:cursor-not-allowed text-white font-semibold py-3 rounded-lg transition-colors"
             >
               {loading ? "Creating..." : "Create Strategy"}
             </button>

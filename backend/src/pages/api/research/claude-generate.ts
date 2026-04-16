@@ -114,13 +114,25 @@ Based on this data and the user's idea, create a detailed trading strategy. Resp
     const responseText =
       message.content[0].type === "text" ? message.content[0].text : "";
 
-    // Parse Claude's response
+    // Parse Claude's response - handle markdown code blocks
     let strategyConfig;
     try {
-      strategyConfig = JSON.parse(responseText);
+      // Remove markdown code blocks if present
+      let jsonStr = responseText.trim();
+      if (jsonStr.startsWith("```json")) {
+        jsonStr = jsonStr.slice(7); // Remove ```json
+      } else if (jsonStr.startsWith("```")) {
+        jsonStr = jsonStr.slice(3); // Remove ```
+      }
+      if (jsonStr.endsWith("```")) {
+        jsonStr = jsonStr.slice(0, -3); // Remove trailing ```
+      }
+
+      strategyConfig = JSON.parse(jsonStr.trim());
     } catch (e) {
       console.error("Failed to parse Claude response:", responseText);
-      throw new Error("Failed to parse strategy from Claude");
+      console.error("Parse error:", e);
+      throw new Error("Failed to parse strategy from Claude - invalid response format");
     }
 
     // Save strategy to database

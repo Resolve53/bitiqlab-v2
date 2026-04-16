@@ -7,7 +7,7 @@ html {
 }
 
 body {
-  @apply bg-gray-50 text-gray-900;
+  @apply bg-slate-950 text-slate-100;
 }
 
 /* Custom scrollbar */
@@ -17,9 +17,9 @@ body {
 }
 
 ::-webkit-scrollbar-track {
-  @apply bg-gray-100;
+  @apply bg-slate-800;
 }
 
 ::-webkit-scrollbar-thumb {
-  @apply bg-gray-400 rounded hover:bg-gray-500;
+  @apply bg-slate-600 rounded hover:bg-slate-500;
 }
