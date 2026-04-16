@@ -59,10 +59,7 @@ export default function ClaudeGenerateStrategy() {
       setAnalysis(result.data);
       setSuccess(true);
 
-      // Redirect to strategies page after 2 seconds
-      setTimeout(() => {
-        router.push("/strategies");
-      }, 2000);
+      // Stay on results page so user can see Claude's analysis
     } catch (err) {
       setError(err instanceof Error ? err.message : "Failed to generate strategy");
     } finally {
