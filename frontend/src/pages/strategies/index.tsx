@@ -49,6 +49,34 @@ export default function StrategiesPage() {
     }
   };
 
+  const handleStatusChange = async (strategyId: string, newStatus: string) => {
+    try {
+      const apiUrl = process.env.NEXT_PUBLIC_API_URL || "http://localhost:3000";
+      await axios.patch(`${apiUrl}/api/strategies/${strategyId}`, {
+        status: newStatus,
+      });
+      // Update local state
+      setStrategies(
+        strategies.map((s) =>
+          s.id === strategyId ? { ...s, status: newStatus } : s
+        )
+      );
+    } catch (err) {
+      setError(err instanceof Error ? err.message : "Failed to update strategy");
+    }
+  };
+
+  const handleDeleteStrategy = async (strategyId: string) => {
+    try {
+      const apiUrl = process.env.NEXT_PUBLIC_API_URL || "http://localhost:3000";
+      await axios.delete(`${apiUrl}/api/strategies/${strategyId}`);
+      // Remove from local state - keep strategies with status 'failed' hidden
+      setStrategies(strategies.filter((s) => s.id !== strategyId));
+    } catch (err) {
+      setError(err instanceof Error ? err.message : "Failed to delete strategy");
+    }
+  };
+
   return (
     <div className="min-h-screen bg-gradient-to-b from-slate-950 via-slate-900 to-slate-950">
       {/* Header */}
@@ -117,6 +145,8 @@ export default function StrategiesPage() {
                 strategy={strategy}
                 onRunBacktest={() => setSelectedStrategyForBacktest(strategy)}
                 onStartPaperTrading={() => setSelectedStrategyForPaperTrading(strategy)}
+                onStatusChange={(strategyId, newStatus) => handleStatusChange(strategyId, newStatus)}
+                onDelete={(strategyId) => handleDeleteStrategy(strategyId)}
               />
             ))}
           </div>
@@ -171,14 +201,30 @@ interface StrategyCardProps {
   strategy: Strategy;
   onRunBacktest: () => void;
   onStartPaperTrading: () => void;
+  onStatusChange?: (strategyId: string, newStatus: string) => void;
+  onDelete?: (strategyId: string) => void;
 }
 
-function StrategyCard({ strategy, onRunBacktest, onStartPaperTrading }: StrategyCardProps) {
+function StrategyCard({ strategy, onRunBacktest, onStartPaperTrading, onStatusChange, onDelete }: StrategyCardProps) {
+  const [showStatusMenu, setShowStatusMenu] = useState(false);
+
   const statusColors: Record<string, string> = {
     draft: "bg-slate-700/50 text-slate-300",
     testing: "bg-blue-900/50 text-blue-300",
     approved: "bg-emerald-900/50 text-emerald-300",
     failed: "bg-red-900/50 text-red-300",
+    live: "bg-green-900/50 text-green-300",
+  };
+
+  const handleStatusChange = (newStatus: string) => {
+    if (newStatus === "removed") {
+      if (confirm(`Delete strategy "${strategy.name}"? This cannot be undone.`)) {
+        onDelete?.(strategy.id);
+      }
+    } else {
+      onStatusChange?.(strategy.id, newStatus);
+    }
+    setShowStatusMenu(false);
   };
 
   return (
@@ -224,14 +270,46 @@ function StrategyCard({ strategy, onRunBacktest, onStartPaperTrading }: Strategy
           </div>
         </div>
 
-        <div className="ml-4 flex flex-col gap-2">
-          <span
-            className={`inline-block px-3 py-1 rounded-full text-sm font-semibold cursor-default ${
-              statusColors[strategy.status] || "bg-slate-700/50 text-slate-300"
-            }`}
-          >
-            {strategy.status}
-          </span>
+        <div className="ml-4 flex flex-col gap-2 relative">
+          <div className="relative">
+            <button
+              onClick={() => setShowStatusMenu(!showStatusMenu)}
+              className={`w-full px-3 py-1 rounded-full text-sm font-semibold cursor-pointer hover:opacity-80 transition ${
+                statusColors[strategy.status] || "bg-slate-700/50 text-slate-300"
+              }`}
+            >
+              {strategy.status}
+            </button>
+
+            {showStatusMenu && (
+              <div className="absolute top-full right-0 mt-2 bg-slate-700 border border-slate-600 rounded-lg shadow-lg z-10">
+                <button
+                  onClick={() => handleStatusChange("live")}
+                  className="block w-full text-left px-4 py-2 text-sm text-white hover:bg-slate-600 first:rounded-t-lg transition"
+                >
+                  🟢 Live
+                </button>
+                <button
+                  onClick={() => handleStatusChange("draft")}
+                  className="block w-full text-left px-4 py-2 text-sm text-white hover:bg-slate-600 transition"
+                >
+                  ⚪ Draft
+                </button>
+                <button
+                  onClick={() => handleStatusChange("testing")}
+                  className="block w-full text-left px-4 py-2 text-sm text-white hover:bg-slate-600 transition"
+                >
+                  🔵 Testing
+                </button>
+                <button
+                  onClick={() => handleStatusChange("removed")}
+                  className="block w-full text-left px-4 py-2 text-sm text-red-400 hover:bg-slate-600 last:rounded-b-lg transition"
+                >
+                  🗑️ Remove
+                </button>
+              </div>
+            )}
+          </div>
 
           <a
             href={`/strategies/${strategy.id}/analysis`}
