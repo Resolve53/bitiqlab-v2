@@ -21,7 +21,7 @@ export default asyncHandler(async (req: NextApiRequest, res: NextApiResponse) =>
     if (req.method === "GET") {
       // Get strategy details
       const strategy = await db.getStrategy(id);
-      sendSuccess(res, strategy, 200, req);
+      return sendSuccess(res, strategy, 200, req);
     } else if (req.method === "PATCH") {
       // Update strategy
       const strategy = await db.getStrategy(id);
@@ -50,12 +50,12 @@ export default asyncHandler(async (req: NextApiRequest, res: NextApiResponse) =>
         changed_by: req.body.updated_by || "system",
       });
 
-      sendSuccess(res, updated, 200, req);
+      return sendSuccess(res, updated, 200, req);
     } else if (req.method === "DELETE") {
       // Get current strategy first
       const strategy = await db.getStrategy(id);
 
-      // Soft delete by setting status to 'failed'
+      // Delete the strategy by setting status to 'failed'
       const updated = await db.updateStrategy(id, {
         status: "failed",
       });
@@ -66,17 +66,17 @@ export default asyncHandler(async (req: NextApiRequest, res: NextApiResponse) =>
         action: "DELETE",
         old_values: strategy,
         new_values: updated,
-        changed_by: req.body.deleted_by || "system",
+        changed_by: req.body?.deleted_by || "system",
       });
 
-      sendSuccess(res, { message: "Strategy deleted", id }, 200, req);
+      return sendSuccess(res, { message: "Strategy deleted", id }, 200, req);
     } else {
       res.setHeader("Allow", ["GET", "PATCH", "DELETE"]);
-      sendError(res, "Method not allowed", 405, req);
+      return sendError(res, "Method not allowed", 405, req);
     }
   } catch (error) {
     console.error("Strategy API error:", error);
-    sendError(
+    return sendError(
       res,
       `Error processing request: ${error instanceof Error ? error.message : "Unknown error"}`,
       500,
