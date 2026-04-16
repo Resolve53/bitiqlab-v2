@@ -115,9 +115,15 @@ Based on this data and the user's idea, create a detailed trading strategy. Resp
     const responseText =
       message.content[0].type === "text" ? message.content[0].text : "";
 
+    console.log("Claude response (first 500 chars):", responseText.substring(0, 500));
+
     // Parse Claude's response - handle markdown code blocks
     let strategyConfig;
     try {
+      if (!responseText) {
+        throw new Error("Claude returned empty response");
+      }
+
       // Remove markdown code blocks if present
       let jsonStr = responseText.trim();
       if (jsonStr.startsWith("```json")) {
@@ -129,11 +135,26 @@ Based on this data and the user's idea, create a detailed trading strategy. Resp
         jsonStr = jsonStr.slice(0, -3); // Remove trailing ```
       }
 
-      strategyConfig = JSON.parse(jsonStr.trim());
+      jsonStr = jsonStr.trim();
+
+      // Validate JSON string before parsing
+      if (!jsonStr.startsWith("{")) {
+        console.error("Response doesn't start with {:", jsonStr.substring(0, 100));
+        throw new Error("Invalid JSON format - response doesn't start with {");
+      }
+
+      strategyConfig = JSON.parse(jsonStr);
+
+      // Validate required fields in response
+      if (!strategyConfig.name || !strategyConfig.entry_rules || !strategyConfig.exit_rules) {
+        throw new Error("Missing required fields: name, entry_rules, exit_rules");
+      }
     } catch (e) {
       console.error("Failed to parse Claude response:", responseText);
-      console.error("Parse error:", e);
-      throw new Error("Failed to parse strategy from Claude - invalid response format");
+      console.error("Parse error details:", e instanceof Error ? e.message : e);
+      throw new Error(
+        e instanceof Error ? `Failed to parse strategy: ${e.message}` : "Failed to parse strategy from Claude - invalid response format"
+      );
     }
 
     // Save strategy to database
