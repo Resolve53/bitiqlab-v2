@@ -106,7 +106,7 @@ export default asyncHandler(async (req: NextApiRequest, res: NextApiResponse) =>
         sharpe_ratio: strategy.current_sharpe || 0,
         max_drawdown: (strategy.max_drawdown || 0) * 100,
         win_rate: (strategy.win_rate || 0) * 100,
-        profit_factor: strategy.profit_factor || 1.0,
+        profit_factor: 1.0,
         total_return: (strategy.total_return || 0) * 100,
       },
 
