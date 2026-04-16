@@ -131,14 +131,14 @@ export default function TradingDashboard() {
         }
 
         const data = await response.json();
-        const priceMap = new Map(
+        const priceMap = new Map<string, number>(
           data.data.prices.map((p: any) => [p.symbol, parseFloat(p.price)])
         );
 
-        setPositions((prevPositions) =>
+        setPositions((prevPositions: Position[]) =>
           prevPositions.map((position) => {
             const newPrice = priceMap.get(position.symbol);
-            if (!newPrice) return position;
+            if (!newPrice || newPrice === 0) return position;
 
             const newPnl = (newPrice - position.entryPrice) * position.quantity;
             const newPnlPercent =
@@ -146,7 +146,7 @@ export default function TradingDashboard() {
 
             return {
               ...position,
-              currentPrice: newPrice,
+              currentPrice: newPrice as number,
               pnl: newPnl,
               pnlPercent: newPnlPercent,
             };
