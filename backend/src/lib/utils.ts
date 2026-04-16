@@ -14,8 +14,20 @@ export interface ApiResponse<T = any> {
 /**
  * Enable CORS for API routes
  */
-export function enableCORS(res: NextApiResponse) {
-  res.setHeader("Access-Control-Allow-Origin", "*");
+export function enableCORS(res: NextApiResponse, req?: any) {
+  const origin = req?.headers?.origin || "*";
+  const allowedOrigins = [
+    "https://labbitiq.vercel.app",
+    "https://bitiqlab-v2-production.up.railway.app",
+    "http://localhost:3000",
+    "http://localhost:3001",
+    "http://localhost:3006",
+  ];
+
+  // Allow if origin is in whitelist or if using *
+  const corsOrigin = allowedOrigins.includes(origin) ? origin : "*";
+
+  res.setHeader("Access-Control-Allow-Origin", corsOrigin);
   res.setHeader("Access-Control-Allow-Methods", "GET, POST, PUT, PATCH, DELETE, OPTIONS");
   res.setHeader("Access-Control-Allow-Headers", "Content-Type, Authorization");
   res.setHeader("Access-Control-Max-Age", "86400");
@@ -26,7 +38,7 @@ export function enableCORS(res: NextApiResponse) {
  */
 export function handleCORSPreflight(req: any, res: NextApiResponse) {
   if (req.method === "OPTIONS") {
-    enableCORS(res);
+    enableCORS(res, req);
     res.status(200).end();
     return true;
   }
@@ -39,9 +51,10 @@ export function handleCORSPreflight(req: any, res: NextApiResponse) {
 export function sendSuccess<T>(
   res: NextApiResponse<ApiResponse<T>>,
   data: T,
-  statusCode: number = 200
+  statusCode: number = 200,
+  req?: any
 ) {
-  enableCORS(res);
+  enableCORS(res, req);
   res.status(statusCode).json({
     success: true,
     data,
@@ -55,9 +68,10 @@ export function sendSuccess<T>(
 export function sendError(
   res: NextApiResponse<ApiResponse>,
   error: string | Error,
-  statusCode: number = 500
+  statusCode: number = 500,
+  req?: any
 ) {
-  enableCORS(res);
+  enableCORS(res, req);
   const message = typeof error === "string" ? error : error.message;
 
   res.status(statusCode).json({
@@ -179,7 +193,7 @@ export function asyncHandler(
       await handler(req, res);
     } catch (error) {
       console.error("API Error:", error);
-      sendError(res, error as Error);
+      sendError(res, error as Error, 500, req);
     }
   };
 }

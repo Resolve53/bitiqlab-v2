@@ -47,7 +47,7 @@ export default asyncHandler(async (req: NextApiRequest, res: NextApiResponse) =>
     const { ids } = req.query;
 
     if (!ids || typeof ids !== "string") {
-      return sendError(res, "ids parameter is required (comma-separated list)", 400);
+      return sendError(res, "ids parameter is required (comma-separated list)", 400, req);
     }
 
     const idList = ids
@@ -56,11 +56,11 @@ export default asyncHandler(async (req: NextApiRequest, res: NextApiResponse) =>
       .filter((id) => id.length > 0);
 
     if (idList.length === 0) {
-      return sendError(res, "At least one strategy ID is required", 400);
+      return sendError(res, "At least one strategy ID is required", 400, req);
     }
 
     if (idList.length > 10) {
-      return sendError(res, "Maximum 10 strategies can be compared at once", 400);
+      return sendError(res, "Maximum 10 strategies can be compared at once", 400, req);
     }
 
     const db = getDB();
@@ -95,7 +95,7 @@ export default asyncHandler(async (req: NextApiRequest, res: NextApiResponse) =>
     }
 
     if (strategies.length === 0) {
-      return sendError(res, "No valid strategies found", 404);
+      return sendError(res, "No valid strategies found", 404, req);
     }
 
     // Calculate comparison metadata
@@ -121,7 +121,7 @@ export default asyncHandler(async (req: NextApiRequest, res: NextApiResponse) =>
 
     res.setHeader("Cache-Control", "public, max-age=300, s-maxage=300");
 
-    return sendSuccess(res, response);
+    return sendSuccess(res, response, 200, req);
   } catch (error) {
     console.error("Error in compare endpoint:", error);
     return sendError(

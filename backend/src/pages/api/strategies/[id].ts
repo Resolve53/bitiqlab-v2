@@ -21,7 +21,7 @@ export default asyncHandler(async (req: NextApiRequest, res: NextApiResponse) =>
     if (req.method === "GET") {
       // Get strategy details
       const strategy = await db.getStrategy(id);
-      sendSuccess(res, strategy);
+      sendSuccess(res, strategy, 200, req);
     } else if (req.method === "PATCH") {
       // Update strategy
       const strategy = await db.getStrategy(id);
@@ -33,7 +33,8 @@ export default asyncHandler(async (req: NextApiRequest, res: NextApiResponse) =>
           return sendError(
             res,
             `Invalid status. Must be one of: ${validStatuses.join(", ")}`,
-            400
+            400,
+            req
           );
         }
       }
@@ -49,7 +50,7 @@ export default asyncHandler(async (req: NextApiRequest, res: NextApiResponse) =>
         changed_by: req.body.updated_by || "system",
       });
 
-      sendSuccess(res, updated);
+      sendSuccess(res, updated, 200, req);
     } else if (req.method === "DELETE") {
       // Get current strategy first
       const strategy = await db.getStrategy(id);
@@ -68,17 +69,18 @@ export default asyncHandler(async (req: NextApiRequest, res: NextApiResponse) =>
         changed_by: req.body.deleted_by || "system",
       });
 
-      sendSuccess(res, { message: "Strategy deleted", id });
+      sendSuccess(res, { message: "Strategy deleted", id }, 200, req);
     } else {
       res.setHeader("Allow", ["GET", "PATCH", "DELETE"]);
-      sendError(res, "Method not allowed", 405);
+      sendError(res, "Method not allowed", 405, req);
     }
   } catch (error) {
     console.error("Strategy API error:", error);
     sendError(
       res,
       `Error processing request: ${error instanceof Error ? error.message : "Unknown error"}`,
-      500
+      500,
+      req
     );
   }
 });
