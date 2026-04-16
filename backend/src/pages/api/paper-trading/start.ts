@@ -17,7 +17,7 @@ interface StartRequest {
 export default asyncHandler(async (req: NextApiRequest, res: NextApiResponse) => {
   if (req.method !== "POST") {
     res.setHeader("Allow", ["POST"]);
-    return sendError(res, "Method not allowed", 405);
+    return sendError(res, "Method not allowed", 405, req);
   }
 
   const {
@@ -30,7 +30,7 @@ export default asyncHandler(async (req: NextApiRequest, res: NextApiResponse) =>
 
   // Validate required fields
   if (!strategy_id) {
-    return sendError(res, "Missing required field: strategy_id", 400);
+    return sendError(res, "Missing required field: strategy_id", 400, req);
   }
 
   try {
@@ -61,7 +61,7 @@ export default asyncHandler(async (req: NextApiRequest, res: NextApiResponse) =>
       changed_by: created_by || "system",
     });
 
-    sendSuccess(
+    return sendSuccess(
       res,
       {
         session_id: session.id,
@@ -72,14 +72,16 @@ export default asyncHandler(async (req: NextApiRequest, res: NextApiResponse) =>
         is_testnet: session.is_testnet,
         message: "Paper trading session started",
       },
-      201
+      201,
+      req
     );
   } catch (error) {
     console.error("Paper trading start error:", error);
-    sendError(
+    return sendError(
       res,
       error instanceof Error ? error.message : "Failed to start paper trading",
-      500
+      500,
+      req
     );
   }
 });
