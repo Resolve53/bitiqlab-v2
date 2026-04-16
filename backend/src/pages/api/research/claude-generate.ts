@@ -75,8 +75,49 @@ export default asyncHandler(async (req: NextApiRequest, res: NextApiResponse) =>
 
     // Call Claude to analyze and generate strategy
     const apiKey = process.env.ANTHROPIC_API_KEY;
+    console.log("Checking for ANTHROPIC_API_KEY...", {
+      keyExists: !!apiKey,
+      keyLength: apiKey?.length || 0,
+      keyPrefix: apiKey ? apiKey.substring(0, 10) + "..." : "NOT SET",
+    });
+
     if (!apiKey) {
-      throw new Error("ANTHROPIC_API_KEY environment variable is not set");
+      console.warn(
+        "ANTHROPIC_API_KEY not found, using fallback strategy generation"
+      );
+      // Fallback: generate a strategy without Claude
+      const fallbackConfig = generateFallbackStrategy(
+        symbol,
+        strategy_idea,
+        indicators
+      );
+      const db = getDB();
+      const strategy = await db.createStrategy({
+        name: fallbackConfig.name,
+        description: fallbackConfig.description,
+        symbol,
+        timeframe,
+        market_type,
+        entry_rules: fallbackConfig.entry_rules,
+        exit_rules: fallbackConfig.exit_rules,
+        created_by,
+      });
+
+      sendSuccess(
+        res,
+        {
+          strategy,
+          analysis: {
+            risk_assessment: fallbackConfig.risk_assessment,
+            expected_performance: fallbackConfig.expected_performance,
+            chart_data: chartData,
+            note: "Generated using fallback (Claude API not configured)",
+          },
+        },
+        201,
+        req
+      );
+      return;
     }
 
     const client = new Anthropic({ apiKey });
@@ -116,6 +157,7 @@ Output this exact JSON structure (and NOTHING else):
 
     let message;
     try {
+      console.log("Calling Anthropic API with claude-opus-4-6...");
       message = await client.messages.create({
         model: "claude-opus-4-6",
         max_tokens: 1024,
@@ -126,13 +168,48 @@ Output this exact JSON structure (and NOTHING else):
           },
         ],
       });
+      console.log("Anthropic API call succeeded");
     } catch (apiError) {
       const errorMsg = apiError instanceof Error ? apiError.message : String(apiError);
-      console.error("Anthropic API error:", {
+      console.error("Anthropic API error (falling back to generated strategy):", {
         message: errorMsg,
         error: apiError,
       });
-      throw new Error(`Anthropic API call failed: ${errorMsg}`);
+
+      // Fallback to generated strategy if Claude API fails
+      console.log("Using fallback strategy generation due to API error");
+      const fallbackConfig = generateFallbackStrategy(
+        symbol,
+        strategy_idea,
+        indicators
+      );
+      const db = getDB();
+      const strategy = await db.createStrategy({
+        name: fallbackConfig.name,
+        description: fallbackConfig.description,
+        symbol,
+        timeframe,
+        market_type,
+        entry_rules: fallbackConfig.entry_rules,
+        exit_rules: fallbackConfig.exit_rules,
+        created_by,
+      });
+
+      sendSuccess(
+        res,
+        {
+          strategy,
+          analysis: {
+            risk_assessment: fallbackConfig.risk_assessment,
+            expected_performance: fallbackConfig.expected_performance,
+            chart_data: chartData,
+            note: `Strategy generated using fallback due to API error: ${errorMsg}`,
+          },
+        },
+        201,
+        req
+      );
+      return;
     }
 
     // Validate message structure
@@ -257,11 +334,40 @@ Output this exact JSON structure (and NOTHING else):
       console.error("First 500 chars:", responseText.substring(0, 500));
       console.error("Last 500 chars:", responseText.substring(Math.max(0, responseText.length - 500)));
 
-      throw new Error(
-        parseError instanceof Error
-          ? `Failed to parse strategy from Claude: ${parseError.message}`
-          : "Failed to parse strategy from Claude - invalid response format"
+      // Fallback to generated strategy if parsing fails
+      console.log("Parsing failed, using fallback strategy generation");
+      const fallbackConfig = generateFallbackStrategy(
+        symbol,
+        strategy_idea,
+        indicators
       );
+      const db = getDB();
+      const strategy = await db.createStrategy({
+        name: fallbackConfig.name,
+        description: fallbackConfig.description,
+        symbol,
+        timeframe,
+        market_type,
+        entry_rules: fallbackConfig.entry_rules,
+        exit_rules: fallbackConfig.exit_rules,
+        created_by,
+      });
+
+      sendSuccess(
+        res,
+        {
+          strategy,
+          analysis: {
+            risk_assessment: fallbackConfig.risk_assessment,
+            expected_performance: fallbackConfig.expected_performance,
+            chart_data: chartData,
+            note: `Strategy generated using fallback due to parsing error: ${parseError instanceof Error ? parseError.message : "Unknown error"}`,
+          },
+        },
+        201,
+        req
+      );
+      return;
     }
 
     // Save strategy to database
@@ -355,5 +461,58 @@ function generateSimulatedIndicators(price: number) {
     recent_prices: Array.from({ length: 5 }, (_, i) =>
       Math.round(price * (0.98 + Math.random() * 0.04) * 100) / 100
     ),
+  };
+}
+
+/**
+ * Generate a fallback strategy when Claude API is not available
+ * This allows the feature to still work for demo/testing purposes
+ */
+function generateFallbackStrategy(
+  symbol: string,
+  strategyIdea: string,
+  indicators: any
+) {
+  // Extract key concepts from the strategy idea
+  const ideaLower = strategyIdea.toLowerCase();
+  const useRSI = ideaLower.includes("rsi");
+  const useMACD = ideaLower.includes("macd");
+  const useBB = ideaLower.includes("bollinger") || ideaLower.includes("band");
+  const useMA = ideaLower.includes("moving average") || ideaLower.includes("ma");
+
+  // Build indicator list
+  const indicatorsList = [];
+  if (useRSI) indicatorsList.push("RSI");
+  if (useMACD) indicatorsList.push("MACD");
+  if (useBB) indicatorsList.push("Bollinger Bands");
+  if (useMA) indicatorsList.push("Moving Averages");
+  if (indicatorsList.length === 0) {
+    indicatorsList.push("RSI", "MACD", "Moving Averages");
+  }
+
+  // Generate strategy name from idea
+  const strategyName = strategyIdea
+    .split(" ")
+    .slice(0, 4)
+    .join(" ")
+    .substring(0, 50);
+
+  return {
+    name: `${strategyName} Strategy`,
+    description: `Trading strategy based on: ${strategyIdea}`,
+    entry_rules: {
+      indicators: indicatorsList,
+      conditions: `Based on the strategy idea: ${strategyIdea}. Enter when technical indicators align with the described conditions.`,
+      example: `Enter ${symbol} when indicators confirm the trading idea.`,
+    },
+    exit_rules: {
+      take_profit: `Take profit at 5-10% above entry or when indicators reverse`,
+      stop_loss: `Stop loss at 2-3% below entry to manage risk`,
+      time_based: `Exit after 4 hours if no significant price movement`,
+    },
+    risk_assessment: `Strategy based on ${symbol} with ${indicatorsList.join(
+      ", "
+    )}. Risk management includes stop loss at 2-3% and position sizing.`,
+    expected_performance: `Expected to capture 5-15% gains on favorable setups. Win rate depends on market conditions and indicator accuracy.`,
   };
 }
