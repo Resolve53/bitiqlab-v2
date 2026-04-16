@@ -118,25 +118,66 @@ export default function TradingDashboard() {
   const totalPnL = positions.reduce((sum, p) => sum + p.pnl, 0);
   const totalPnLPercent = (totalPnL / totalBalance) * 100;
 
-  // Simulate real-time price updates
+  // Fetch real-time prices from Binance via backend cache
   useEffect(() => {
-    const interval = setInterval(() => {
-      setPositions((prevPositions) =>
-        prevPositions.map((position) => {
-          const priceChange = (Math.random() - 0.5) * 100;
-          const newPrice = Math.max(position.currentPrice + priceChange, 1);
-          const newPnl = (newPrice - position.entryPrice) * position.quantity;
-          const newPnlPercent = ((newPrice - position.entryPrice) / position.entryPrice) * 100;
+    const fetchPrices = async () => {
+      try {
+        const symbols = positions.map((p) => p.symbol).join(",");
+        const apiUrl = process.env.NEXT_PUBLIC_API_URL || "http://localhost:3000";
+        const response = await fetch(`${apiUrl}/api/market/prices?symbols=${symbols}`);
 
-          return {
-            ...position,
-            currentPrice: newPrice,
-            pnl: newPnl,
-            pnlPercent: newPnlPercent,
-          };
-        })
-      );
-    }, 2000);
+        if (!response.ok) {
+          throw new Error("Failed to fetch prices");
+        }
+
+        const data = await response.json();
+        const priceMap = new Map(
+          data.data.prices.map((p: any) => [p.symbol, parseFloat(p.price)])
+        );
+
+        setPositions((prevPositions) =>
+          prevPositions.map((position) => {
+            const newPrice = priceMap.get(position.symbol);
+            if (!newPrice) return position;
+
+            const newPnl = (newPrice - position.entryPrice) * position.quantity;
+            const newPnlPercent =
+              ((newPrice - position.entryPrice) / position.entryPrice) * 100;
+
+            return {
+              ...position,
+              currentPrice: newPrice,
+              pnl: newPnl,
+              pnlPercent: newPnlPercent,
+            };
+          })
+        );
+      } catch (error) {
+        console.error("Error fetching prices:", error);
+        // Fallback to simulated prices if API fails
+        setPositions((prevPositions) =>
+          prevPositions.map((position) => {
+            const priceChange = (Math.random() - 0.5) * 50;
+            const newPrice = Math.max(position.currentPrice + priceChange, 1);
+            const newPnl = (newPrice - position.entryPrice) * position.quantity;
+            const newPnlPercent = ((newPrice - position.entryPrice) / position.entryPrice) * 100;
+
+            return {
+              ...position,
+              currentPrice: newPrice,
+              pnl: newPnl,
+              pnlPercent: newPnlPercent,
+            };
+          })
+        );
+      }
+    };
+
+    // Initial fetch
+    fetchPrices();
+
+    // Set up interval for periodic updates (every 3 seconds)
+    const interval = setInterval(fetchPrices, 3000);
 
     return () => clearInterval(interval);
   }, []);
