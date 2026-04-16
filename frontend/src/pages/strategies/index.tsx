@@ -1,6 +1,7 @@
 import { useEffect, useState } from "react";
 import axios from "axios";
 import BacktestModal from "@/components/BacktestModal";
+import PaperTradingModal from "@/components/PaperTradingModal";
 
 interface Strategy {
   id: string;
@@ -27,6 +28,7 @@ export default function StrategiesPage() {
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState<string | null>(null);
   const [selectedStrategyForBacktest, setSelectedStrategyForBacktest] = useState<Strategy | null>(null);
+  const [selectedStrategyForPaperTrading, setSelectedStrategyForPaperTrading] = useState<Strategy | null>(null);
 
   useEffect(() => {
     fetchStrategies();
@@ -114,6 +116,7 @@ export default function StrategiesPage() {
                 key={strategy.id}
                 strategy={strategy}
                 onRunBacktest={() => setSelectedStrategyForBacktest(strategy)}
+                onStartPaperTrading={() => setSelectedStrategyForPaperTrading(strategy)}
               />
             ))}
           </div>
@@ -145,6 +148,21 @@ export default function StrategiesPage() {
           }}
         />
       )}
+
+      {selectedStrategyForPaperTrading && (
+        <PaperTradingModal
+          strategyId={selectedStrategyForPaperTrading.id}
+          strategyName={selectedStrategyForPaperTrading.name}
+          symbol={selectedStrategyForPaperTrading.symbol}
+          timeframe={selectedStrategyForPaperTrading.timeframe}
+          onClose={() => setSelectedStrategyForPaperTrading(null)}
+          onSuccess={() => {
+            setSelectedStrategyForPaperTrading(null);
+            // Refresh strategies to show updated status
+            fetchStrategies();
+          }}
+        />
+      )}
     </div>
   );
 }
@@ -152,9 +170,10 @@ export default function StrategiesPage() {
 interface StrategyCardProps {
   strategy: Strategy;
   onRunBacktest: () => void;
+  onStartPaperTrading: () => void;
 }
 
-function StrategyCard({ strategy, onRunBacktest }: StrategyCardProps) {
+function StrategyCard({ strategy, onRunBacktest, onStartPaperTrading }: StrategyCardProps) {
   const statusColors: Record<string, string> = {
     draft: "bg-slate-700/50 text-slate-300",
     testing: "bg-blue-900/50 text-blue-300",
@@ -207,7 +226,7 @@ function StrategyCard({ strategy, onRunBacktest }: StrategyCardProps) {
 
         <div className="ml-4 flex flex-col gap-2">
           <span
-            className={`inline-block px-3 py-1 rounded-full text-sm font-semibold ${
+            className={`inline-block px-3 py-1 rounded-full text-sm font-semibold cursor-default ${
               statusColors[strategy.status] || "bg-slate-700/50 text-slate-300"
             }`}
           >
@@ -226,6 +245,13 @@ function StrategyCard({ strategy, onRunBacktest }: StrategyCardProps) {
             className="bg-blue-600 hover:bg-blue-500 text-white px-3 py-1 rounded text-sm font-medium whitespace-nowrap transition"
           >
             🔄 Run Backtest
+          </button>
+
+          <button
+            onClick={onStartPaperTrading}
+            className="bg-purple-600 hover:bg-purple-500 text-white px-3 py-1 rounded text-sm font-medium whitespace-nowrap transition"
+          >
+            🚀 Paper Trading
           </button>
         </div>
       </div>
