@@ -74,31 +74,44 @@ export default asyncHandler(async (req: NextApiRequest, res: NextApiResponse) =>
     };
 
     // Call Claude to analyze and generate strategy
-    const client = new Anthropic();
+    const apiKey = process.env.ANTHROPIC_API_KEY;
+    if (!apiKey) {
+      throw new Error("ANTHROPIC_API_KEY environment variable is not set");
+    }
 
-    const prompt = `You are an expert trading strategy analyst. Analyze the following chart data and create a trading strategy based on the user's idea.
+    const client = new Anthropic({ apiKey });
+
+    const prompt = `You must respond ONLY with valid JSON, no markdown, no explanation, no additional text.
+
+Analyze this trading data and strategy idea, then output ONLY a JSON object:
 
 Chart Data:
-${JSON.stringify(chartData, null, 2)}
+Symbol: ${symbol}
+Current Price: ${chartData.current_price}
+RSI: ${chartData.rsi}
+MACD: line=${chartData.macd_line}, signal=${chartData.macd_signal}
+Bollinger Bands: upper=${chartData.bollinger_upper}, middle=${chartData.bollinger_middle}, lower=${chartData.bollinger_lower}
+SMA20: ${chartData.sma_20}
+SMA50: ${chartData.sma_50}
 
-User's Strategy Idea: ${strategy_idea}
+Strategy Idea: ${strategy_idea}
 
-Based on this data and the user's idea, create a detailed trading strategy. Respond in JSON format ONLY (no markdown, no explanation) with:
+Output this exact JSON structure (and NOTHING else):
 {
-  "name": "Strategy name based on the idea",
-  "description": "Clear description of what this strategy does",
+  "name": "A descriptive strategy name",
+  "description": "What this strategy does",
   "entry_rules": {
-    "indicators": ["List of indicators used (RSI, MACD, Bollinger Bands, SMA, etc)"],
-    "conditions": "Detailed entry conditions in plain English",
-    "example": "Example entry signal based on current data"
+    "indicators": ["RSI", "MACD"],
+    "conditions": "Entry condition description",
+    "example": "Example based on current data"
   },
   "exit_rules": {
-    "take_profit": "Take profit rule (e.g., '5% above entry' or 'when RSI > 70')",
-    "stop_loss": "Stop loss rule (e.g., '2% below entry' or 'when price breaks below SMA20')",
-    "time_based": "Time-based exit if any (e.g., 'close after 4 hours')"
+    "take_profit": "Take profit rule",
+    "stop_loss": "Stop loss rule",
+    "time_based": "Time exit rule if any"
   },
-  "risk_assessment": "Brief risk assessment based on current market conditions",
-  "expected_performance": "Realistic expectation based on indicator analysis"
+  "risk_assessment": "Risk assessment",
+  "expected_performance": "Expected performance based on indicators"
 }`;
 
     const message = await client.messages.create({
