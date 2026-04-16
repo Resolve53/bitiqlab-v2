@@ -64,6 +64,12 @@ export default function StrategiesPage() {
               📈 View Trading
             </a>
             <a
+              href="/strategies/compare"
+              className="bg-purple-600 hover:bg-purple-500 text-white font-bold py-2 px-4 rounded-lg transition"
+            >
+              🔄 Compare
+            </a>
+            <a
               href="/strategies/claude-generate"
               className="bg-blue-600 hover:bg-blue-500 text-white font-bold py-2 px-4 rounded-lg transition"
             >
