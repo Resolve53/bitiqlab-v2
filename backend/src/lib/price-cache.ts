@@ -194,4 +194,4 @@ export function getPriceCache(): PriceCache {
   return instance;
 }
 
-export { PriceData };
+export type { PriceData };
