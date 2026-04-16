@@ -95,7 +95,7 @@ export default asyncHandler(async (req: NextApiRequest, res: NextApiResponse) =>
       changed_by: "system",
     });
 
-    sendSuccess(res, {
+    return sendSuccess(res, {
       sharpe_ratio: results.sharpe_ratio,
       max_drawdown: results.max_drawdown,
       win_rate: results.win_rate,
@@ -107,7 +107,7 @@ export default asyncHandler(async (req: NextApiRequest, res: NextApiResponse) =>
     }, 200, req);
   } catch (error) {
     console.error("Backtest error:", error);
-    sendError(res, error instanceof Error ? error.message : "Backtest failed", 500, req);
+    return sendError(res, error instanceof Error ? error.message : "Backtest failed", 500, req);
   }
 });
 
