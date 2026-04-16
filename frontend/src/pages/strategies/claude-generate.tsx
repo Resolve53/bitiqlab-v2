@@ -188,8 +188,6 @@ export default function ClaudeGenerateStrategy() {
             }}
           />
         )}
-          </div>
-        </main>
       </div>
     );
   }
