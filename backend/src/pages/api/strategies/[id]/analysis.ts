@@ -83,7 +83,8 @@ export default asyncHandler(async (req: NextApiRequest, res: NextApiResponse) =>
     );
 
     // Fetch recent backtests
-    const backtests = await db.getBacktestsByStrategy(id, 5);
+    const backtests = await db.listBacktests(id);
+    const recentBacktests = backtests?.slice(0, 5) || [];
 
     // Calculate additional risk metrics
     const riskMetrics = calculateRiskMetrics(
@@ -111,7 +112,7 @@ export default asyncHandler(async (req: NextApiRequest, res: NextApiResponse) =>
 
       risk_metrics: riskMetrics,
 
-      recent_backtests: backtests.map((bt: any) => ({
+      recent_backtests: recentBacktests.map((bt: any) => ({
         id: bt.id,
         timestamp: new Date(bt.created_at).toISOString(),
         duration_days: calculateDays(bt.start_date, bt.end_date),
