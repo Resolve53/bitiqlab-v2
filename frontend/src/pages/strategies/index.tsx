@@ -64,6 +64,12 @@ export default function StrategiesPage() {
               📈 View Trading
             </a>
             <a
+              href="/strategies/compare"
+              className="bg-purple-600 hover:bg-purple-500 text-white font-bold py-2 px-4 rounded-lg transition"
+            >
+              🔄 Compare
+            </a>
+            <a
               href="/strategies/claude-generate"
               className="bg-blue-600 hover:bg-blue-500 text-white font-bold py-2 px-4 rounded-lg transition"
             >
@@ -207,6 +213,13 @@ function StrategyCard({ strategy, onRunBacktest }: StrategyCardProps) {
           >
             {strategy.status}
           </span>
+
+          <a
+            href={`/strategies/${strategy.id}/analysis`}
+            className="bg-emerald-600 hover:bg-emerald-500 text-white px-3 py-1 rounded text-sm font-medium whitespace-nowrap transition text-center"
+          >
+            📊 Analysis
+          </a>
 
           <button
             onClick={onRunBacktest}
