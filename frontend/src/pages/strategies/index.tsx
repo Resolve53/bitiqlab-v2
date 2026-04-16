@@ -208,6 +208,13 @@ function StrategyCard({ strategy, onRunBacktest }: StrategyCardProps) {
             {strategy.status}
           </span>
 
+          <a
+            href={`/strategies/${strategy.id}/analysis`}
+            className="bg-emerald-600 hover:bg-emerald-500 text-white px-3 py-1 rounded text-sm font-medium whitespace-nowrap transition text-center"
+          >
+            📊 Analysis
+          </a>
+
           <button
             onClick={onRunBacktest}
             className="bg-blue-600 hover:bg-blue-500 text-white px-3 py-1 rounded text-sm font-medium whitespace-nowrap transition"
