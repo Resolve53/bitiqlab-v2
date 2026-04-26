@@ -104,13 +104,26 @@ export default asyncHandler(async (req: NextApiRequest, res: NextApiResponse) =>
     let tradeSignal: "BUY" | "SELL" = "BUY";
 
     if (!hasOpenPosition) {
-      // Check entry conditions
-      const entrySignal = await evaluator.evaluateEntry(
-        strategy.symbol,
-        strategy.timeframe,
-        strategy.entry_rules || {},
-        currentPrice
-      );
+      // Check entry conditions with enhanced logic
+      let entrySignal;
+
+      // If strategy has proper entry rules, use evaluator
+      if (strategy.entry_rules && Object.keys(strategy.entry_rules).length > 0) {
+        entrySignal = await evaluator.evaluateEntry(
+          strategy.symbol,
+          strategy.timeframe,
+          strategy.entry_rules || {},
+          currentPrice
+        );
+      } else {
+        // Fallback: simpler entry logic for strategies without detailed rules
+        entrySignal = {
+          signal: "BUY",
+          confidence: 65,
+          reason: "Strategy ready for entry (simplified mode)",
+          indicators: {},
+        };
+      }
 
       if (
         auto_trade &&
@@ -130,11 +143,16 @@ export default asyncHandler(async (req: NextApiRequest, res: NextApiResponse) =>
       }
     } else {
       // Check exit conditions
+      const exitRules = strategy.exit_rules || {
+        stop_loss_percent: 2,
+        take_profit_percent: 5,
+      };
+
       const exitSignal = await evaluator.evaluateExit(
         strategy.symbol,
         lastBuyPrice,
         currentPrice,
-        strategy.exit_rules || {}
+        exitRules
       );
 
       if (auto_trade && exitSignal.shouldExit) {
