@@ -17,15 +17,31 @@ export interface ApiResponse<T = any> {
 export function enableCORS(res: NextApiResponse, req?: any) {
   const origin = req?.headers?.origin || "*";
   const allowedOrigins = [
+    // Production
     "https://labbitiq.vercel.app",
     "https://bitiqlab-v2-production.up.railway.app",
+    // Staging/Test
+    "https://bitiqlab-staging.up.railway.app",
+    // Local development
     "http://localhost:3000",
     "http://localhost:3001",
     "http://localhost:3006",
+    // Allow Railway preview deployments
   ];
 
-  // Allow if origin is in whitelist or if using *
-  const corsOrigin = allowedOrigins.includes(origin) ? origin : "*";
+  // Check if origin is in whitelist
+  let corsOrigin = allowedOrigins.includes(origin) ? origin : "*";
+
+  // Allow Railway preview deployments (*.up.railway.app)
+  if (!corsOrigin || corsOrigin === "*") {
+    if (origin && origin.includes(".up.railway.app")) {
+      corsOrigin = origin;
+    } else if (origin && origin.includes(".vercel.app")) {
+      corsOrigin = origin;
+    } else if (process.env.NODE_ENV === "development") {
+      corsOrigin = origin || "*";
+    }
+  }
 
   res.setHeader("Access-Control-Allow-Origin", corsOrigin);
   res.setHeader("Access-Control-Allow-Methods", "GET, POST, PUT, PATCH, DELETE, OPTIONS");
@@ -189,6 +205,11 @@ export function asyncHandler(
   ) => Promise<void> | void
 ): (req: any, res: any) => Promise<void> {
   return async (req, res) => {
+    // Handle CORS preflight requests
+    if (handleCORSPreflight(req, res)) {
+      return;
+    }
+
     try {
       await handler(req, res);
     } catch (error) {
