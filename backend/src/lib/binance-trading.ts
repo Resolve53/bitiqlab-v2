@@ -65,8 +65,17 @@ export class BinanceTradingClient {
   private client: AxiosInstance;
 
   constructor(apiKey?: string, apiSecret?: string, useTestnet: boolean = true) {
-    this.apiKey = apiKey || process.env.BINANCE_TESTNET_API_KEY || "";
-    this.apiSecret = apiSecret || process.env.BINANCE_TESTNET_API_SECRET || "";
+    // Try multiple env var names for compatibility
+    this.apiKey = apiKey ||
+      process.env.BINANCE_TESTNET_API_KEY ||
+      process.env.BINANCE_TESTNET_KEY ||
+      process.env.BINANCE_API_KEY ||
+      "";
+    this.apiSecret = apiSecret ||
+      process.env.BINANCE_TESTNET_API_SECRET ||
+      process.env.BINANCE_TESTNET_SECRET ||
+      process.env.BINANCE_API_SECRET ||
+      "";
 
     if (useTestnet) {
       this.baseUrl = "https://testnet.binance.vision/api";

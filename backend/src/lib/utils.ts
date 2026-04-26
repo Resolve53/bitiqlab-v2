@@ -16,20 +16,22 @@ export interface ApiResponse<T = any> {
  */
 export function enableCORS(res: NextApiResponse, req?: any) {
   const origin = req?.headers?.origin || "*";
-  const allowedOrigins = [
-    "https://labbitiq.vercel.app",
-    "https://bitiqlab-v2-production.up.railway.app",
-    "http://localhost:3000",
-    "http://localhost:3001",
-    "http://localhost:3006",
-  ];
 
-  // Allow if origin is in whitelist or if using *
-  const corsOrigin = allowedOrigins.includes(origin) ? origin : "*";
+  // Allow requests from Vercel, localhost, and Railway
+  const isAllowedOrigin =
+    !origin ||
+    origin === "*" ||
+    origin.includes("vercel.app") ||
+    origin.includes("railway.app") ||
+    origin.includes("localhost") ||
+    origin.includes("127.0.0.1");
+
+  const corsOrigin = isAllowedOrigin ? (origin || "*") : "*";
 
   res.setHeader("Access-Control-Allow-Origin", corsOrigin);
   res.setHeader("Access-Control-Allow-Methods", "GET, POST, PUT, PATCH, DELETE, OPTIONS");
-  res.setHeader("Access-Control-Allow-Headers", "Content-Type, Authorization");
+  res.setHeader("Access-Control-Allow-Headers", "Content-Type, Authorization, Accept");
+  res.setHeader("Access-Control-Allow-Credentials", "true");
   res.setHeader("Access-Control-Max-Age", "86400");
 }
 
