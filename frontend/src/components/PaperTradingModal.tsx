@@ -1,4 +1,5 @@
 import { useState } from "react";
+import { useRouter } from "next/router";
 
 interface PaperTradingModalProps {
   strategyId: string;
@@ -17,6 +18,7 @@ export default function PaperTradingModal({
   onClose,
   onSuccess,
 }: PaperTradingModalProps) {
+  const router = useRouter();
   const [loading, setLoading] = useState(false);
   const [error, setError] = useState<string | null>(null);
   const [initialBalance, setInitialBalance] = useState("10000");
@@ -24,6 +26,7 @@ export default function PaperTradingModal({
   const [selectedTimeframe, setSelectedTimeframe] = useState(timeframe);
   const [useTestnet, setUseTestnet] = useState(true);
   const [submitted, setSubmitted] = useState(false);
+  const [sessionId, setSessionId] = useState<string | null>(null);
 
   const commonSymbols = ["BTCUSDT", "ETHUSDT", "BNBUSDT", "ADAUSDT", "DOGEUSDT", "XRPUSDT"];
   const timeframes = ["1m", "5m", "15m", "30m", "1h", "4h", "1d"];
@@ -61,11 +64,13 @@ export default function PaperTradingModal({
       }
 
       const data = await response.json();
+      setSessionId(data.data.session_id);
       setSubmitted(true);
 
-      // Redirect after 2 seconds
+      // Redirect to dashboard after 2 seconds
       setTimeout(() => {
         onSuccess();
+        router.push(`/paper-trading/${data.data.session_id}/dashboard`);
       }, 2000);
     } catch (err) {
       setError(err instanceof Error ? err.message : "Failed to start paper trading");
