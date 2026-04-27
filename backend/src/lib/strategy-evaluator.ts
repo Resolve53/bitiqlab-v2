@@ -58,7 +58,7 @@ export class StrategyEvaluator {
         // RSI-based signals
         if (
           entryRules.indicators.includes("rsi") ||
-          entryRules.conditions?.some((c) => c.toLowerCase().includes("rsi"))
+          (Array.isArray(entryRules.conditions) && entryRules.conditions.some((c) => c.toLowerCase().includes("rsi")))
         ) {
           if (indicators.rsi < 30) {
             signalReasons.push("RSI oversold (<30)");
@@ -72,7 +72,7 @@ export class StrategyEvaluator {
         // MACD-based signals
         if (
           entryRules.indicators.includes("macd") ||
-          entryRules.conditions?.some((c) => c.toLowerCase().includes("macd"))
+          (Array.isArray(entryRules.conditions) && entryRules.conditions.some((c) => c.toLowerCase().includes("macd")))
         ) {
           if (
             indicators.macd.line > indicators.macd.signal &&
@@ -86,9 +86,9 @@ export class StrategyEvaluator {
         // Bollinger Bands
         if (
           entryRules.indicators.includes("bollinger") ||
-          entryRules.conditions?.some((c) =>
+          (Array.isArray(entryRules.conditions) && entryRules.conditions.some((c) =>
             c.toLowerCase().includes("bollinger")
-          )
+          ))
         ) {
           if (currentPrice < indicators.bollinger_bands.lower) {
             signalReasons.push("Price below lower Bollinger Band");
