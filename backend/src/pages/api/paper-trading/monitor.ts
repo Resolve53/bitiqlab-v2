@@ -56,7 +56,7 @@ interface MonitorResponse {
 }
 
 // Global monitoring state to prevent race conditions
-const monitoringSessions = new Map<string, { interval: NodeJS.Timer | null }>();
+const monitoringSessions = new Map<string, { interval: ReturnType<typeof setInterval> | null }>();
 
 export default asyncHandler(async (req: NextApiRequest, res: NextApiResponse) => {
   if (req.method !== "POST") {
