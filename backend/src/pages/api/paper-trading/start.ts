@@ -1,10 +1,12 @@
 /**
  * POST /api/paper-trading/start - Start paper trading session
+ * Automatically deploys strategy to TradingView via MCP
  */
 
 import type { NextApiRequest, NextApiResponse } from "next";
 import { getDB } from "@/lib/db";
 import { sendSuccess, sendError, asyncHandler } from "@/lib/utils";
+import { getTradingViewMCPService } from "@/lib/tradingview-mcp-service";
 
 interface StartRequest {
   strategy_id: string;
@@ -35,6 +37,7 @@ export default asyncHandler(async (req: NextApiRequest, res: NextApiResponse) =>
 
   try {
     const db = getDB();
+    const mcpService = getTradingViewMCPService();
 
     // Verify strategy exists
     const strategy = await db.getStrategy(strategy_id);
@@ -53,6 +56,29 @@ export default asyncHandler(async (req: NextApiRequest, res: NextApiResponse) =>
       status: "testing",
     });
 
+    // Deploy to TradingView via MCP (non-blocking)
+    let mcpStatus = { success: false, message: "MCP not available" };
+    try {
+      const isHealthy = await mcpService.healthCheck();
+      if (isHealthy) {
+        console.log(`[API] Deploying strategy to TradingView via MCP...`);
+        mcpStatus = await mcpService.deployStrategy(strategy);
+        if (mcpStatus.success) {
+          await mcpService.startMonitoring(
+            strategy_id,
+            session.id,
+            strategy.symbol
+          );
+        }
+      }
+    } catch (mcpError) {
+      console.warn(
+        "[API] MCP deployment failed (non-critical):",
+        mcpError
+      );
+      // Continue anyway - MCP is optional
+    }
+
     // Log audit
     await db.createStrategyAuditLog({
       strategy_id,
@@ -70,6 +96,8 @@ export default asyncHandler(async (req: NextApiRequest, res: NextApiResponse) =>
         current_balance: session.current_balance,
         exchange: session.exchange,
         is_testnet: session.is_testnet,
+        tradingview_status: mcpStatus.success ? "deployed" : "pending",
+        tradingview_message: mcpStatus.message,
         message: "Paper trading session started",
       },
       201,
