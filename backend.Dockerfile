@@ -6,20 +6,18 @@ WORKDIR /app
 COPY backend/package.json backend/package-lock.json ./
 COPY backend/src ./src
 COPY backend/public ./public
+COPY backend/next.config.js ./
+COPY backend/tsconfig.json ./
 
 # Install dependencies
 RUN npm ci
 
-# Build
+# Build Next.js
 RUN npm run build
 
 # Set environment
 ENV NODE_ENV=production
 ENV PORT=3001
-
-# Health check
-HEALTHCHECK --interval=30s --timeout=10s --start-period=10s --retries=3 \
-  CMD wget --quiet --tries=1 --spider http://localhost:3001/api/health || exit 1
 
 # Start application
 CMD ["npm", "start"]
