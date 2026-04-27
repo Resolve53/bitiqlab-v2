@@ -111,7 +111,7 @@ export default asyncHandler(async (req: NextApiRequest, res: NextApiResponse) =>
       const entrySignal = await evaluator.evaluateEntry(
         strategy.symbol,
         strategy.timeframe,
-        strategy.entry_rules || { indicators: ["RSI", "MACD"] },
+        strategy.entry_rules || { indicators: ["RSI", "MACD"], conditions: [] },
         currentPrice
       );
 
