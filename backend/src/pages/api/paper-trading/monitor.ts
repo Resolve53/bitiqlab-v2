@@ -15,13 +15,13 @@ import { sendSuccess, sendError, asyncHandler } from "@/lib/utils";
 import { getTradingClient } from "@/lib/binance-trading";
 import { getEvaluator } from "@/lib/strategy-evaluator";
 import { getWebSocketManager } from "@/lib/binance-websocket";
-import { getTradingViewPrice } from "@/lib/tradingview-price";
+import { getTradingViewMCP } from "@/lib/tradingview-mcp-client";
 
 interface MonitorRequest {
   session_id: string;
   auto_trade?: boolean;
   check_interval?: number;
-  use_tradingview?: boolean;
+  use_mcp?: boolean;
 }
 
 interface MonitorResponse {
@@ -56,7 +56,7 @@ interface MonitorResponse {
 }
 
 // Global monitoring state to prevent race conditions
-const monitoringSessions = new Map<string, { interval: NodeJS.Timer | null }>();
+const monitoringSessions = new Map<string, { interval: ReturnType<typeof setInterval> | null }>();
 
 export default asyncHandler(async (req: NextApiRequest, res: NextApiResponse) => {
   if (req.method !== "POST") {
@@ -68,7 +68,7 @@ export default asyncHandler(async (req: NextApiRequest, res: NextApiResponse) =>
     session_id,
     auto_trade = true,
     check_interval = 5000,
-    use_tradingview = true,
+    use_mcp = true,
   }: MonitorRequest = req.body;
 
   if (!session_id) {
@@ -80,7 +80,7 @@ export default asyncHandler(async (req: NextApiRequest, res: NextApiResponse) =>
     const tradingClient = getTradingClient(true);
     const evaluator = getEvaluator();
     const wsManager = getWebSocketManager();
-    const tvPrice = getTradingViewPrice();
+    const tvMCP = getTradingViewMCP();
 
     console.log(`[MONITOR] Starting monitor for session: ${session_id}`);
 
@@ -116,20 +116,37 @@ export default asyncHandler(async (req: NextApiRequest, res: NextApiResponse) =>
           }
         }
 
-        // Get current price from TradingView or Binance
+        // Get current price from TradingView MCP or Binance
         let currentPrice = 0;
         let priceSource = "unknown";
+        let chartIndicators = {};
 
-        if (use_tradingview) {
+        if (use_mcp) {
           try {
-            const tvData = await tvPrice.getPrice(strategy.symbol);
+            const tvData = await tvMCP.getPrice(strategy.symbol);
             currentPrice = tvData.price;
-            priceSource = "TradingView";
-            console.log(`[MONITOR] Price from TradingView: ${strategy.symbol} = $${currentPrice}`);
-          } catch (tvError) {
-            console.warn(`[MONITOR] TradingView failed, using Binance:`, tvError);
+            priceSource = "TradingView MCP";
+            console.log(
+              `[MONITOR] Price from TradingView MCP: ${strategy.symbol} = $${currentPrice}`
+            );
+
+            // Also fetch indicators from MCP for better signal evaluation
+            try {
+              const indicators = await tvMCP.getIndicators(
+                strategy.symbol,
+                strategy.timeframe
+              );
+              chartIndicators = indicators;
+              console.log(
+                `[MONITOR] Indicators from TradingView MCP: RSI=${indicators.rsi}, MACD=${indicators.macd?.line}`
+              );
+            } catch (indError) {
+              console.warn(`[MONITOR] Could not fetch indicators:`, indError);
+            }
+          } catch (mcpError) {
+            console.warn(`[MONITOR] TradingView MCP failed, falling back to Binance:`, mcpError);
             currentPrice = await tradingClient.getPrice(strategy.symbol);
-            priceSource = "Binance";
+            priceSource = "Binance (fallback)";
           }
         } else {
           currentPrice = await tradingClient.getPrice(strategy.symbol);
