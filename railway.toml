@@ -1,19 +1,11 @@
-[build]
-builder = "dockerfile"
-
-[[services]]
-name = "bitiqlab-backend"
-dockerfile = "backend.Dockerfile"
-buildContext = "."
-
-[[services]]
-name = "tradingview-mcp"
-dockerfile = "Dockerfile.mcp"
-buildContext = "."
-
-[services.bitiqlab-backend.variables]
-NEXT_PUBLIC_API_URL = "${{ services.bitiqlab-backend.public_url }}"
-TRADINGVIEW_MCP_URL = "${{ services.tradingview-mcp.internal_url }}"
-
-[services.tradingview-mcp.variables]
-NODE_ENV = "production"
+# This file is for reference only
+# Railway will auto-detect Dockerfiles in the repo
+# Configure services manually in Railway dashboard:
+#
+# Service 1: bitiqlab-backend
+# - Dockerfile: backend.Dockerfile
+# - Port: 3001
+#
+# Service 2: tradingview-mcp
+# - Dockerfile: Dockerfile.mcp
+# - Port: 3000
