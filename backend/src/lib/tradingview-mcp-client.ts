@@ -340,6 +340,69 @@ class TradingViewMCPClient {
   }
 
   /**
+   * Add an indicator to the chart
+   */
+  async addIndicator(
+    symbol: string,
+    timeframe: string,
+    indicatorName: string,
+    inputs?: Record<string, any>
+  ): Promise<void> {
+    if (!this.isConnected) {
+      await this.connect();
+    }
+
+    try {
+      console.log(`[TradingView MCP] Adding ${indicatorName} to ${symbol} ${timeframe}...`);
+
+      await this.sendRequest("chart_manage_indicator", {
+        symbol,
+        timeframe,
+        action: "add",
+        indicator: indicatorName,
+        inputs,
+      });
+
+      console.log(`[TradingView MCP] ✓ ${indicatorName} added`);
+    } catch (error) {
+      console.warn(`[TradingView MCP] Failed to add ${indicatorName}:`, error);
+      throw error;
+    }
+  }
+
+  /**
+   * Set indicator inputs (parameters)
+   */
+  async setIndicatorInputs(
+    symbol: string,
+    timeframe: string,
+    indicatorName: string,
+    inputs: Record<string, any>
+  ): Promise<void> {
+    if (!this.isConnected) {
+      await this.connect();
+    }
+
+    try {
+      console.log(
+        `[TradingView MCP] Setting ${indicatorName} inputs for ${symbol}...`
+      );
+
+      await this.sendRequest("indicator_set_inputs", {
+        symbol,
+        timeframe,
+        indicator: indicatorName,
+        inputs,
+      });
+
+      console.log(`[TradingView MCP] ✓ ${indicatorName} inputs updated`);
+    } catch (error) {
+      console.warn(`[TradingView MCP] Failed to set ${indicatorName} inputs:`, error);
+      throw error;
+    }
+  }
+
+  /**
    * Check if connected
    */
   isReady(): boolean {

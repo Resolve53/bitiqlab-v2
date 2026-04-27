@@ -28,7 +28,7 @@ class TradingViewStrategyManager {
 
   /**
    * Register a strategy with TradingView
-   * Adds indicators and sets up monitoring
+   * Automatically adds required indicators and sets up monitoring
    */
   async registerStrategy(strategy: Strategy, symbol: string): Promise<void> {
     try {
@@ -36,6 +36,10 @@ class TradingViewStrategyManager {
 
       console.log(`[STRATEGY] Registering strategy: ${strategy.name}`);
       console.log(`[STRATEGY] Symbol: ${symbol}, Timeframe: ${strategy.timeframe}`);
+      console.log(`[STRATEGY] Auto-adding required indicators...`);
+
+      // Add all required indicators automatically
+      await this.setupIndicators(mcp, symbol, strategy.timeframe);
 
       // Get chart state to confirm connection
       const chartState = await mcp.getChartState(symbol, strategy.timeframe);
@@ -53,6 +57,59 @@ class TradingViewStrategyManager {
     } catch (error) {
       console.error(`[STRATEGY] Failed to register strategy:`, error);
       throw error;
+    }
+  }
+
+  /**
+   * Automatically add all required indicators to the chart
+   */
+  private async setupIndicators(
+    mcp: any,
+    symbol: string,
+    timeframe: string
+  ): Promise<void> {
+    try {
+      // RSI (Period 14)
+      await mcp.addIndicator(symbol, timeframe, "Relative Strength Index", {
+        length: 14,
+        source: "close",
+      });
+
+      // MACD (12, 26, 9)
+      await mcp.addIndicator(symbol, timeframe, "MACD", {
+        fastLength: 12,
+        slowLength: 26,
+        signalLength: 9,
+        source: "close",
+      });
+
+      // Bollinger Bands (20, 2)
+      await mcp.addIndicator(symbol, timeframe, "Bollinger Bands", {
+        length: 20,
+        deviation: 2,
+        source: "close",
+      });
+
+      // Moving Average (20)
+      await mcp.addIndicator(symbol, timeframe, "Moving Average", {
+        length: 20,
+        type: "SMA",
+        source: "close",
+      });
+
+      // Moving Average (50)
+      await mcp.addIndicator(symbol, timeframe, "Moving Average", {
+        length: 50,
+        type: "SMA",
+        source: "close",
+      });
+
+      console.log(`[STRATEGY] ✓ All indicators added to chart`);
+    } catch (error) {
+      console.warn(
+        `[STRATEGY] Warning: Could not auto-add all indicators. You may need to add them manually.`,
+        error
+      );
     }
   }
 
