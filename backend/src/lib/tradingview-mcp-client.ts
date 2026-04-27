@@ -123,7 +123,12 @@ class TradingViewMCPClient {
    */
   async getPrice(symbol: string): Promise<TradingViewPrice> {
     if (!this.isConnected) {
-      await this.connect();
+      try {
+        await this.connect();
+      } catch (connectError) {
+        console.warn(`[TradingView MCP] Connection failed, cannot fetch price:`, connectError);
+        throw connectError;
+      }
     }
 
     try {
@@ -148,7 +153,8 @@ class TradingViewMCPClient {
         timestamp: Date.now(),
       };
     } catch (error) {
-      console.warn(`[TradingView MCP] Price fetch failed:`, error);
+      console.warn(`[TradingView MCP] Price fetch failed, MCP unavailable:`, error instanceof Error ? error.message : error);
+      this.isConnected = false;
       throw error;
     }
   }
@@ -278,8 +284,9 @@ class TradingViewMCPClient {
       const id = ++this.messageId;
       const timeout = setTimeout(() => {
         this.pendingRequests.delete(id);
-        reject(new Error(`TradingView MCP request timeout: ${tool}`));
-      }, 10000);
+        this.isConnected = false;
+        reject(new Error(`TradingView MCP request timeout (${tool}). Ensure TradingView is running locally with --remote-debugging-port=9222`));
+      }, 8000);
 
       this.pendingRequests.set(id, { resolve, reject, timeout });
 

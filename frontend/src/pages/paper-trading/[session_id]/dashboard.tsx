@@ -48,6 +48,8 @@ export default function PaperTradingDashboard() {
   const [error, setError] = useState<string | null>(null);
   const [autoTrade, setAutoTrade] = useState(true);
   const [monitoring, setMonitoring] = useState(false);
+  const [registering, setRegistering] = useState(false);
+  const [registered, setRegistered] = useState(false);
 
   useEffect(() => {
     if (!session_id) return;
@@ -92,6 +94,25 @@ export default function PaperTradingDashboard() {
   const handleStopMonitoring = async () => {
     setMonitoring(false);
     // In a real app, you'd have a stop endpoint
+  };
+
+  const handleRegisterTradingView = async () => {
+    if (!stats) return;
+    try {
+      setRegistering(true);
+      const apiUrl = process.env.NEXT_PUBLIC_API_URL || "http://localhost:3000";
+      await axios.post(`${apiUrl}/api/paper-trading/register-tradingview`, {
+        strategy_id: stats.strategy_id,
+        session_id: session_id,
+      });
+      setRegistered(true);
+      setError(null);
+    } catch (err) {
+      setError(err instanceof Error ? err.message : "Failed to register with TradingView");
+      setRegistered(false);
+    } finally {
+      setRegistering(false);
+    }
   };
 
   if (loading) {
@@ -195,23 +216,47 @@ export default function PaperTradingDashboard() {
         {/* Auto-Trade Settings */}
         <div className="bg-slate-800/50 border border-slate-700 rounded-lg p-6 mb-8">
           <h2 className="text-xl font-bold text-white mb-4">Trading Settings</h2>
-          <div className="flex items-center gap-4">
-            <input
-              type="checkbox"
-              id="autoTrade"
-              checked={autoTrade}
-              onChange={(e) => setAutoTrade(e.target.checked)}
-              className="w-5 h-5 rounded"
-              disabled={monitoring}
-            />
-            <label htmlFor="autoTrade" className="text-white">
-              Auto-execute trades when signals are generated
-            </label>
-            {monitoring && (
-              <span className="ml-4 text-emerald-400 text-sm font-semibold">
-                ● Monitoring Active
-              </span>
-            )}
+          <div className="space-y-4">
+            <div className="flex items-center gap-4">
+              <input
+                type="checkbox"
+                id="autoTrade"
+                checked={autoTrade}
+                onChange={(e) => setAutoTrade(e.target.checked)}
+                className="w-5 h-5 rounded"
+                disabled={monitoring}
+              />
+              <label htmlFor="autoTrade" className="text-white">
+                Auto-execute trades when signals are generated
+              </label>
+              {monitoring && (
+                <span className="ml-4 text-emerald-400 text-sm font-semibold">
+                  ● Monitoring Active
+                </span>
+              )}
+            </div>
+
+            <div className="pt-4 border-t border-slate-700">
+              <p className="text-slate-400 text-sm mb-3">
+                {registered
+                  ? "✓ Strategy registered with TradingView - Monitoring real-time chart signals"
+                  : "Connect to TradingView to automatically add technical indicators and monitor live chart signals"
+                }
+              </p>
+              <button
+                onClick={handleRegisterTradingView}
+                disabled={registering || registered}
+                className={`px-4 py-2 rounded-lg font-semibold transition ${
+                  registered
+                    ? "bg-emerald-900/30 text-emerald-400 cursor-default"
+                    : registering
+                    ? "bg-slate-600 text-slate-400 cursor-wait"
+                    : "bg-blue-600 hover:bg-blue-500 text-white cursor-pointer"
+                }`}
+              >
+                {registered ? "✓ Registered with TradingView" : registering ? "Registering..." : "Register with TradingView"}
+              </button>
+            </div>
           </div>
         </div>
 
