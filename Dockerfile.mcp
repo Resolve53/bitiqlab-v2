@@ -10,5 +10,5 @@ RUN npm ci
 
 EXPOSE 3000
 
-# Start MCP server
-CMD ["node", "src/tradingview-mcp/server.js"]
+# Start MCP HTTP server
+CMD ["node", "mcp-http-server.js"]
