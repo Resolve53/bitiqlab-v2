@@ -5,8 +5,8 @@ services:
   # Runs on client's machine, connects to their TradingView Desktop
   tradingview-mcp-local:
     build:
-      context: ./backend
-      dockerfile: ../Dockerfile.mcp.local
+      context: .
+      dockerfile: ./Dockerfile.mcp.local
     ports:
       - "3000:3000"
     environment:
