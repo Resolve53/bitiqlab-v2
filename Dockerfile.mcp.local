@@ -1,0 +1,14 @@
+FROM node:18-alpine
+
+WORKDIR /app
+
+# Copy backend
+COPY backend/ ./
+
+# Install dependencies
+RUN npm install
+
+EXPOSE 3000
+
+# Start MCP HTTP server (local version with actual TradingView connection)
+CMD ["node", "mcp-http-server.js"]
