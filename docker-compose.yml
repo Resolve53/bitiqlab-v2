@@ -1,5 +1,3 @@
-version: '3.8'
-
 services:
   # Local TradingView MCP Server
   # Runs on client's machine, connects to their TradingView Desktop
