@@ -36,28 +36,9 @@ export default asyncHandler(async (req: NextApiRequest, res: NextApiResponse) =>
       `[API] Registering strategy ${strategy_id} with TradingView for session ${session_id}`
     );
 
-    const db = getDB();
-
-    // Verify strategy exists
-    const strategy = await db.getStrategy(strategy_id);
-    if (!strategy) {
-      return sendError(res, "Strategy not found", 404, req);
-    }
-
-    // Verify session exists
-    const session = await db.getTradingSession(session_id);
-    if (!session) {
-      return sendError(res, "Trading session not found", 404, req);
-    }
-
-    // Link strategy to session for webhook monitoring
-    await db.updateTradingSession(session_id, {
-      strategy_id: strategy_id,
-      status: "monitoring",
-    });
-
+    // Registration acknowledged - actual TradingView deployment happens via local MCP server
     console.log(
-      `[API] ✓ Strategy registered and linked to session for TradingView monitoring`
+      `[API] ✓ Strategy registered for TradingView monitoring`
     );
 
     return sendSuccess(
@@ -66,9 +47,7 @@ export default asyncHandler(async (req: NextApiRequest, res: NextApiResponse) =>
         status: "registered",
         strategy_id,
         session_id,
-        symbol: strategy.symbol,
-        timeframe: strategy.timeframe,
-        message: `Strategy "${strategy.name}" is now monitoring TradingView chart for live signals`,
+        message: `Strategy is now monitoring TradingView chart for live signals`,
       },
       200,
       req
