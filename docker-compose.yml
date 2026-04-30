@@ -30,7 +30,7 @@ services:
       - "4040:4040"  # ngrok dashboard
     environment:
       - NGROK_AUTHTOKEN=${NGROK_AUTHTOKEN}
-    command: http 3000
+    command: http tradingview-mcp-local:3000
     depends_on:
       - tradingview-mcp-local
     restart: unless-stopped
