@@ -1,0 +1,36 @@
+services:
+  # Local TradingView MCP Server
+  # Runs on client's machine, connects to their TradingView Desktop
+  tradingview-mcp-local:
+    build:
+      context: .
+      dockerfile: ./Dockerfile.mcp.local
+    ports:
+      - "3000:3000"
+    environment:
+      - PORT=3000
+      - ANTHROPIC_API_KEY=${ANTHROPIC_API_KEY}
+      - NODE_ENV=production
+    volumes:
+      # Allow connection to TradingView Desktop via CDP
+      - /tmp:/tmp
+    restart: unless-stopped
+    healthcheck:
+      test: ["CMD", "curl", "-f", "http://localhost:3000/health"]
+      interval: 30s
+      timeout: 10s
+      retries: 3
+      start_period: 40s
+
+  # ngrok tunnel - exposes local MCP to cloud
+  # Free tier: creates public URL for accessing local service
+  ngrok:
+    image: ngrok/ngrok:latest
+    ports:
+      - "4040:4040"  # ngrok dashboard
+    environment:
+      - NGROK_AUTHTOKEN=${NGROK_AUTHTOKEN}
+    command: http 3000
+    depends_on:
+      - tradingview-mcp-local
+    restart: unless-stopped
