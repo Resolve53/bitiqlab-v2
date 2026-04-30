@@ -1,11 +1,3 @@
-# This file is for reference only
-# Railway will auto-detect Dockerfiles in the repo
-# Configure services manually in Railway dashboard:
-#
-# Service 1: bitiqlab-backend
-# - Dockerfile: backend.Dockerfile
-# - Port: 3001
-#
-# Service 2: tradingview-mcp
-# - Dockerfile: Dockerfile.mcp
-# - Port: 3000
+[build]
+builder = "dockerfile"
+dockerfilePath = "./backend.Dockerfile"
