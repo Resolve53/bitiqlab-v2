@@ -1,6 +1,3 @@
-# Railway Configuration
-# Explicitly configure backend service with Dockerfile
-
 [build]
 builder = "dockerfile"
-dockerfilePath = "backend.Dockerfile"
+dockerfilePath = "./backend.Dockerfile"
