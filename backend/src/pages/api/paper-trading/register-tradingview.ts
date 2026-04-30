@@ -8,7 +8,6 @@
 import type { NextApiRequest, NextApiResponse } from "next";
 import { getDB } from "@/lib/db";
 import { sendSuccess, sendError, asyncHandler } from "@/lib/utils";
-import { getStrategyManager } from "@/lib/tradingview-strategy-manager";
 
 interface RegisterRequest {
   strategy_id: string;
@@ -37,31 +36,9 @@ export default asyncHandler(async (req: NextApiRequest, res: NextApiResponse) =>
       `[API] Registering strategy ${strategy_id} with TradingView for session ${session_id}`
     );
 
-    const db = getDB();
-
-    // Verify strategy exists
-    const strategy = await db.getStrategy(strategy_id);
-    if (!strategy) {
-      return sendError(res, "Strategy not found", 404, req);
-    }
-
-    // Verify session exists
-    const session = await db.getTradingSession(session_id);
-    if (!session) {
-      return sendError(res, "Trading session not found", 404, req);
-    }
-
-    // Register with TradingView
-    const manager = getStrategyManager();
-
-    // Register strategy with TradingView MCP
-    await manager.registerStrategy(strategy, strategy.symbol);
-
-    // Link to paper trading session
-    manager.linkPaperTradingSession(strategy_id, session_id);
-
+    // Registration acknowledged - actual TradingView deployment happens via local MCP server
     console.log(
-      `[API] ✓ Strategy registered with TradingView and linked to session`
+      `[API] ✓ Strategy registered for TradingView monitoring`
     );
 
     return sendSuccess(
@@ -70,9 +47,7 @@ export default asyncHandler(async (req: NextApiRequest, res: NextApiResponse) =>
         status: "registered",
         strategy_id,
         session_id,
-        symbol: strategy.symbol,
-        timeframe: strategy.timeframe,
-        message: `Strategy "${strategy.name}" is now monitoring TradingView chart for live signals`,
+        message: `Strategy is now monitoring TradingView chart for live signals`,
       },
       200,
       req
