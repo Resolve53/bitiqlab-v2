@@ -2,14 +2,12 @@ FROM node:18-alpine
 
 WORKDIR /app
 
-# Copy only needed files for MCP server
-COPY backend/package.json backend/package-lock.json ./
-COPY backend/src ./src
+# Copy backend
+COPY backend/ ./
 
 # Install dependencies
 RUN npm ci
 
-# Expose port
 EXPOSE 3000
 
 # Start MCP server
