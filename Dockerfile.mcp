@@ -6,9 +6,9 @@ WORKDIR /app
 COPY backend/ ./
 
 # Install dependencies
-RUN npm ci
+RUN npm install
 
 EXPOSE 3000
 
-# Start MCP server
-CMD ["node", "src/tradingview-mcp/server.js"]
+# Start MCP HTTP server
+CMD ["node", "mcp-http-server.js"]
