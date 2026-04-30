@@ -8,7 +8,6 @@
 import type { NextApiRequest, NextApiResponse } from "next";
 import { getDB } from "@/lib/db";
 import { sendSuccess, sendError, asyncHandler } from "@/lib/utils";
-import { getStrategyManager } from "@/lib/tradingview-strategy-manager";
 
 interface RegisterRequest {
   strategy_id: string;
@@ -51,17 +50,14 @@ export default asyncHandler(async (req: NextApiRequest, res: NextApiResponse) =>
       return sendError(res, "Trading session not found", 404, req);
     }
 
-    // Register with TradingView
-    const manager = getStrategyManager();
-
-    // Register strategy with TradingView MCP
-    await manager.registerStrategy(strategy, strategy.symbol);
-
-    // Link to paper trading session
-    manager.linkPaperTradingSession(strategy_id, session_id);
+    // Link strategy to session for webhook monitoring
+    await db.updateTradingSession(session_id, {
+      strategy_id: strategy_id,
+      status: "monitoring",
+    });
 
     console.log(
-      `[API] ✓ Strategy registered with TradingView and linked to session`
+      `[API] ✓ Strategy registered and linked to session for TradingView monitoring`
     );
 
     return sendSuccess(
