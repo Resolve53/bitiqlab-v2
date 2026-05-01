@@ -132,8 +132,8 @@ export default function PaperTradingDashboard() {
         });
 
         // Detect new trades and create alerts
-        if (newStats.trades.length > prevTradeCountRef.current) {
-          const newTrades = newStats.trades.slice(prevTradeCountRef.current);
+        if (stats.trades.length > prevTradeCountRef.current) {
+          const newTrades = stats.trades.slice(prevTradeCountRef.current);
           newTrades.forEach((trade: Trade) => {
             sessionStorageManager.addAlert({
               id: "",
@@ -146,7 +146,7 @@ export default function PaperTradingDashboard() {
               data: trade,
             });
           });
-          prevTradeCountRef.current = newStats.trades.length;
+          prevTradeCountRef.current = stats.trades.length;
         }
       }
     } catch (err) {
