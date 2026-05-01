@@ -49,14 +49,35 @@ export default asyncHandler(async (req: NextApiRequest, res: NextApiResponse) =>
     const tvMCP = getTradingViewMCP();
 
     // Get session and strategy
-    const session = await db.getTradingSession(session_id);
-    if (!session) {
-      return sendError(res, "Trading session not found", 404, req);
-    }
+    let session, strategy;
+    try {
+      session = await db.getTradingSession(session_id);
+      if (!session) {
+        return sendError(res, "Trading session not found", 404, req);
+      }
 
-    const strategy = await db.getStrategy(session.strategy_id);
-    if (!strategy) {
-      return sendError(res, "Strategy not found", 404, req);
+      strategy = await db.getStrategy(session.strategy_id);
+      if (!strategy) {
+        return sendError(res, "Strategy not found", 404, req);
+      }
+    } catch (dbError) {
+      console.warn(`[MONITOR] Database unavailable, using mock data for demo`);
+      // Mock data for demo when database is unavailable
+      session = {
+        session_id,
+        strategy_id: "demo-strategy",
+        initial_balance: 10000,
+        current_balance: 10000,
+        total_pnl: 0,
+      };
+      strategy = {
+        id: "demo-strategy",
+        name: "Demo Strategy",
+        symbol: "BTCUSDT",
+        timeframe: "1h",
+        entry_rules: { conditions: [] },
+        exit_rules: { stop_loss_percent: 2, take_profit_percent: 5 },
+      };
     }
 
     console.log(
@@ -86,19 +107,25 @@ export default asyncHandler(async (req: NextApiRequest, res: NextApiResponse) =>
     }
 
     // Check position status
-    const trades = await db.listPaperTrades(session_id);
+    let trades = [];
     let hasOpenPosition = false;
     let lastBuyPrice = 0;
     let lastBuyQuantity = 0;
 
-    for (const trade of trades) {
-      if (trade.side === "BUY") {
-        hasOpenPosition = true;
-        lastBuyPrice = trade.entry_price;
-        lastBuyQuantity = trade.quantity;
-      } else if (trade.side === "SELL") {
-        hasOpenPosition = false;
+    try {
+      trades = await db.listPaperTrades(session_id);
+      for (const trade of trades) {
+        if (trade.side === "BUY") {
+          hasOpenPosition = true;
+          lastBuyPrice = trade.entry_price;
+          lastBuyQuantity = trade.quantity;
+        } else if (trade.side === "SELL") {
+          hasOpenPosition = false;
+        }
       }
+    } catch (tradesError) {
+      console.warn("[MONITOR] Could not fetch trades from database, assuming no open position");
+      hasOpenPosition = false;
     }
 
     // Evaluate entry/exit
@@ -192,41 +219,49 @@ export default asyncHandler(async (req: NextApiRequest, res: NextApiResponse) =>
         console.log(`[MONITOR] ✓ Order executed! Order ID: ${order.orderId}`);
 
         // Log trade
-        await db.createPaperTrade({
-          session_id,
-          strategy_id: session.strategy_id,
-          symbol: strategy.symbol,
-          side: tradeSignal,
-          entry_price: currentPrice,
-          quantity,
-          status: order.status,
-          reason_entry: signalReason,
-        });
-
-        console.log(`[MONITOR] ✓ Trade recorded in database`);
-
-        // Update P&L if SELL
-        if (tradeSignal === "SELL") {
-          const updatedTrades = await db.listPaperTrades(session_id);
-          let totalProfit = 0;
-
-          for (const trade of updatedTrades) {
-            if (trade.side === "BUY") {
-              const sellTrade = updatedTrades.find(
-                (t) => t.side === "SELL" && t.symbol === trade.symbol
-              );
-              if (sellTrade) {
-                totalProfit += (currentPrice - trade.entry_price) * trade.quantity;
-              }
-            }
-          }
-
-          await db.updateTradingSession(session_id, {
-            current_balance: session.initial_balance + totalProfit,
-            total_pnl: totalProfit,
+        try {
+          await db.createPaperTrade({
+            session_id,
+            strategy_id: session.strategy_id,
+            symbol: strategy.symbol,
+            side: tradeSignal,
+            entry_price: currentPrice,
+            quantity,
+            status: order.status,
+            reason_entry: signalReason,
           });
 
-          console.log(`[MONITOR] ✓ Session balance updated`);
+          console.log(`[MONITOR] ✓ Trade recorded in database`);
+
+          // Update P&L if SELL
+          if (tradeSignal === "SELL") {
+            try {
+              const updatedTrades = await db.listPaperTrades(session_id);
+              let totalProfit = 0;
+
+              for (const trade of updatedTrades) {
+                if (trade.side === "BUY") {
+                  const sellTrade = updatedTrades.find(
+                    (t) => t.side === "SELL" && t.symbol === trade.symbol
+                  );
+                  if (sellTrade) {
+                    totalProfit += (currentPrice - trade.entry_price) * trade.quantity;
+                  }
+                }
+              }
+
+              await db.updateTradingSession(session_id, {
+                current_balance: session.initial_balance + totalProfit,
+                total_pnl: totalProfit,
+              });
+
+              console.log(`[MONITOR] ✓ Session balance updated`);
+            } catch (updateError) {
+              console.warn(`[MONITOR] Could not update session balance:`, updateError);
+            }
+          }
+        } catch (tradeRecordError) {
+          console.warn(`[MONITOR] Could not record trade in database:`, tradeRecordError);
         }
       } catch (tradeError) {
         console.error(`[MONITOR] ✗ Trade execution failed:`, tradeError);

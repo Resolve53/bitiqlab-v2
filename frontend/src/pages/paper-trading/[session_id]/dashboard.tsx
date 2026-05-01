@@ -1,6 +1,7 @@
-import { useEffect, useState } from "react";
+import { useEffect, useState, useRef } from "react";
 import { useRouter } from "next/router";
 import axios from "axios";
+import Script from "next/script";
 
 interface Trade {
   id: string;
@@ -50,6 +51,7 @@ export default function PaperTradingDashboard() {
   const [monitoring, setMonitoring] = useState(false);
   const [registering, setRegistering] = useState(false);
   const [registered, setRegistered] = useState(false);
+  const [registrationData, setRegistrationData] = useState<any>(null);
 
   useEffect(() => {
     if (!session_id) return;
@@ -59,6 +61,17 @@ export default function PaperTradingDashboard() {
 
     return () => clearInterval(interval);
   }, [session_id]);
+
+  // Continuous monitoring loop
+  useEffect(() => {
+    if (!monitoring || !session_id) return;
+
+    const monitoringInterval = setInterval(() => {
+      handleStartMonitoring();
+    }, 5000); // Call monitor endpoint every 5 seconds
+
+    return () => clearInterval(monitoringInterval);
+  }, [monitoring, session_id]);
 
   const fetchStats = async () => {
     try {
@@ -78,16 +91,19 @@ export default function PaperTradingDashboard() {
 
   const handleStartMonitoring = async () => {
     try {
-      setMonitoring(true);
       const apiUrl = process.env.NEXT_PUBLIC_API_URL || "http://localhost:3000";
-      await axios.post(`${apiUrl}/api/paper-trading/monitor`, {
+      const response = await axios.post(`${apiUrl}/api/paper-trading/monitor`, {
         session_id,
         auto_trade: autoTrade,
       });
-      fetchStats();
+      console.log("[Monitor] Cycle completed:", response.data);
+      // Refresh stats after monitoring cycle
+      await fetchStats();
     } catch (err) {
-      setError(err instanceof Error ? err.message : "Failed to start monitoring");
-      setMonitoring(false);
+      const errorMsg = err instanceof Error ? err.message : "Failed to monitor session";
+      console.error("[Monitor] Error:", errorMsg);
+      setError(errorMsg);
+      // Don't disable monitoring on error - let it retry next cycle
     }
   };
 
@@ -101,11 +117,12 @@ export default function PaperTradingDashboard() {
     try {
       setRegistering(true);
       const apiUrl = process.env.NEXT_PUBLIC_API_URL || "http://localhost:3000";
-      await axios.post(`${apiUrl}/api/paper-trading/register-tradingview`, {
+      const response = await axios.post(`${apiUrl}/api/paper-trading/register-tradingview`, {
         strategy_id: stats.strategy_id,
         session_id: session_id,
       });
       setRegistered(true);
+      setRegistrationData(response.data.data);
       setError(null);
     } catch (err) {
       setError(err instanceof Error ? err.message : "Failed to register with TradingView");
@@ -174,11 +191,24 @@ export default function PaperTradingDashboard() {
         </div>
       </header>
 
+      {/* TradingView Chart Script */}
+      <Script
+        src="https://s3.tradingview.com/tv.js"
+        strategy="lazyOnload"
+      />
+
       {/* Main Content */}
       <main className="max-w-7xl mx-auto px-4 sm:px-6 lg:px-8 py-8">
         {error && (
           <div className="mb-4 p-4 bg-red-900/30 border border-red-700/50 rounded-lg">
             <p className="text-red-300">Error: {error}</p>
+          </div>
+        )}
+
+        {/* TradingView Chart */}
+        {stats && (
+          <div className="mb-8 bg-slate-800/50 border border-slate-700 rounded-lg overflow-hidden">
+            <TradingViewChart symbol={stats.open_positions[0]?.symbol || "BTCUSDT"} />
           </div>
         )}
 
@@ -239,23 +269,42 @@ export default function PaperTradingDashboard() {
             <div className="pt-4 border-t border-slate-700">
               <p className="text-slate-400 text-sm mb-3">
                 {registered
-                  ? "✓ Strategy registered with TradingView - Monitoring real-time chart signals"
-                  : "Connect to TradingView to automatically add technical indicators and monitor live chart signals"
+                  ? "✓ Strategy registered with TradingView - Monitor live chart signals"
+                  : "Connect to TradingView to automatically monitor live chart signals and execute trades"
                 }
               </p>
-              <button
-                onClick={handleRegisterTradingView}
-                disabled={registering || registered}
-                className={`px-4 py-2 rounded-lg font-semibold transition ${
-                  registered
-                    ? "bg-emerald-900/30 text-emerald-400 cursor-default"
-                    : registering
-                    ? "bg-slate-600 text-slate-400 cursor-wait"
-                    : "bg-blue-600 hover:bg-blue-500 text-white cursor-pointer"
-                }`}
-              >
-                {registered ? "✓ Registered with TradingView" : registering ? "Registering..." : "Register with TradingView"}
-              </button>
+              <div className="flex gap-3 items-center">
+                <button
+                  onClick={handleRegisterTradingView}
+                  disabled={registering || registered}
+                  className={`px-4 py-2 rounded-lg font-semibold transition ${
+                    registered
+                      ? "bg-emerald-900/30 text-emerald-400 cursor-default"
+                      : registering
+                      ? "bg-slate-600 text-slate-400 cursor-wait"
+                      : "bg-blue-600 hover:bg-blue-500 text-white cursor-pointer"
+                  }`}
+                >
+                  {registered ? "✓ Registered with TradingView" : registering ? "Registering..." : "Register with TradingView"}
+                </button>
+                {registered && registrationData?.tradingview_url && (
+                  <a
+                    href={registrationData.tradingview_url}
+                    target="_blank"
+                    rel="noopener noreferrer"
+                    className="px-4 py-2 bg-purple-600 hover:bg-purple-500 text-white rounded-lg font-semibold transition"
+                  >
+                    Open TradingView →
+                  </a>
+                )}
+              </div>
+
+              {registered && registrationData?.setup_guide && (
+                <div className="mt-4 p-3 bg-blue-900/20 border border-blue-700/50 rounded-lg">
+                  <p className="text-blue-300 text-sm font-semibold mb-2">📋 TradingView Setup Guide:</p>
+                  <p className="text-blue-300/80 text-sm whitespace-pre-wrap">{registrationData.setup_guide}</p>
+                </div>
+              )}
             </div>
           </div>
         </div>
@@ -361,6 +410,57 @@ export default function PaperTradingDashboard() {
           )}
         </div>
       </main>
+    </div>
+  );
+}
+
+function TradingViewChart({ symbol }: { symbol: string }) {
+  const containerRef = useRef<HTMLDivElement>(null);
+
+  useEffect(() => {
+    if (!containerRef.current) return;
+
+    const script = document.createElement("script");
+    script.src = "https://s3.tradingview.com/tv.js";
+    script.async = true;
+    script.onload = () => {
+      if (typeof (window as any).TradingView !== "undefined") {
+        new (window as any).TradingView.widget({
+          autosize: true,
+          symbol: symbol,
+          interval: "D",
+          timezone: "Etc/UTC",
+          theme: "dark",
+          style: "1",
+          locale: "en",
+          toolbar_bg: "rgba(255, 0, 0, 0)",
+          enable_publishing: false,
+          withdateranges: true,
+          allow_symbol_change: true,
+          details: true,
+          hotlist: true,
+          calendar: false,
+          studies: ["RSI", "MACD", "BB@tv-basicstudies"],
+          container_id: "tradingview-chart",
+        });
+      }
+    };
+    containerRef.current.appendChild(script);
+
+    return () => {
+      if (containerRef.current && script.parentNode) {
+        script.parentNode.removeChild(script);
+      }
+    };
+  }, [symbol]);
+
+  return (
+    <div>
+      <div className="px-6 py-4 border-b border-slate-700 bg-slate-900">
+        <h2 className="text-xl font-bold text-white">📈 Live Chart - {symbol}</h2>
+        <p className="text-sm text-slate-400 mt-1">Real-time price action with technical indicators</p>
+      </div>
+      <div ref={containerRef} style={{ height: "500px" }} id="tradingview-chart" />
     </div>
   );
 }
