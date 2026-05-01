@@ -7,8 +7,8 @@
 
 const express = require('express');
 const axios = require('axios');
-const { spawn } = require('child_process');
 const { Anthropic } = require('@anthropic-ai/sdk');
+const CDP = require('chrome-remote-interface');
 
 const app = express();
 const port = process.env.PORT || 3000;
@@ -18,89 +18,216 @@ const client = new Anthropic({
   apiKey: process.env.ANTHROPIC_API_KEY,
 });
 
-// MCP Server management
-let mcpProcess = null;
-let mcpMessageId = 0;
-const mcpPendingRequests = new Map();
+// ============================================
+// TradingView MCP Tools
+// ============================================
+let cdpClient = null;
+
+async function connectTradingView() {
+  if (cdpClient) {
+    return cdpClient;
+  }
+
+  try {
+    const cdpPort = process.env.CDP_PORT || 9222;
+    const cdpHost = process.env.CDP_HOST || 'localhost';
+    console.log(`[MCP] Connecting to TradingView at ${cdpHost}:${cdpPort}...`);
+
+    cdpClient = await CDP({
+      host: cdpHost,
+      port: cdpPort,
+    });
+
+    const { Page, Runtime } = cdpClient;
+    await Page.enable();
+    await Runtime.enable();
+
+    console.log('[MCP] ✓ Connected to TradingView Desktop via CDP');
+    return cdpClient;
+  } catch (error) {
+    console.error('[MCP] ✗ Failed to connect to TradingView:', error.message);
+    console.error('[MCP] Make sure TradingView Desktop is running with: --remote-debugging-port=9222');
+    cdpClient = null;
+    throw error;
+  }
+}
+
+async function executeScriptOnChart(script) {
+  try {
+    const client = await connectTradingView();
+    const { Runtime } = client;
+    const result = await Runtime.evaluate({
+      expression: script,
+      returnByValue: true,
+    });
+
+    if (result.exceptionDetails) {
+      throw new Error(result.exceptionDetails.text);
+    }
+
+    return result.result.value;
+  } catch (error) {
+    throw error;
+  }
+}
+
+async function callMCPTool(toolName, args) {
+  switch (toolName) {
+    case 'pine_set_source':
+      return await setPineSource(args.source);
+    case 'chart_set_symbol':
+      return await setChartSymbol(args.symbol);
+    case 'pine_smart_compile':
+      return await compilePineScript();
+    case 'chart_get_state':
+      return await getChartState();
+    case 'quote_get':
+      return await getQuote(args.symbol);
+    default:
+      throw new Error(`Unknown tool: ${toolName}`);
+  }
+}
+
+async function setPineSource(source) {
+  console.log('[MCP] Setting Pine Script source...');
+
+  const script = `
+    (async () => {
+      const editor = document.querySelector('[data-testid="pine-editor"]') ||
+                    document.querySelector('[class*="PineEditor"]') ||
+                    document.querySelector('textarea[class*="pine" i]');
+
+      if (!editor) {
+        return { error: 'Pine Script editor not found' };
+      }
+
+      const textarea = editor.querySelector('textarea') || editor.querySelector('[contenteditable="true"]');
+      if (textarea) {
+        textarea.value = \`${source.replace(/`/g, '\\`')}\`;
+        textarea.dispatchEvent(new Event('input', { bubbles: true }));
+        textarea.dispatchEvent(new Event('change', { bubbles: true }));
+        return { success: true, message: 'Pine Script source set' };
+      }
+
+      return { error: 'Could not set source code' };
+    })();
+  `;
+
+  const result = await executeScriptOnChart(script);
+  return result || { error: 'No result from script' };
+}
+
+async function setChartSymbol(symbol) {
+  console.log(`[MCP] Setting chart symbol to ${symbol}...`);
+
+  const script = `
+    (async () => {
+      const symbolInput = document.querySelector('input[placeholder*="Search"]') ||
+                         document.querySelector('input[placeholder*="Symbol"]') ||
+                         document.querySelector('[data-testid="symbol-search-input"]');
+
+      if (!symbolInput) {
+        return { error: 'Symbol input not found' };
+      }
+
+      symbolInput.value = '${symbol}';
+      symbolInput.dispatchEvent(new Event('input', { bubbles: true }));
+      symbolInput.dispatchEvent(new Event('change', { bubbles: true }));
+
+      await new Promise(resolve => setTimeout(resolve, 500));
+
+      const firstResult = document.querySelector('[data-testid="symbol-search-result"]') ||
+                         document.querySelector('[class*="searchResult"]');
+      if (firstResult) {
+        firstResult.click();
+      } else {
+        symbolInput.dispatchEvent(new KeyboardEvent('keydown', { key: 'Enter', code: 'Enter' }));
+      }
+
+      return { success: true, message: 'Symbol set to ' + '${symbol}' };
+    })();
+  `;
+
+  const result = await executeScriptOnChart(script);
+  return result || { error: 'No result from script' };
+}
+
+async function compilePineScript() {
+  console.log('[MCP] Compiling Pine Script...');
+
+  const script = `
+    (async () => {
+      const compileBtn = document.querySelector('button[title*="Compile" i]') ||
+                        document.querySelector('button[aria-label*="Compile" i]') ||
+                        Array.from(document.querySelectorAll('button')).find(b => b.textContent.toLowerCase().includes('compile'));
+
+      if (!compileBtn) {
+        return { error: 'Compile button not found' };
+      }
+
+      compileBtn.click();
+      await new Promise(resolve => setTimeout(resolve, 2000));
+
+      const errors = document.querySelectorAll('[class*="error" i]');
+      if (errors.length > 0) {
+        return { error: 'Compilation failed with errors' };
+      }
+
+      return { success: true, message: 'Pine Script compiled successfully' };
+    })();
+  `;
+
+  const result = await executeScriptOnChart(script);
+  return result || { error: 'No result from script' };
+}
+
+async function getChartState() {
+  console.log('[MCP] Getting chart state...');
+
+  const script = `
+    (async () => {
+      const symbolEl = document.querySelector('[data-testid="symbol-text"]') ||
+                      document.querySelector('[class*="symbolName"]') ||
+                      Array.from(document.querySelectorAll('span')).find(s => /^[A-Z]+/.test(s.textContent));
+
+      const timeframeEl = document.querySelector('[data-testid="timeframe-button"]') ||
+                         document.querySelector('[class*="timeframe"]') ||
+                         Array.from(document.querySelectorAll('button')).find(b => /^[0-9]+(M|H|D|W|mo)$/i.test(b.textContent));
+
+      return {
+        symbol: symbolEl?.textContent?.trim() || 'UNKNOWN',
+        timeframe: timeframeEl?.textContent?.trim() || '1D',
+        timestamp: Date.now(),
+      };
+    })();
+  `;
+
+  const result = await executeScriptOnChart(script);
+  return result || { symbol: 'UNKNOWN', timeframe: '1D' };
+}
+
+async function getQuote(symbol) {
+  console.log(`[MCP] Getting quote for ${symbol}...`);
+
+  try {
+    const response = await fetch(
+      `https://api.binance.com/api/v3/ticker/24hr?symbol=${symbol.toUpperCase()}`
+    );
+    const data = await response.json();
+
+    return {
+      symbol: symbol.toUpperCase(),
+      price: parseFloat(data.lastPrice),
+      high: parseFloat(data.highPrice),
+      low: parseFloat(data.lowPrice),
+      volume: parseFloat(data.volume),
+    };
+  } catch (error) {
+    throw error;
+  }
+}
 
 app.use(express.json());
-
-// ============================================
-// Start MCP Server
-// ============================================
-function startMCPServer() {
-  console.log('[MCP HTTP] Spawning TradingView MCP server...');
-
-  mcpProcess = spawn('node', [__dirname + '/tradingview-mcp-server.js'], {
-    stdio: ['pipe', 'pipe', 'inherit'],
-  });
-
-  mcpProcess.stdout.on('data', (data) => {
-    const lines = data.toString().split('\n').filter(l => l.trim());
-    for (const line of lines) {
-      try {
-        const message = JSON.parse(line);
-        if (message.id && mcpPendingRequests.has(message.id)) {
-          const request = mcpPendingRequests.get(message.id);
-          clearTimeout(request.timeout);
-          mcpPendingRequests.delete(message.id);
-
-          if (message.error) {
-            request.reject(new Error(message.error.message));
-          } else {
-            request.resolve(message.result);
-          }
-        }
-      } catch (err) {
-        // Ignore non-JSON lines (logs)
-      }
-    }
-  });
-
-  mcpProcess.on('error', (err) => {
-    console.error('[MCP HTTP] MCP server error:', err);
-  });
-
-  mcpProcess.on('exit', (code) => {
-    console.log('[MCP HTTP] MCP server exited with code', code);
-    mcpProcess = null;
-  });
-}
-
-// ============================================
-// Call MCP Tools via stdio
-// ============================================
-function callMCPTool(toolName, args) {
-  return new Promise((resolve, reject) => {
-    if (!mcpProcess) {
-      reject(new Error('MCP server not running'));
-      return;
-    }
-
-    const id = ++mcpMessageId;
-    const timeout = setTimeout(() => {
-      mcpPendingRequests.delete(id);
-      reject(new Error(`MCP tool ${toolName} timeout`));
-    }, 15000);
-
-    mcpPendingRequests.set(id, { resolve, reject, timeout });
-
-    const message = {
-      jsonrpc: '2.0',
-      id,
-      method: toolName,
-      params: args,
-    };
-
-    try {
-      mcpProcess.stdin.write(JSON.stringify(message) + '\n');
-    } catch (error) {
-      mcpPendingRequests.delete(id);
-      clearTimeout(timeout);
-      reject(error);
-    }
-  });
-}
 
 // ============================================
 // Health Check
@@ -318,9 +445,8 @@ const server = app.listen(port, '0.0.0.0', () => {
   );
   console.log(`✓ Health check: http://localhost:${port}/health`);
   console.log(`✓ API ready to receive strategy creation requests`);
-
-  // Start the MCP server
-  startMCPServer();
+  console.log(`✓ CDP port: ${process.env.CDP_PORT || 9222}`);
+  console.log(`✓ CDP host: ${process.env.CDP_HOST || 'localhost'}`);
 });
 
 server.on('error', (err) => {
@@ -331,8 +457,8 @@ server.on('error', (err) => {
 // Handle graceful shutdown
 process.on('SIGTERM', () => {
   console.log('Shutting down...');
-  if (mcpProcess) {
-    mcpProcess.kill();
+  if (cdpClient) {
+    cdpClient.close().catch(() => {});
   }
   server.close();
 });
