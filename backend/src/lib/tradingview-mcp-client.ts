@@ -81,25 +81,6 @@ class TradingViewMCPClient {
       }
     });
   }
-          this.isConnected = false;
-        });
-
-        // Connection timeout
-        const timeout = setTimeout(() => {
-          reject(new Error("TradingView MCP connection timeout"));
-        }, 5000);
-
-        setTimeout(() => {
-          clearTimeout(timeout);
-          this.isConnected = true;
-          console.log("[TradingView MCP] ✓ Connected successfully");
-          resolve();
-        }, 1000);
-      } catch (error) {
-        reject(error);
-      }
-    });
-  }
 
   /**
    * Get real-time price from Binance (fallback since TradingView Desktop is local)
