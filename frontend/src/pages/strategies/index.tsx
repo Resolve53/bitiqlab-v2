@@ -3,6 +3,7 @@ import axios from "axios";
 import { useRouter } from "next/router";
 import BacktestModal from "@/components/BacktestModal";
 import PaperTradingModal from "@/components/PaperTradingModal";
+import MonitoringSettingsModal from "@/components/MonitoringSettingsModal";
 
 interface Strategy {
   id: string;
@@ -216,6 +217,8 @@ function StrategyCard({ strategy, onRunBacktest, onStartPaperTrading, onStatusCh
   const router = useRouter();
   const [showStatusMenu, setShowStatusMenu] = useState(false);
   const [loadingSession, setLoadingSession] = useState(false);
+  const [showMonitoringSettings, setShowMonitoringSettings] = useState(false);
+  const [sessionId, setSessionId] = useState<string | undefined>(undefined);
 
   const statusColors: Record<string, string> = {
     draft: "bg-slate-700/50 text-slate-300",
@@ -255,6 +258,26 @@ function StrategyCard({ strategy, onRunBacktest, onStartPaperTrading, onStatusCh
       alert("Could not find trading session. Make sure you have an active paper trading session.");
     } finally {
       setLoadingSession(false);
+    }
+  };
+
+  const handleViewMonitoringSettings = async () => {
+    try {
+      const apiUrl = process.env.NEXT_PUBLIC_API_URL || "http://localhost:3000";
+      const response = await axios.get(
+        `${apiUrl}/api/paper-trading/sessions?strategy_id=${strategy.id}&limit=1`
+      );
+
+      if (response.data.data?.sessions && response.data.data.sessions.length > 0) {
+        const session = response.data.data.sessions[0];
+        setSessionId(session.session_id);
+        setShowMonitoringSettings(true);
+      } else {
+        alert("No active trading session found. Start a paper trading session first.");
+      }
+    } catch (error) {
+      console.error("Error fetching trading session:", error);
+      alert("Could not find trading session.");
     }
   };
 
@@ -351,6 +374,14 @@ function StrategyCard({ strategy, onRunBacktest, onStartPaperTrading, onStatusCh
             {loadingSession ? "⏳" : "👁️"} Live
           </button>
 
+          <button
+            onClick={handleViewMonitoringSettings}
+            className="bg-indigo-600 hover:bg-indigo-500 text-white px-3 py-1 rounded text-sm font-medium whitespace-nowrap transition"
+            title="View monitoring configuration"
+          >
+            ⚙️ Settings
+          </button>
+
           <a
             href={`/strategies/${strategy.id}/analysis`}
             className="bg-emerald-600 hover:bg-emerald-500 text-white px-3 py-1 rounded text-sm font-medium whitespace-nowrap transition text-center"
@@ -373,6 +404,14 @@ function StrategyCard({ strategy, onRunBacktest, onStartPaperTrading, onStatusCh
           </button>
         </div>
       </div>
+
+      {/* Monitoring Settings Modal */}
+      <MonitoringSettingsModal
+        isOpen={showMonitoringSettings}
+        onClose={() => setShowMonitoringSettings(false)}
+        sessionId={sessionId}
+        strategyId={strategy.id}
+      />
     </div>
   );
 }
