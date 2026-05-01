@@ -108,10 +108,20 @@ export default asyncHandler(async (req: NextApiRequest, res: NextApiResponse) =>
 
     if (!hasOpenPosition) {
       // Entry signal
+      // Convert entry_rules array to proper format
+      let entryRules: any = { conditions: [] };
+      if (strategy.entry_rules) {
+        if (Array.isArray(strategy.entry_rules)) {
+          entryRules = { conditions: strategy.entry_rules };
+        } else {
+          entryRules = strategy.entry_rules;
+        }
+      }
+
       const entrySignal = await evaluator.evaluateEntry(
         strategy.symbol,
         strategy.timeframe,
-        strategy.entry_rules || { indicators: ["RSI", "MACD"], conditions: [] },
+        entryRules,
         currentPrice
       );
 
@@ -127,10 +137,18 @@ export default asyncHandler(async (req: NextApiRequest, res: NextApiResponse) =>
       }
     } else {
       // Exit signal
-      const exitRules = strategy.exit_rules || {
+      // Convert exit_rules to proper format
+      let exitRules: any = {
         stop_loss_percent: 2,
         take_profit_percent: 5,
       };
+      if (strategy.exit_rules) {
+        if (Array.isArray(strategy.exit_rules)) {
+          exitRules.conditions = strategy.exit_rules;
+        } else {
+          exitRules = { ...exitRules, ...strategy.exit_rules };
+        }
+      }
 
       const exitSignal = await evaluator.evaluateExit(
         strategy.symbol,
