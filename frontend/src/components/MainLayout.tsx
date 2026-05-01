@@ -1,4 +1,5 @@
 import { ReactNode, useState } from "react";
+import { useRouter } from "next/router";
 import Sidebar from "./Sidebar";
 
 interface MainLayoutProps {
@@ -49,7 +50,6 @@ function SidebarContent({
   sidebarOpen: boolean;
   setSidebarOpen: (open: boolean) => void;
 }) {
-  const { useRouter } = require("next/router");
   const router = useRouter();
 
   const navItems = [
