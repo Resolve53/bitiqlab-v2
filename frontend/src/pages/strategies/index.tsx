@@ -86,7 +86,7 @@ export default function StrategiesPage() {
             <h1 className="text-4xl font-bold text-white">Strategies</h1>
             <p className="mt-2 text-slate-400">Manage and monitor trading strategies</p>
           </div>
-          <div className="flex gap-3">
+          <div className="flex gap-3 flex-wrap">
             <a
               href="/trading"
               className="bg-emerald-600 hover:bg-emerald-500 text-white font-bold py-2 px-4 rounded-lg transition"
@@ -104,6 +104,12 @@ export default function StrategiesPage() {
               className="bg-blue-600 hover:bg-blue-500 text-white font-bold py-2 px-4 rounded-lg transition"
             >
               ✨ Claude AI
+            </a>
+            <a
+              href="/strategies/debug-pinescript"
+              className="bg-yellow-600 hover:bg-yellow-500 text-white font-bold py-2 px-4 rounded-lg transition"
+            >
+              🐛 Debug Script
             </a>
             <a
               href="/strategies/new"
