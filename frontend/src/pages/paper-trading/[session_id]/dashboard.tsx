@@ -25,6 +25,17 @@ interface OpenPosition {
   unrealized_pl: number;
 }
 
+interface MonitorConfig {
+  coin_count: number;
+  custom_coins: string[];
+  scan_frequency: number;
+  position_size_per_coin: number;
+  max_concurrent_positions: number;
+  stop_loss_percent: number;
+  take_profit_percent: number;
+  trading_type: "spot" | "futures";
+}
+
 interface SessionStats {
   session_id: string;
   strategy_id: string;
@@ -42,6 +53,8 @@ interface SessionStats {
   win_rate: number;
   trades: Trade[];
   open_positions: OpenPosition[];
+  multi_coin_config?: MonitorConfig;
+  coins_being_monitored?: string[];
 }
 
 export default function PaperTradingDashboard() {
@@ -88,18 +101,29 @@ export default function PaperTradingDashboard() {
       const response = await axios.get(
         `${apiUrl}/api/paper-trading/${session_id}/status`
       );
-      const newStats = response.data.data;
-      setStats(newStats);
+      const stats = response.data.data;
+      setStats(stats);
+
+      // Load monitored coins from multi-coin config if available
+      if (stats.coins_being_monitored && stats.coins_being_monitored.length > 0) {
+        setMonitoredCoins(stats.coins_being_monitored);
+        setMultiCoinConfig(stats.multi_coin_config);
+        // Auto-enable monitoring if config exists
+        if (stats.multi_coin_config) {
+          setMonitoring(true);
+        }
+      }
+
       setError(null);
 
       // Save session settings to localStorage
-      if (newStats && typeof session_id === "string") {
+      if (stats && typeof session_id === "string") {
         sessionStorageManager.saveSessionSettings({
           session_id,
-          strategy_id: newStats.strategy_id,
-          symbol: newStats.trades[0]?.symbol || "BTCUSDT",
+          strategy_id: stats.strategy_id,
+          symbol: stats.trades[0]?.symbol || "BTCUSDT",
           timeframe: "1h",
-          initial_balance: newStats.initial_balance,
+          initial_balance: stats.initial_balance,
           auto_trade: autoTrade,
           monitoring_enabled: monitoring,
           monitored_coins: monitoredCoins,
@@ -108,8 +132,8 @@ export default function PaperTradingDashboard() {
         });
 
         // Detect new trades and create alerts
-        if (newStats.trades.length > prevTradeCountRef.current) {
-          const newTrades = newStats.trades.slice(prevTradeCountRef.current);
+        if (stats.trades.length > prevTradeCountRef.current) {
+          const newTrades = stats.trades.slice(prevTradeCountRef.current);
           newTrades.forEach((trade: Trade) => {
             sessionStorageManager.addAlert({
               id: "",
@@ -122,7 +146,7 @@ export default function PaperTradingDashboard() {
               data: trade,
             });
           });
-          prevTradeCountRef.current = newStats.trades.length;
+          prevTradeCountRef.current = stats.trades.length;
         }
       }
     } catch (err) {
