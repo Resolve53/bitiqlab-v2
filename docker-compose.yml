@@ -10,6 +10,8 @@ services:
     environment:
       - PORT=3000
       - ANTHROPIC_API_KEY=${ANTHROPIC_API_KEY}
+      - CDP_PORT=9222
+      - CDP_HOST=host.docker.internal
       - NODE_ENV=production
     volumes:
       # Allow connection to TradingView Desktop via CDP
