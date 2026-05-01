@@ -53,16 +53,27 @@ export class StrategyEvaluator {
       let reason = "";
       const signalReasons: string[] = [];
 
-      // Evaluate based on indicator keywords in entry rules
-      if (entryRules.indicators && indicators) {
+      // Normalize entry rules — conditions may be string or array from DB
+      const ruleIndicators = Array.isArray(entryRules.indicators) ? entryRules.indicators : [];
+      const ruleConditions = Array.isArray(entryRules.conditions)
+        ? entryRules.conditions.map((c) => String(c).toLowerCase())
+        : typeof entryRules.conditions === "string"
+        ? [String(entryRules.conditions).toLowerCase()]
+        : [];
+
+      const hasKeyword = (kw: string) =>
+        ruleIndicators.some((i) => String(i).toLowerCase().includes(kw)) ||
+        ruleConditions.some((c) => c.includes(kw));
+
+      if (indicators) {
         // RSI-based signals
-        if (
-          entryRules.indicators.includes("rsi") ||
-          (Array.isArray(entryRules.conditions) && entryRules.conditions.some((c) => c.toLowerCase().includes("rsi")))
-        ) {
+        if (hasKeyword("rsi")) {
           if (indicators.rsi < 30) {
             signalReasons.push("RSI oversold (<30)");
             confidence += 30;
+          } else if (indicators.rsi < 40) {
+            signalReasons.push("RSI approaching oversold (<40)");
+            confidence += 15;
           } else if (indicators.rsi > 70) {
             signalReasons.push("RSI overbought (>70)");
             confidence -= 20;
@@ -70,10 +81,7 @@ export class StrategyEvaluator {
         }
 
         // MACD-based signals
-        if (
-          entryRules.indicators.includes("macd") ||
-          (Array.isArray(entryRules.conditions) && entryRules.conditions.some((c) => c.toLowerCase().includes("macd")))
-        ) {
+        if (hasKeyword("macd")) {
           if (
             indicators.macd.line > indicators.macd.signal &&
             indicators.macd.histogram > 0
@@ -84,15 +92,13 @@ export class StrategyEvaluator {
         }
 
         // Bollinger Bands
-        if (
-          entryRules.indicators.includes("bollinger") ||
-          (Array.isArray(entryRules.conditions) && entryRules.conditions.some((c) =>
-            c.toLowerCase().includes("bollinger")
-          ))
-        ) {
+        if (hasKeyword("bollinger") || hasKeyword("band")) {
           if (currentPrice < indicators.bollinger_bands.lower) {
             signalReasons.push("Price below lower Bollinger Band");
             confidence += 25;
+          } else if (currentPrice < indicators.bollinger_bands.middle) {
+            signalReasons.push("Price below Bollinger midline");
+            confidence += 10;
           } else if (currentPrice > indicators.bollinger_bands.upper) {
             signalReasons.push("Price above upper Bollinger Band");
             confidence -= 15;
@@ -100,18 +106,24 @@ export class StrategyEvaluator {
         }
 
         // Moving Averages
-        if (
-          entryRules.indicators.includes("moving_average") ||
-          entryRules.conditions?.some((c) =>
-            c.toLowerCase().includes("moving average")
-          )
-        ) {
+        if (hasKeyword("moving_average") || hasKeyword("moving average") || hasKeyword("sma") || hasKeyword("ema")) {
           if (currentPrice > indicators.sma_20 && indicators.sma_20 > indicators.sma_50) {
             signalReasons.push("Price above MA20, MA20 > MA50 (uptrend)");
             confidence += 25;
           } else if (currentPrice < indicators.sma_20 && indicators.sma_20 < indicators.sma_50) {
             signalReasons.push("Price below MA20, MA20 < MA50 (downtrend)");
             confidence -= 20;
+          }
+        }
+
+        // If no specific indicators matched, apply a simple price momentum check
+        if (signalReasons.length === 0) {
+          if (indicators.rsi < 40 && indicators.macd.line > indicators.macd.signal) {
+            signalReasons.push("RSI oversold with MACD bullish bias");
+            confidence += 35;
+          } else if (indicators.rsi > 60) {
+            signalReasons.push("RSI elevated — waiting for pullback");
+            confidence += 5;
           }
         }
       }
