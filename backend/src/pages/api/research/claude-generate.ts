@@ -211,16 +211,22 @@ function generateStrategy(symbol: string, ideaText: string, indicators: any) {
     name: `${strategyName || symbol} Strategy`,
     description: `Trading strategy based on user idea: "${ideaText}". Uses ${mentionedIndicators.join(", ")} to identify trading signals.`,
     entry_rules: {
-      indicators: mentionedIndicators,
-      conditions: `Entry when: ${ideaText}. Monitor ${mentionedIndicators.join(", ")} for confirmation.`,
-      example: `Current ${symbol} RSI: ${indicators.rsi.toFixed(0)}, MACD: ${indicators.macd.line.toFixed(2)}`,
+      indicators: mentionedIndicators.map(i => i.toLowerCase().replace(" ", "_")),
+      conditions: [
+        `Entry when: ${ideaText}`,
+        ...mentionedIndicators.map(i => `Monitor ${i} for confirmation`),
+      ],
     },
     exit_rules: {
-      take_profit: "Take profit at 5-10% above entry or when key indicator reverses",
-      stop_loss: "Stop loss at 2-3% below entry to limit downside risk",
-      time_based: `Exit after 4 hours if position shows no profit`,
+      stop_loss_percent: 2,
+      take_profit_percent: 5,
+      conditions: [
+        "Take profit at 5% above entry",
+        "Stop loss at 2% below entry",
+        "Exit when key indicator reverses",
+      ],
     },
-    risk_assessment: `Strategy focuses on ${mentionedIndicators.join(", ")}. Risk management includes 2-3% stop loss and position sizing. Suited for ${timeframeToDescription()} trading.`,
+    risk_assessment: `Strategy focuses on ${mentionedIndicators.join(", ")}. Risk management includes 2% stop loss and position sizing. Suited for ${timeframeToDescription()} trading.`,
     expected_performance: `Expected to capture 5-15% gains on favorable setups. Performance depends on market volatility and indicator accuracy.`,
   };
 }
