@@ -1,5 +1,6 @@
 import { useEffect, useState } from "react";
 import axios from "axios";
+import { useRouter } from "next/router";
 import BacktestModal from "@/components/BacktestModal";
 import PaperTradingModal from "@/components/PaperTradingModal";
 
@@ -212,7 +213,9 @@ interface StrategyCardProps {
 }
 
 function StrategyCard({ strategy, onRunBacktest, onStartPaperTrading, onStatusChange, onDelete }: StrategyCardProps) {
+  const router = useRouter();
   const [showStatusMenu, setShowStatusMenu] = useState(false);
+  const [loadingSession, setLoadingSession] = useState(false);
 
   const statusColors: Record<string, string> = {
     draft: "bg-slate-700/50 text-slate-300",
@@ -231,6 +234,28 @@ function StrategyCard({ strategy, onRunBacktest, onStartPaperTrading, onStatusCh
       onStatusChange?.(strategy.id, newStatus);
     }
     setShowStatusMenu(false);
+  };
+
+  const handleViewLiveTrading = async () => {
+    try {
+      setLoadingSession(true);
+      const apiUrl = process.env.NEXT_PUBLIC_API_URL || "http://localhost:3000";
+      const response = await axios.get(
+        `${apiUrl}/api/paper-trading/sessions?strategy_id=${strategy.id}&limit=1`
+      );
+
+      if (response.data.data?.sessions && response.data.data.sessions.length > 0) {
+        const session = response.data.data.sessions[0];
+        router.push(`/paper-trading/${session.session_id}/dashboard`);
+      } else {
+        alert("No active trading session found. Start a paper trading session first.");
+      }
+    } catch (error) {
+      console.error("Error fetching trading session:", error);
+      alert("Could not find trading session. Make sure you have an active paper trading session.");
+    } finally {
+      setLoadingSession(false);
+    }
   };
 
   return (
@@ -316,6 +341,15 @@ function StrategyCard({ strategy, onRunBacktest, onStartPaperTrading, onStatusCh
               </div>
             )}
           </div>
+
+          <button
+            onClick={handleViewLiveTrading}
+            disabled={loadingSession}
+            className="bg-cyan-600 hover:bg-cyan-500 disabled:bg-slate-600 text-white px-3 py-1 rounded text-sm font-medium whitespace-nowrap transition"
+            title="View live trading dashboard"
+          >
+            {loadingSession ? "⏳" : "👁️"} Live
+          </button>
 
           <a
             href={`/strategies/${strategy.id}/analysis`}
