@@ -36,9 +36,23 @@ export default asyncHandler(async (req: NextApiRequest, res: NextApiResponse) =>
       `[API] Registering strategy ${strategy_id} with TradingView for session ${session_id}`
     );
 
+    // Try to get strategy from database for additional info
+    let strategySymbol = "BTCUSDT";
+    let strategyTimeframe = "1h";
+    try {
+      const db = getDB();
+      const strategy = await db.getStrategy(strategy_id);
+      if (strategy) {
+        strategySymbol = strategy.symbol || "BTCUSDT";
+        strategyTimeframe = strategy.timeframe || "1h";
+      }
+    } catch (dbError) {
+      console.warn("[API] Could not fetch strategy from database, using defaults");
+    }
+
     // Registration acknowledged - actual TradingView deployment happens via local MCP server
     console.log(
-      `[API] ✓ Strategy registered for TradingView monitoring`
+      `[API] ✓ Strategy registered for TradingView monitoring (${strategySymbol} ${strategyTimeframe})`
     );
 
     return sendSuccess(
@@ -47,7 +61,11 @@ export default asyncHandler(async (req: NextApiRequest, res: NextApiResponse) =>
         status: "registered",
         strategy_id,
         session_id,
-        message: `Strategy is now monitoring TradingView chart for live signals`,
+        symbol: strategySymbol,
+        timeframe: strategyTimeframe,
+        message: `Strategy is now monitoring TradingView chart for live signals. Open TradingView Desktop with the chart ${strategySymbol} (${strategyTimeframe}) to see live monitoring.`,
+        tradingview_url: `https://www.tradingview.com/chart/?symbol=${strategySymbol}`,
+        setup_guide: "To use live Pine Script monitoring: 1) Open TradingView Desktop 2) Load chart for " + strategySymbol + " with " + strategyTimeframe + " timeframe 3) Add technical indicators (RSI, MACD, Bollinger Bands) 4) Start monitoring on this dashboard",
       },
       200,
       req
