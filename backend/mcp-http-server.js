@@ -7,6 +7,7 @@
 
 const express = require('express');
 const axios = require('axios');
+const { spawn } = require('child_process');
 const { Anthropic } = require('@anthropic-ai/sdk');
 
 const app = express();
@@ -17,7 +18,89 @@ const client = new Anthropic({
   apiKey: process.env.ANTHROPIC_API_KEY,
 });
 
+// MCP Server management
+let mcpProcess = null;
+let mcpMessageId = 0;
+const mcpPendingRequests = new Map();
+
 app.use(express.json());
+
+// ============================================
+// Start MCP Server
+// ============================================
+function startMCPServer() {
+  console.log('[MCP HTTP] Spawning TradingView MCP server...');
+
+  mcpProcess = spawn('node', [__dirname + '/tradingview-mcp-server.js'], {
+    stdio: ['pipe', 'pipe', 'inherit'],
+  });
+
+  mcpProcess.stdout.on('data', (data) => {
+    const lines = data.toString().split('\n').filter(l => l.trim());
+    for (const line of lines) {
+      try {
+        const message = JSON.parse(line);
+        if (message.id && mcpPendingRequests.has(message.id)) {
+          const request = mcpPendingRequests.get(message.id);
+          clearTimeout(request.timeout);
+          mcpPendingRequests.delete(message.id);
+
+          if (message.error) {
+            request.reject(new Error(message.error.message));
+          } else {
+            request.resolve(message.result);
+          }
+        }
+      } catch (err) {
+        // Ignore non-JSON lines (logs)
+      }
+    }
+  });
+
+  mcpProcess.on('error', (err) => {
+    console.error('[MCP HTTP] MCP server error:', err);
+  });
+
+  mcpProcess.on('exit', (code) => {
+    console.log('[MCP HTTP] MCP server exited with code', code);
+    mcpProcess = null;
+  });
+}
+
+// ============================================
+// Call MCP Tools via stdio
+// ============================================
+function callMCPTool(toolName, args) {
+  return new Promise((resolve, reject) => {
+    if (!mcpProcess) {
+      reject(new Error('MCP server not running'));
+      return;
+    }
+
+    const id = ++mcpMessageId;
+    const timeout = setTimeout(() => {
+      mcpPendingRequests.delete(id);
+      reject(new Error(`MCP tool ${toolName} timeout`));
+    }, 15000);
+
+    mcpPendingRequests.set(id, { resolve, reject, timeout });
+
+    const message = {
+      jsonrpc: '2.0',
+      id,
+      method: toolName,
+      params: args,
+    };
+
+    try {
+      mcpProcess.stdin.write(JSON.stringify(message) + '\n');
+    } catch (error) {
+      mcpPendingRequests.delete(id);
+      clearTimeout(timeout);
+      reject(error);
+    }
+  });
+}
 
 // ============================================
 // Health Check
@@ -39,9 +122,10 @@ app.post('/api/strategies/create', async (req, res) => {
       exit_rules,
     } = req.body;
 
-    console.log(`[MCP] Creating strategy: ${name} for ${symbol}`);
+    console.log(`[MCP HTTP] Creating strategy: ${name} for ${symbol}`);
 
     // Generate Pine Script using Claude
+    console.log('[MCP HTTP] Generating Pine Script via Claude...');
     const response = await client.messages.create({
       model: 'claude-opus-4-7',
       max_tokens: 4096,
@@ -75,17 +159,62 @@ Return ONLY the Pine Script code, no explanation.`,
       }
     }
 
+    console.log('[MCP HTTP] ✓ Pine Script generated, deploying to TradingView...');
+
+    // Deploy to TradingView via MCP tools
+    let deploymentStatus = 'pending';
+    let deploymentError = null;
+
+    try {
+      // Set the symbol on the chart
+      console.log(`[MCP HTTP] Setting chart symbol to ${symbol}...`);
+      await callMCPTool('chart_set_symbol', { symbol: symbol.toUpperCase() });
+      console.log('[MCP HTTP] ✓ Symbol set');
+
+      // Deploy the Pine Script source
+      console.log('[MCP HTTP] Deploying Pine Script to chart...');
+      const deployResult = await callMCPTool('pine_set_source', {
+        source: scriptContent,
+      });
+
+      if (deployResult.error) {
+        deploymentError = deployResult.error;
+        console.warn('[MCP HTTP] ⚠ Deployment warning:', deploymentError);
+      } else {
+        console.log('[MCP HTTP] ✓ Pine Script deployed');
+
+        // Compile the script
+        console.log('[MCP HTTP] Compiling Pine Script...');
+        const compileResult = await callMCPTool('pine_smart_compile', {});
+
+        if (compileResult.error) {
+          deploymentError = compileResult.error;
+          console.warn('[MCP HTTP] ⚠ Compilation warning:', deploymentError);
+        } else {
+          console.log('[MCP HTTP] ✓ Pine Script compiled successfully');
+          deploymentStatus = 'deployed';
+        }
+      }
+    } catch (mcpError) {
+      console.warn('[MCP HTTP] ⚠ MCP deployment failed (will still return script):', mcpError.message);
+      deploymentStatus = 'generated';
+      deploymentError = mcpError.message;
+    }
+
     res.json({
       success: true,
       strategy_name: name,
       symbol,
       timeframe,
       script: scriptContent,
-      status: 'created',
-      message: `Strategy "${name}" created and ready to deploy`,
+      status: deploymentStatus,
+      deployment_error: deploymentError,
+      message: deploymentStatus === 'deployed'
+        ? `Strategy "${name}" created and deployed to TradingView`
+        : `Strategy "${name}" created. Pine Script generated but deployment pending.`,
     });
   } catch (error) {
-    console.error('[MCP] Error creating strategy:', error);
+    console.error('[MCP HTTP] Error creating strategy:', error);
     res.status(500).json({
       success: false,
       error: error instanceof Error ? error.message : 'Failed to create strategy',
@@ -185,13 +314,25 @@ app.post('/api/alerts/monitor', async (req, res) => {
 // ============================================
 const server = app.listen(port, '0.0.0.0', () => {
   console.log(
-    `🚀 TradingView MCP Server running on http://0.0.0.0:${port}`
+    `🚀 TradingView MCP HTTP Server running on http://0.0.0.0:${port}`
   );
   console.log(`✓ Health check: http://localhost:${port}/health`);
   console.log(`✓ API ready to receive strategy creation requests`);
+
+  // Start the MCP server
+  startMCPServer();
 });
 
 server.on('error', (err) => {
   console.error('Server error:', err);
   process.exit(1);
+});
+
+// Handle graceful shutdown
+process.on('SIGTERM', () => {
+  console.log('Shutting down...');
+  if (mcpProcess) {
+    mcpProcess.kill();
+  }
+  server.close();
 });
