@@ -1,10 +1,10 @@
 import type { AppProps } from "next/app";
 import { useState } from "react";
+import { useRouter } from "next/router";
 import "@/styles/globals.css";
 
 // Sidebar Navigation
 function Sidebar({ isOpen, setIsOpen }: { isOpen: boolean; setIsOpen: (open: boolean) => void }) {
-  const { useRouter } = require("next/router");
   const router = useRouter();
 
   const navItems = [
