@@ -110,7 +110,7 @@ export default function PaperTradingDashboard() {
         // Detect new trades and create alerts
         if (newStats.trades.length > prevTradeCountRef.current) {
           const newTrades = newStats.trades.slice(prevTradeCountRef.current);
-          newTrades.forEach((trade) => {
+          newTrades.forEach((trade: Trade) => {
             sessionStorageManager.addAlert({
               id: "",
               session_id,
