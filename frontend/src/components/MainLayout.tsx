@@ -1,6 +1,5 @@
 import { ReactNode, useState } from "react";
 import { useRouter } from "next/router";
-import Sidebar from "./Sidebar";
 
 interface MainLayoutProps {
   children: ReactNode;
