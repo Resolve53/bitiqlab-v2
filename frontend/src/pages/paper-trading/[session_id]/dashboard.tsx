@@ -3,6 +3,8 @@ import { useRouter } from "next/router";
 import axios from "axios";
 import Script from "next/script";
 import MultiCoinMonitorWizard from "@/components/MultiCoinMonitorWizard";
+import TradeHistoryAnalysis from "@/components/TradeHistoryAnalysis";
+import { sessionStorageManager } from "@/lib/sessionStorage";
 
 interface Trade {
   id: string;
@@ -56,9 +58,10 @@ export default function PaperTradingDashboard() {
   const [showMultiCoinWizard, setShowMultiCoinWizard] = useState(false);
   const [multiCoinConfig, setMultiCoinConfig] = useState<any>(null);
   const [monitoredCoins, setMonitoredCoins] = useState<string[]>([]);
+  const [showTradeHistory, setShowTradeHistory] = useState(false);
 
   useEffect(() => {
-    if (!session_id) return;
+    if (!session_id || typeof session_id !== "string") return;
 
     fetchStats();
     const interval = setInterval(fetchStats, 5000); // Refresh every 5 seconds
@@ -77,14 +80,51 @@ export default function PaperTradingDashboard() {
     return () => clearInterval(monitoringInterval);
   }, [monitoring, session_id]);
 
+  const prevTradeCountRef = useRef(0);
+
   const fetchStats = async () => {
     try {
       const apiUrl = process.env.NEXT_PUBLIC_API_URL || "http://localhost:3000";
       const response = await axios.get(
         `${apiUrl}/api/paper-trading/${session_id}/status`
       );
-      setStats(response.data.data);
+      const newStats = response.data.data;
+      setStats(newStats);
       setError(null);
+
+      // Save session settings to localStorage
+      if (newStats && typeof session_id === "string") {
+        sessionStorageManager.saveSessionSettings({
+          session_id,
+          strategy_id: newStats.strategy_id,
+          symbol: newStats.trades[0]?.symbol || "BTCUSDT",
+          timeframe: "1h",
+          initial_balance: newStats.initial_balance,
+          auto_trade: autoTrade,
+          monitoring_enabled: monitoring,
+          monitored_coins: monitoredCoins,
+          created_at: Date.now(),
+          last_updated: Date.now(),
+        });
+
+        // Detect new trades and create alerts
+        if (newStats.trades.length > prevTradeCountRef.current) {
+          const newTrades = newStats.trades.slice(prevTradeCountRef.current);
+          newTrades.forEach((trade) => {
+            sessionStorageManager.addAlert({
+              id: "",
+              session_id,
+              type: "trade",
+              title: `${trade.side} Order Executed`,
+              message: `${trade.symbol}: ${trade.quantity} @ $${trade.price.toFixed(2)}`,
+              timestamp: new Date(trade.timestamp).getTime(),
+              read: false,
+              data: trade,
+            });
+          });
+          prevTradeCountRef.current = newStats.trades.length;
+        }
+      }
     } catch (err) {
       console.error("Error fetching stats:", err);
       setError(err instanceof Error ? err.message : "Failed to fetch stats");
@@ -169,6 +209,12 @@ export default function PaperTradingDashboard() {
               </p>
             </div>
             <div className="flex gap-3">
+              <button
+                onClick={() => setShowTradeHistory(!showTradeHistory)}
+                className="bg-purple-600 hover:bg-purple-500 text-white font-bold py-2 px-4 rounded-lg transition flex items-center gap-2"
+              >
+                📊 {showTradeHistory ? "Hide" : "Show"} History
+              </button>
               {!monitoring ? (
                 <button
                   onClick={() => setShowMultiCoinWizard(true)}
@@ -447,6 +493,38 @@ export default function PaperTradingDashboard() {
                 </div>
               </div>
             )}
+          </div>
+        )}
+
+        {/* Trade History & Analysis */}
+        {showTradeHistory && (
+          <div className="mt-8">
+            <TradeHistoryAnalysis
+              session_id={session_id as string}
+              trades={stats.trades}
+              onExportTrades={(trades) => {
+                const csv = [
+                  ["Symbol", "Side", "Quantity", "Price", "P&L", "Timestamp"],
+                  ...trades.map((t) => [
+                    t.symbol,
+                    t.side,
+                    t.quantity,
+                    t.price,
+                    t.pnl || "",
+                    t.timestamp,
+                  ]),
+                ]
+                  .map((row) => row.join(","))
+                  .join("\n");
+
+                const blob = new Blob([csv], { type: "text/csv" });
+                const url = window.URL.createObjectURL(blob);
+                const a = document.createElement("a");
+                a.href = url;
+                a.download = `trades_${session_id}_${Date.now()}.csv`;
+                a.click();
+              }}
+            />
           </div>
         )}
         </div>
