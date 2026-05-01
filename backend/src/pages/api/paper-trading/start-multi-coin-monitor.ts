@@ -81,19 +81,13 @@ export default asyncHandler(async (req: NextApiRequest, res: NextApiResponse) =>
       };
     }
 
-    // Store multi-coin config in session metadata
+    // Store multi-coin config in dedicated table
     try {
-      await db.updateTradingSession(session_id, {
-        metadata: {
-          multi_coin_config: config,
-          coins_being_monitored: config.custom_coins,
-          started_at: new Date().toISOString(),
-        },
-      });
-    } catch (updateError) {
+      await db.saveMultiCoinConfig(session_id, strategy_id, config);
+    } catch (saveError) {
       console.warn(
         `[MULTI-COIN] Could not save config to database:`,
-        updateError
+        saveError
       );
     }
 

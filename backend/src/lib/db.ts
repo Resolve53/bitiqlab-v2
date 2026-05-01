@@ -346,6 +346,66 @@ export class DatabaseService {
 
     return data || null;
   }
+
+  /**
+   * Multi-Coin Monitor Configuration Operations
+   */
+  async saveMultiCoinConfig(
+    sessionId: string,
+    strategyId: string,
+    config: {
+      coin_count: number;
+      custom_coins: string[];
+      scan_frequency: number;
+      position_size_per_coin: number;
+      max_concurrent_positions: number;
+      stop_loss_percent: number;
+      take_profit_percent: number;
+      trading_type: "spot" | "futures";
+    }
+  ) {
+    const { data, error } = await this.client
+      .from("multi_coin_monitor_configs")
+      .insert([
+        {
+          session_id: sessionId,
+          strategy_id: strategyId,
+          coin_count: config.coin_count,
+          custom_coins: config.custom_coins,
+          scan_frequency: config.scan_frequency,
+          position_size_per_coin: config.position_size_per_coin,
+          max_concurrent_positions: config.max_concurrent_positions,
+          stop_loss_percent: config.stop_loss_percent,
+          take_profit_percent: config.take_profit_percent,
+          trading_type: config.trading_type,
+        },
+      ])
+      .select()
+      .single();
+
+    if (error) {
+      throw new Error(`Failed to save multi-coin config: ${error.message}`);
+    }
+
+    return data;
+  }
+
+  async getMultiCoinConfig(sessionId: string) {
+    const { data, error } = await this.client
+      .from("multi_coin_monitor_configs")
+      .select("*")
+      .eq("session_id", sessionId)
+      .order("created_at", { ascending: false })
+      .limit(1)
+      .single();
+
+    if (error && error.code !== "PGRST116") {
+      // PGRST116 = no rows
+      throw new Error(`Failed to get multi-coin config: ${error.message}`);
+    }
+
+    return data || null;
+  }
 }
 
 /**
