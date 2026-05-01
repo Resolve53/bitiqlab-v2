@@ -27,9 +27,21 @@ export default function Dashboard() {
     try {
       const apiUrl = process.env.NEXT_PUBLIC_API_URL || "http://localhost:3000";
       const response = await axios.get(`${apiUrl}/api/dashboard/metrics`);
-      setStats(response.data.data);
+      const data = response.data.data || {};
+      setStats({
+        total_strategies: data.total_strategies ?? 0,
+        active_strategies: data.active_strategies ?? 0,
+        live_sessions: data.live_sessions ?? 0,
+        total_pnl: data.total_pnl ?? 0,
+      });
     } catch (error) {
       console.error("Error fetching stats:", error);
+      setStats({
+        total_strategies: 0,
+        active_strategies: 0,
+        live_sessions: 0,
+        total_pnl: 0,
+      });
     } finally {
       setLoading(false);
     }
