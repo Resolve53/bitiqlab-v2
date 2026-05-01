@@ -2,6 +2,7 @@ import { useEffect, useState, useRef } from "react";
 import { useRouter } from "next/router";
 import axios from "axios";
 import Script from "next/script";
+import MultiCoinMonitorWizard from "@/components/MultiCoinMonitorWizard";
 
 interface Trade {
   id: string;
@@ -52,6 +53,9 @@ export default function PaperTradingDashboard() {
   const [registering, setRegistering] = useState(false);
   const [registered, setRegistered] = useState(false);
   const [registrationData, setRegistrationData] = useState<any>(null);
+  const [showMultiCoinWizard, setShowMultiCoinWizard] = useState(false);
+  const [multiCoinConfig, setMultiCoinConfig] = useState<any>(null);
+  const [monitoredCoins, setMonitoredCoins] = useState<string[]>([]);
 
   useEffect(() => {
     if (!session_id) return;
@@ -167,10 +171,10 @@ export default function PaperTradingDashboard() {
             <div className="flex gap-3">
               {!monitoring ? (
                 <button
-                  onClick={handleStartMonitoring}
-                  className="bg-emerald-600 hover:bg-emerald-500 text-white font-bold py-2 px-4 rounded-lg transition"
+                  onClick={() => setShowMultiCoinWizard(true)}
+                  className="bg-emerald-600 hover:bg-emerald-500 text-white font-bold py-2 px-4 rounded-lg transition flex items-center gap-2"
                 >
-                  ▶️ Start Monitoring
+                  🚀 Advanced Monitor
                 </button>
               ) : (
                 <button
@@ -408,8 +412,63 @@ export default function PaperTradingDashboard() {
               </table>
             </div>
           )}
+        {/* Monitored Coins Section */}
+        {monitoredCoins.length > 0 && (
+          <div className="bg-slate-800/50 border border-slate-700 rounded-lg p-6 mb-8">
+            <h2 className="text-xl font-bold text-white mb-4">🔍 Monitoring {monitoredCoins.length} Coins</h2>
+            <div className="grid grid-cols-2 md:grid-cols-3 lg:grid-cols-5 gap-3">
+              {monitoredCoins.map((coin) => (
+                <div key={coin} className="bg-slate-900 border border-slate-700 rounded-lg p-3 text-center">
+                  <p className="text-emerald-400 font-bold text-sm">{coin}</p>
+                  <p className="text-slate-500 text-xs mt-1">scanning...</p>
+                </div>
+              ))}
+            </div>
+
+            {multiCoinConfig && (
+              <div className="mt-4 p-4 bg-slate-700/50 border border-slate-600 rounded-lg">
+                <div className="grid grid-cols-2 md:grid-cols-4 gap-4 text-sm">
+                  <div>
+                    <p className="text-slate-400">Scan Frequency</p>
+                    <p className="text-white font-bold">{multiCoinConfig.scan_frequency}s</p>
+                  </div>
+                  <div>
+                    <p className="text-slate-400">Per-Coin Capital</p>
+                    <p className="text-white font-bold">${multiCoinConfig.position_size_per_coin.toFixed(2)}</p>
+                  </div>
+                  <div>
+                    <p className="text-slate-400">Stop Loss</p>
+                    <p className="text-white font-bold">{multiCoinConfig.stop_loss_percent}%</p>
+                  </div>
+                  <div>
+                    <p className="text-slate-400">Take Profit</p>
+                    <p className="text-white font-bold">{multiCoinConfig.take_profit_percent}%</p>
+                  </div>
+                </div>
+              </div>
+            )}
+          </div>
+        )}
         </div>
       </main>
+
+      {/* Multi-Coin Monitor Wizard */}
+      {showMultiCoinWizard && stats && (
+        <MultiCoinMonitorWizard
+          sessionId={session_id as string}
+          strategyId={stats.strategy_id}
+          tradingType={stats.exchange === "binance" ? "spot" : "futures"}
+          initialBalance={stats.initial_balance}
+          onClose={() => setShowMultiCoinWizard(false)}
+          onStart={(config) => {
+            setMultiCoinConfig(config);
+            setMonitoredCoins(config.custom_coins || []);
+            setMonitoring(true);
+            setShowMultiCoinWizard(false);
+            fetchStats();
+          }}
+        />
+      )}
     </div>
   );
 }
