@@ -16,6 +16,8 @@ export default function DebugPineScript() {
   const [debugResult, setDebugResult] = useState<any>(null);
   const [highlightedLines, setHighlightedLines] = useState<number[]>([]);
   const [autoValidate, setAutoValidate] = useState(true);
+  const [isAnalyzing, setIsAnalyzing] = useState(false);
+  const [claudeAnalysis, setClaudeAnalysis] = useState<any>(null);
   const editorRef = useRef<HTMLTextAreaElement>(null);
 
   // Auto-validate as user types
@@ -181,6 +183,44 @@ if shortExit
     setScriptContent(lines.join("\n"));
   };
 
+  const analyzeWithClaude = async () => {
+    if (!scriptContent) return;
+
+    setIsAnalyzing(true);
+    try {
+      const apiUrl = process.env.NEXT_PUBLIC_API_URL || "http://localhost:3000";
+      const response = await fetch(`${apiUrl}/api/strategies/analyze-pine-script`, {
+        method: "POST",
+        headers: {
+          "Content-Type": "application/json",
+        },
+        body: JSON.stringify({
+          script_content: scriptContent,
+          fix_errors: true,
+        }),
+      });
+
+      if (!response.ok) {
+        const errorData = await response.json();
+        alert(`Error: ${errorData.error || "Failed to analyze script"}`);
+        return;
+      }
+
+      const data = await response.json();
+      setClaudeAnalysis(data.data);
+    } catch (error) {
+      alert(`Error analyzing script: ${error instanceof Error ? error.message : "Unknown error"}`);
+    } finally {
+      setIsAnalyzing(false);
+    }
+  };
+
+  const applyClaudeFix = () => {
+    if (!claudeAnalysis) return;
+    setScriptContent(claudeAnalysis.fixed_script);
+    setClaudeAnalysis(null);
+  };
+
   return (
     <div className="min-h-screen bg-gradient-to-b from-slate-950 via-slate-900 to-slate-950">
       {/* Header */}
@@ -244,6 +284,22 @@ if shortExit
               {/* Controls */}
               <div className="flex gap-2 flex-wrap mb-4">
                 <button
+                  onClick={analyzeWithClaude}
+                  disabled={isAnalyzing || !scriptContent}
+                  className="bg-violet-600 hover:bg-violet-500 disabled:bg-slate-600 disabled:cursor-wait text-white px-4 py-2 rounded-lg text-sm font-semibold transition flex items-center gap-2"
+                >
+                  {isAnalyzing ? (
+                    <>
+                      <span className="animate-spin">⚙️</span>
+                      Analyzing...
+                    </>
+                  ) : (
+                    <>
+                      🤖 Claude AI Fix
+                    </>
+                  )}
+                </button>
+                <button
                   onClick={handleLoadExample}
                   className="bg-blue-600 hover:bg-blue-500 text-white px-4 py-2 rounded-lg text-sm font-semibold transition"
                 >
@@ -272,6 +328,45 @@ if shortExit
                   <span className="text-sm text-slate-400">Auto-validate</span>
                 </label>
               </div>
+
+              {/* Claude Analysis Result */}
+              {claudeAnalysis && (
+                <div className="bg-violet-900/20 border border-violet-700 rounded-lg p-4 mb-4">
+                  <h3 className="text-lg font-bold text-violet-300 mb-3">🤖 Claude AI Analysis</h3>
+                  <div className="space-y-4">
+                    <div>
+                      <p className="text-sm font-semibold text-violet-300 mb-2">📋 Issues Found:</p>
+                      <ul className="text-xs text-violet-200 space-y-1">
+                        {claudeAnalysis.issues_found?.slice(0, 5).map((issue: string, idx: number) => (
+                          <li key={idx}>• {issue}</li>
+                        ))}
+                      </ul>
+                    </div>
+
+                    <div>
+                      <p className="text-sm font-semibold text-violet-300 mb-2">✨ Claude's Suggestions:</p>
+                      <p className="text-xs text-violet-200 bg-slate-900/50 p-2 rounded max-h-32 overflow-y-auto">
+                        {claudeAnalysis.analysis}
+                      </p>
+                    </div>
+
+                    <div className="flex gap-2">
+                      <button
+                        onClick={applyClaudeFix}
+                        className="flex-1 bg-violet-600 hover:bg-violet-500 text-white py-2 rounded font-semibold text-sm transition"
+                      >
+                        ✅ Apply Claude's Fix
+                      </button>
+                      <button
+                        onClick={() => setClaudeAnalysis(null)}
+                        className="flex-1 bg-slate-700 hover:bg-slate-600 text-white py-2 rounded font-semibold text-sm transition"
+                      >
+                        ❌ Dismiss
+                      </button>
+                    </div>
+                  </div>
+                </div>
+              )}
             </div>
 
             {/* Quick Tips */}
