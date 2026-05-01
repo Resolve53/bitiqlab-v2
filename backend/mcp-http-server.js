@@ -286,7 +286,14 @@ Return ONLY the Pine Script code, no explanation.`,
       }
     }
 
-    console.log('[MCP HTTP] ✓ Pine Script generated, deploying to TradingView...');
+    console.log('[MCP HTTP] ✓ Pine Script generated, attempting deployment to TradingView...');
+
+    // Log the full script for visibility
+    console.log('\n═══════════════════════════════════════════════════════════════');
+    console.log(`GENERATED PINE SCRIPT FOR: ${symbol} ${timeframe}`);
+    console.log('═══════════════════════════════════════════════════════════════');
+    console.log(scriptContent);
+    console.log('═══════════════════════════════════════════════════════════════\n');
 
     // Deploy to TradingView via MCP tools
     let deploymentStatus = 'pending';
@@ -295,37 +302,47 @@ Return ONLY the Pine Script code, no explanation.`,
     try {
       // Set the symbol on the chart
       console.log(`[MCP HTTP] Setting chart symbol to ${symbol}...`);
-      await callMCPTool('chart_set_symbol', { symbol: symbol.toUpperCase() });
-      console.log('[MCP HTTP] ✓ Symbol set');
+      const symbolResult = await callMCPTool('chart_set_symbol', { symbol: symbol.toUpperCase() });
+      if (symbolResult?.error) {
+        console.warn('[MCP HTTP] Symbol setting failed:', symbolResult.error);
+        deploymentStatus = 'symbol_failed';
+      } else {
+        console.log('[MCP HTTP] ✓ Symbol set');
+      }
 
       // Deploy the Pine Script source
-      console.log('[MCP HTTP] Deploying Pine Script to chart...');
+      console.log('[MCP HTTP] Deploying Pine Script to editor...');
       const deployResult = await callMCPTool('pine_set_source', {
         source: scriptContent,
       });
 
-      if (deployResult.error) {
+      if (deployResult?.error) {
         deploymentError = deployResult.error;
-        console.warn('[MCP HTTP] ⚠ Deployment warning:', deploymentError);
+        console.warn('[MCP HTTP] Script deployment warning:', deploymentError);
+        deploymentStatus = 'deployed_with_errors';
       } else {
-        console.log('[MCP HTTP] ✓ Pine Script deployed');
+        console.log('[MCP HTTP] ✓ Pine Script deployed to editor');
 
         // Compile the script
         console.log('[MCP HTTP] Compiling Pine Script...');
         const compileResult = await callMCPTool('pine_smart_compile', {});
 
-        if (compileResult.error) {
+        if (compileResult?.error) {
           deploymentError = compileResult.error;
-          console.warn('[MCP HTTP] ⚠ Compilation warning:', deploymentError);
+          console.warn('[MCP HTTP] Compilation warning:', deploymentError);
+          deploymentStatus = 'compiled_with_errors';
         } else {
           console.log('[MCP HTTP] ✓ Pine Script compiled successfully');
           deploymentStatus = 'deployed';
         }
       }
     } catch (mcpError) {
-      console.warn('[MCP HTTP] ⚠ MCP deployment failed (will still return script):', mcpError.message);
-      deploymentStatus = 'generated';
-      deploymentError = mcpError.message;
+      console.error('[MCP HTTP] MCP deployment failed:', mcpError instanceof Error ? mcpError.message : mcpError);
+      deploymentStatus = 'deployment_failed';
+      deploymentError = mcpError instanceof Error ? mcpError.message : String(mcpError);
+
+      // Still provide the script so user can manually deploy
+      console.warn('[MCP HTTP] Auto-deployment failed. User can manually paste script into TradingView.');
     }
 
     res.json({
@@ -333,12 +350,24 @@ Return ONLY the Pine Script code, no explanation.`,
       strategy_name: name,
       symbol,
       timeframe,
-      script: scriptContent,
       status: deploymentStatus,
       deployment_error: deploymentError,
       message: deploymentStatus === 'deployed'
-        ? `Strategy "${name}" created and deployed to TradingView`
-        : `Strategy "${name}" created. Pine Script generated but deployment pending.`,
+        ? `✓ Strategy "${name}" successfully deployed to TradingView`
+        : `Strategy "${name}" created with Pine Script. Status: ${deploymentStatus}`,
+      pine_script: scriptContent,
+      manual_deployment: {
+        instructions: [
+          '1. Open TradingView and go to Pine Script Editor',
+          '2. Create New → Indicator',
+          '3. Delete the template code',
+          '4. Copy the full "pine_script" JSON value below into the editor',
+          '5. Click "Save and Add to Chart"',
+          '6. Configure any inputs as needed',
+          '7. Alerts will now be active for this strategy',
+        ],
+        script_content: scriptContent,
+      },
     });
   } catch (error) {
     console.error('[MCP HTTP] Error creating strategy:', error);
@@ -350,7 +379,7 @@ Return ONLY the Pine Script code, no explanation.`,
 });
 
 // ============================================
-// Add Indicators
+// Add Indicators (placeholder)
 // ============================================
 app.post('/api/indicators/add', async (req, res) => {
   try {
