@@ -99,7 +99,7 @@ export default function Analysis() {
 
         {/* Top Strategies */}
         {metrics.length > 0 && (
-          <div className="grid grid-cols-1 md:grid-cols-2 gap-6">
+          <div className="grid grid-cols-1 sm:grid-cols-2 gap-3 sm:gap-6">
             {/* Best Performing */}
             <div className="bg-slate-800/50 border border-slate-700 rounded-lg p-6">
               <h3 className="text-lg font-bold text-white mb-4">Best Performing Strategy</h3>

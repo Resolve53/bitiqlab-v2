@@ -8,9 +8,9 @@ export default function Settings() {
 
   return (
     <MainLayout title="Settings">
-      <div className="max-w-2xl space-y-6">
+      <div className="w-full max-w-2xl space-y-4 sm:space-y-6">
         {/* Account Settings */}
-        <div className="bg-slate-800/50 border border-slate-700 rounded-lg p-6">
+        <div className="bg-slate-800/50 border border-slate-700 rounded-lg p-4 sm:p-6">
           <h2 className="text-xl font-bold text-white mb-6">Account Settings</h2>
 
           {/* Email */}
@@ -41,7 +41,7 @@ export default function Settings() {
         </div>
 
         {/* Trading Preferences */}
-        <div className="bg-slate-800/50 border border-slate-700 rounded-lg p-6">
+        <div className="bg-slate-800/50 border border-slate-700 rounded-lg p-4 sm:p-6">
           <h2 className="text-xl font-bold text-white mb-6">Trading Preferences</h2>
 
           {/* Default Risk Level */}
@@ -95,7 +95,7 @@ export default function Settings() {
         </div>
 
         {/* Danger Zone */}
-        <div className="bg-red-900/20 border border-red-900/50 rounded-lg p-6">
+        <div className="bg-red-900/20 border border-red-900/50 rounded-lg p-4 sm:p-6">
           <h2 className="text-xl font-bold text-red-400 mb-4">Danger Zone</h2>
           <p className="text-sm text-slate-300 mb-4">
             These actions cannot be undone. Please proceed with caution.
