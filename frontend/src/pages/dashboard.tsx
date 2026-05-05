@@ -49,9 +49,9 @@ export default function Dashboard() {
 
   return (
     <MainLayout title="Dashboard">
-      <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-4 gap-6 mb-12">
+      <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-4 gap-3 sm:gap-6 mb-8 sm:mb-12">
         {/* Total Strategies */}
-        <div className="bg-slate-800/50 border border-slate-700 rounded-lg p-6 hover:border-blue-500/50 transition">
+        <div className="bg-slate-800/50 border border-slate-700 rounded-lg p-4 sm:p-6 hover:border-blue-500/50 transition">
           <div className="flex justify-between items-start">
             <div>
               <p className="text-slate-400 text-sm">Total Strategies</p>
@@ -108,9 +108,9 @@ export default function Dashboard() {
       </div>
 
       {/* Quick Start */}
-      <div className="bg-slate-800/50 border border-slate-700 rounded-lg p-8">
-        <h2 className="text-2xl font-bold text-white mb-6">Quick Start</h2>
-        <div className="grid grid-cols-1 md:grid-cols-3 gap-6">
+      <div className="bg-slate-800/50 border border-slate-700 rounded-lg p-4 sm:p-8">
+        <h2 className="text-xl sm:text-2xl font-bold text-white mb-4 sm:mb-6">Quick Start</h2>
+        <div className="grid grid-cols-1 sm:grid-cols-3 gap-3 sm:gap-6">
           {/* Create Strategy */}
           <div className="flex flex-col">
             <div className="text-5xl mb-4">⚡</div>
