@@ -22,7 +22,7 @@
 import type { NextApiRequest, NextApiResponse } from "next";
 import { sendSuccess, sendError, asyncHandler } from "@/lib/utils";
 import { getDB } from "@/lib/db";
-import { getTradingViewStrategyManager } from "@/lib/tradingview-strategy-manager";
+import { getStrategyManager } from "@/lib/tradingview-strategy-manager";
 
 interface DeployRSIMACDRequest {
   name?: string;
@@ -46,7 +46,7 @@ export default asyncHandler(async (req: NextApiRequest, res: NextApiResponse) =>
 
   try {
     const db = getDB();
-    const tvManager = getTradingViewStrategyManager();
+    const tvManager = getStrategyManager();
 
     console.log(`[DEPLOY-RSI-MACD] Deploying strategy: ${name}`);
 
