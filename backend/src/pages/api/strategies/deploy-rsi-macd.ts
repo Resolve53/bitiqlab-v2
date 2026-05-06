@@ -72,24 +72,15 @@ export default asyncHandler(async (req: NextApiRequest, res: NextApiResponse) =>
 
     console.log(`[DEPLOY-RSI-MACD] Strategy created with ID: ${strategy.id}`);
 
-    // Deploy to TradingView asynchronously (non-blocking)
+    // Register strategy with TradingView asynchronously (non-blocking)
     tvManager
-      .deployStrategy(name, symbol, timeframe, {
-        rsi_length: 14,
-        rsi_oversold: 30,
-        rsi_overbought: 70,
-        macd_fast: 12,
-        macd_slow: 26,
-        macd_signal: 9,
-        stop_loss_percent: 2,
-        take_profit_percent: 5,
-      })
+      .registerStrategy(strategy, symbol)
       .then(() => {
-        console.log(`[DEPLOY-RSI-MACD] ✓ Strategy deployed to TradingView`);
+        console.log(`[DEPLOY-RSI-MACD] ✓ Strategy registered with TradingView`);
       })
       .catch((error) => {
-        console.warn(`[DEPLOY-RSI-MACD] TradingView deployment warning:`, error);
-        // Don't fail if TradingView deployment has issues
+        console.warn(`[DEPLOY-RSI-MACD] TradingView registration warning:`, error);
+        // Don't fail if TradingView registration has issues
       });
 
     return sendSuccess(
