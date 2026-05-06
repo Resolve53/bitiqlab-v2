@@ -104,11 +104,11 @@ export default asyncHandler(async (req: NextApiRequest, res: NextApiResponse) =>
     }
 
     // Filter by profitability
-    if (profitable_only === "true" || profitable_only === true) {
+    if (profitable_only === "true") {
       filteredTrades = filteredTrades.filter((t) => t.pnl_percent >= 0);
     }
 
-    if (loss_only === "true" || loss_only === true) {
+    if (loss_only === "true") {
       filteredTrades = filteredTrades.filter((t) => t.pnl_percent < 0);
     }
 
