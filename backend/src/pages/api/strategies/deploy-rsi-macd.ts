@@ -57,7 +57,6 @@ export default asyncHandler(async (req: NextApiRequest, res: NextApiResponse) =>
       symbol,
       timeframe,
       market_type,
-      status: "draft",
       entry_rules: {
         indicators: ["rsi", "macd"],
         conditions: [
@@ -69,14 +68,6 @@ export default asyncHandler(async (req: NextApiRequest, res: NextApiResponse) =>
         stop_loss_percent: 2,
         take_profit_percent: 5,
       },
-      current_sharpe: 0,
-      backtest_count: 0,
-      winning_trades: 0,
-      losing_trades: 0,
-      total_return: 0,
-      max_drawdown: 0,
-      win_rate: 0,
-      confidence_score: 0,
     });
 
     console.log(`[DEPLOY-RSI-MACD] Strategy created with ID: ${strategy.id}`);
