@@ -4,8 +4,8 @@
 CREATE TABLE IF NOT EXISTS monitoring_jobs (
   id UUID PRIMARY KEY DEFAULT gen_random_uuid(),
   job_id TEXT UNIQUE NOT NULL,
-  session_id TEXT NOT NULL,
-  strategy_id TEXT NOT NULL,
+  session_id UUID NOT NULL,
+  strategy_id UUID NOT NULL,
   coins TEXT[] NOT NULL,
   status TEXT NOT NULL DEFAULT 'running',
   last_evaluation TIMESTAMP WITH TIME ZONE,

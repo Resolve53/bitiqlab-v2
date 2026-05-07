@@ -412,8 +412,8 @@ export class DatabaseService {
    */
   async createMonitoringJobStatus(jobStatus: {
     job_id: string;
-    session_id: string;
-    strategy_id: string;
+    session_id: string | any;
+    strategy_id: string | any;
     coins: string[];
     status: "running" | "stopped" | "error";
     last_evaluation?: Date;
