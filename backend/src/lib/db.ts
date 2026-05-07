@@ -406,6 +406,69 @@ export class DatabaseService {
 
     return data || null;
   }
+
+  /**
+   * Monitoring Job Status Operations
+   */
+  async createMonitoringJobStatus(jobStatus: {
+    job_id: string;
+    session_id: string;
+    strategy_id: string;
+    coins: string[];
+    status: "running" | "stopped" | "error";
+    last_evaluation?: Date;
+    signals_generated?: number;
+    trades_executed?: number;
+  }) {
+    const { data, error } = await this.client
+      .from("monitoring_jobs")
+      .insert([jobStatus])
+      .select()
+      .single();
+
+    if (error) throw new Error(`Failed to create monitoring job: ${error.message}`);
+    return data;
+  }
+
+  async getMonitoringJobStatus(jobId: string) {
+    const { data, error } = await this.client
+      .from("monitoring_jobs")
+      .select("*")
+      .eq("job_id", jobId)
+      .single();
+
+    if (error && error.code !== "PGRST116") {
+      throw new Error(`Failed to get monitoring job: ${error.message}`);
+    }
+
+    return data || null;
+  }
+
+  async updateMonitoringJobStatus(jobId: string, updates: any) {
+    const { data, error } = await this.client
+      .from("monitoring_jobs")
+      .update({
+        ...updates,
+        updated_at: new Date(),
+      })
+      .eq("job_id", jobId)
+      .select()
+      .single();
+
+    if (error) throw new Error(`Failed to update monitoring job: ${error.message}`);
+    return data;
+  }
+
+  async listActiveMonitoringJobs() {
+    const { data, error } = await this.client
+      .from("monitoring_jobs")
+      .select("*")
+      .eq("status", "running")
+      .order("created_at", { ascending: false });
+
+    if (error) throw new Error(`Failed to list monitoring jobs: ${error.message}`);
+    return data || [];
+  }
 }
 
 /**

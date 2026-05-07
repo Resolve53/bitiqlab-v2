@@ -90,6 +90,24 @@ class MonitoringJob {
     console.log(`[COIN-MONITOR] Monitoring coins: ${this.config.coins.join(", ")}`);
     console.log(`[COIN-MONITOR] Poll interval: ${this.config.poll_interval_ms}ms`);
 
+    // Persist job status to database
+    try {
+      const db = getDB();
+      await db.createMonitoringJobStatus({
+        job_id: this.status.job_id,
+        session_id: this.config.session_id,
+        strategy_id: this.config.strategy_id,
+        coins: this.config.coins,
+        status: "running",
+        signals_generated: 0,
+        trades_executed: 0,
+      });
+      console.log(`[COIN-MONITOR] ✓ Job status persisted to database`);
+    } catch (error) {
+      console.error(`[COIN-MONITOR] Warning: Failed to persist job status:`, error);
+      // Continue anyway, monitoring can still run
+    }
+
     // Run first cycle immediately
     await this.pollCycle();
 
@@ -272,6 +290,18 @@ class MonitoringJob {
       if (tradeCount > 0) {
         this.status.signals_generated++;
         this.status.trades_executed += tradeCount;
+      }
+
+      // Persist updated status to database (non-blocking)
+      try {
+        const db = getDB();
+        await db.updateMonitoringJobStatus(this.status.job_id, {
+          last_evaluation: this.status.last_evaluation,
+          signals_generated: this.status.signals_generated,
+          trades_executed: this.status.trades_executed,
+        });
+      } catch (error) {
+        console.warn(`[COIN-MONITOR] Warning: Failed to update job status in DB:`, error);
       }
 
       // Store last 100 results

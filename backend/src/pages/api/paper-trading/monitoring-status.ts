@@ -24,6 +24,7 @@
 import type { NextApiRequest, NextApiResponse } from "next";
 import { sendSuccess, sendError, asyncHandler } from "@/lib/utils";
 import { getMonitoringJob, listMonitoringJobs } from "@/lib/coin-monitor";
+import { getDB } from "@/lib/db";
 
 export default asyncHandler(async (req: NextApiRequest, res: NextApiResponse) => {
   if (req.method !== "GET") {
@@ -64,9 +65,30 @@ export default asyncHandler(async (req: NextApiRequest, res: NextApiResponse) =>
   }
 
   try {
-    const job = getMonitoringJob(String(job_id));
+    const db = getDB();
+    let job = getMonitoringJob(String(job_id));
 
+    // If not in memory, try to load from database
     if (!job) {
+      const dbStatus = await db.getMonitoringJobStatus(String(job_id));
+      if (dbStatus) {
+        return sendSuccess(
+          res,
+          {
+            status: dbStatus.status,
+            job_id: dbStatus.job_id,
+            session_id: dbStatus.session_id,
+            coins_monitored: dbStatus.coins,
+            last_prices: {},
+            last_evaluation: dbStatus.last_evaluation,
+            signals_generated: dbStatus.signals_generated || 0,
+            trades_executed: dbStatus.trades_executed || 0,
+            note: "Job status loaded from database - may still be running in background",
+          },
+          200,
+          req
+        );
+      }
       return sendError(res, `Monitoring job not found: ${job_id}`, 404, req);
     }
 
