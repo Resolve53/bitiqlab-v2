@@ -56,10 +56,25 @@ export default asyncHandler(async (req: NextApiRequest, res: NextApiResponse) =>
 
     // Get current account balance
     const usdtBalance = await client.getBalance("USDT");
+    console.log(`[EXECUTE-SIGNAL] Balance check - USDT: ${usdtBalance}`);
+
     if (usdtBalance === 0) {
+      console.error(
+        "[EXECUTE-SIGNAL] Balance is 0 - checking if API keys are valid..."
+      );
+      // Try to get account info for debugging
+      try {
+        const accountInfo = await client.getAccountInfo();
+        console.log("[EXECUTE-SIGNAL] Account info retrieved:", accountInfo);
+      } catch (accountError) {
+        console.error(
+          "[EXECUTE-SIGNAL] Failed to get account info:",
+          accountError
+        );
+      }
       return sendError(
         res,
-        "Insufficient USDT balance in testnet account",
+        "Insufficient USDT balance in testnet account (balance = 0, check API keys and testnet setup)",
         400,
         req
       );
