@@ -32,6 +32,7 @@ interface DeployRSIMACDRequest {
 }
 
 export default asyncHandler(async (req: NextApiRequest, res: NextApiResponse) => {
+  // RSI+MACD strategy deployment endpoint
   if (req.method !== "POST") {
     res.setHeader("Allow", ["POST"]);
     return sendError(res, "Method not allowed", 405, req);
