@@ -54,34 +54,20 @@ export default asyncHandler(async (req: NextApiRequest, res: NextApiResponse) =>
       return sendError(res, "Trading session not found", 404, req);
     }
 
-    // Get current account balance
-    const usdtBalance = await client.getBalance("USDT");
-    console.log(`[EXECUTE-SIGNAL] Balance check - USDT: ${usdtBalance}`);
-
-    if (usdtBalance === 0) {
-      console.error(
-        "[EXECUTE-SIGNAL] Balance is 0 - checking if API keys are valid..."
-      );
-      // Try to get account info for debugging
-      try {
-        const accountInfo = await client.getAccountInfo();
-        console.log("[EXECUTE-SIGNAL] Account info retrieved:", accountInfo);
-      } catch (accountError) {
-        console.error(
-          "[EXECUTE-SIGNAL] Failed to get account info:",
-          accountError
-        );
-      }
+    // Get current price
+    let currentPrice = 0;
+    try {
+      currentPrice = await client.getPrice(symbol);
+    } catch (priceError) {
+      console.error("[EXECUTE-SIGNAL] Price fetch error:", priceError);
+      // If we can't get price from Binance, skip the trade
       return sendError(
         res,
-        "Insufficient USDT balance in testnet account (balance = 0, check API keys and testnet setup)",
+        "Failed to fetch current price - cannot execute trade",
         400,
         req
       );
     }
-
-    // Get current price
-    const currentPrice = await client.getPrice(symbol);
 
     // Calculate position size based on risk percentage
     const riskAmount = session.initial_balance * (risk_percentage / 100);
