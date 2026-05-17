@@ -469,6 +469,52 @@ export class DatabaseService {
     if (error) throw new Error(`Failed to list monitoring jobs: ${error.message}`);
     return data || [];
   }
+
+  /**
+   * Trade Scoring Operations
+   */
+  async saveTradeScore(tradeScore: {
+    tradeId: string;
+    tradeQualityScore: number;
+    calendarImpactScore: number;
+    onChainImpactScore: number;
+    combinedScore: number;
+    analysisNotes: string;
+  }) {
+    const { data, error } = await this.client
+      .from("trade_scores")
+      .insert([{
+        trade_id: tradeScore.tradeId,
+        trade_score: tradeScore.tradeQualityScore,
+        calendar_impact: tradeScore.calendarImpactScore,
+        onchain_impact: tradeScore.onChainImpactScore,
+        combined_score: tradeScore.combinedScore,
+        analysis_notes: tradeScore.analysisNotes,
+        created_at: new Date(),
+      }])
+      .select()
+      .single();
+
+    if (error && !error.message.includes("duplicate")) {
+      console.warn(`Trade score insert note: ${error.message}`);
+    }
+    return data || null;
+  }
+
+  async getTradeScore(tradeId: string) {
+    const { data, error } = await this.client
+      .from("trade_scores")
+      .select("*")
+      .eq("trade_id", tradeId)
+      .order("created_at", { ascending: false })
+      .limit(1)
+      .single();
+
+    if (error && error.code !== "PGRST116") {
+      console.warn(`Failed to get trade score: ${error.message}`);
+    }
+    return data || null;
+  }
 }
 
 /**

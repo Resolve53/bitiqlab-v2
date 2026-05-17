@@ -364,6 +364,27 @@ export class BinanceTradingClient {
       throw error;
     }
   }
+
+  /**
+   * Get order book for a symbol
+   */
+  async getOrderBook(symbol: string, limit: number = 20): Promise<{
+    bids: [string, string][];
+    asks: [string, string][];
+  } | null> {
+    try {
+      const response = await this.client.get("/v3/depth", {
+        params: { symbol: symbol.toUpperCase(), limit },
+      });
+      return {
+        bids: response.data.bids || [],
+        asks: response.data.asks || [],
+      };
+    } catch (error) {
+      console.error("Get order book error:", error);
+      return null;
+    }
+  }
 }
 
 // Singleton instance for easy access
