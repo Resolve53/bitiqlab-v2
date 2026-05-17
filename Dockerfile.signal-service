@@ -1,0 +1,18 @@
+FROM node:18-alpine
+
+WORKDIR /app
+
+COPY packages/signal-and-backtest-service/package*.json ./
+
+RUN npm install
+
+COPY packages/signal-and-backtest-service/ ./
+
+RUN npm run build
+
+ENV NODE_ENV=production
+ENV PORT=4001
+
+EXPOSE 4001
+
+CMD ["npm", "start"]

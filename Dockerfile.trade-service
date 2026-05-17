@@ -1,0 +1,18 @@
+FROM node:18-alpine
+
+WORKDIR /app
+
+COPY packages/trade-execution-service/package*.json ./
+
+RUN npm install
+
+COPY packages/trade-execution-service/ ./
+
+RUN npm run build
+
+ENV NODE_ENV=production
+ENV PORT=4002
+
+EXPOSE 4002
+
+CMD ["npm", "start"]

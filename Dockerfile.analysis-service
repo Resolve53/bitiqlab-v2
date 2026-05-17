@@ -1,0 +1,18 @@
+FROM node:18-alpine
+
+WORKDIR /app
+
+COPY packages/analysis-scoring-service/package*.json ./
+
+RUN npm install
+
+COPY packages/analysis-scoring-service/ ./
+
+RUN npm run build
+
+ENV NODE_ENV=production
+ENV PORT=4003
+
+EXPOSE 4003
+
+CMD ["npm", "start"]
