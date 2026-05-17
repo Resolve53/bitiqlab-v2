@@ -70,9 +70,14 @@ function SidebarContent({
 
   const navItems = [
     { label: "Dashboard", href: "/", icon: "📊" },
+    { label: "Live Signals", href: "/live-signals", icon: "📡" },
+    { label: "Active Trades", href: "/active-trades", icon: "💹" },
+    { label: "Trade History", href: "/trade-history", icon: "📋" },
     { label: "Strategies", href: "/strategies", icon: "⚡" },
-    { label: "Analysis", href: "/analysis", icon: "📈" },
-    { label: "Settings", href: "/settings", icon: "⚙️" },
+    { label: "On-Chain", href: "/on-chain", icon: "🔗" },
+    { label: "Calendar", href: "/calendar", icon: "📅" },
+    { label: "Backtest", href: "/backtest", icon: "🧪" },
+    { label: "Research Agent", href: "/research-agent", icon: "🤖" },
   ];
 
   return (
