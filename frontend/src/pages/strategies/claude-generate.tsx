@@ -1,5 +1,4 @@
 import { useRouter } from "next/router";
-import { apiUrl, getApiUrl } from "@/lib/api";
 import { useState } from "react";
 import PaperTradingModal from "@/components/PaperTradingModal";
 
@@ -43,8 +42,9 @@ export default function ClaudeGenerateStrategy() {
         return;
       }
 
-      
-      const response = await fetch(`research/claude-generate`, {
+      const apiUrl = process.env.NEXT_PUBLIC_API_URL || "http://localhost:3000";
+
+      const response = await fetch(`${apiUrl}/api/research/claude-generate`, {
         method: "POST",
         headers: {
           "Content-Type": "application/json",
@@ -114,20 +114,34 @@ export default function ClaudeGenerateStrategy() {
               </div>
 
               <div>
-                <h3 className="text-lg font-bold text-white mb-4">Claude's Analysis</h3>
+                <h3 className="text-lg font-bold text-white mb-4">Claude&apos;s Analysis</h3>
+                {analysis.analysis?.model && (
+                  <p className="text-xs text-slate-500 mb-3">
+                    Model: {analysis.analysis.model}
+                  </p>
+                )}
                 <div className="space-y-4 text-sm">
                   <div>
                     <p className="text-slate-400 font-semibold">Risk Assessment</p>
                     <p className="text-slate-300">
-                      {analysis.analysis.risk_assessment}
+                      {analysis.analysis?.risk_assessment || analysis.strategy?.description}
                     </p>
                   </div>
                   <div>
                     <p className="text-slate-400 font-semibold">Expected Performance</p>
                     <p className="text-slate-300">
-                      {analysis.analysis.expected_performance}
+                      {analysis.analysis?.expected_performance || "—"}
                     </p>
                   </div>
+                  {analysis.analysis?.chart_data && (
+                    <div>
+                      <p className="text-slate-400 font-semibold">Market Snapshot</p>
+                      <p className="text-slate-300">
+                        {analysis.analysis.chart_data.symbol} @ $
+                        {Number(analysis.analysis.chart_data.current_price).toLocaleString()}
+                      </p>
+                    </div>
+                  )}
                 </div>
               </div>
             </div>
