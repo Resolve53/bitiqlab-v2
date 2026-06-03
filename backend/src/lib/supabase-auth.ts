@@ -47,14 +47,41 @@ export async function resolveEmailForUsername(
   username: string
 ): Promise<string | null> {
   const admin = getSupabaseAdmin();
+  const trimmed = username.trim();
+
   const { data, error } = await admin.rpc("profile_email_for_username", {
-    p_username: username.trim(),
+    p_username: trimmed,
   });
+  if (!error && typeof data === "string" && data.length > 0) {
+    return data;
+  }
   if (error) {
-    console.warn("[auth] profile_email_for_username:", error.message);
+    console.warn("[auth] profile_email_for_username RPC:", error.message);
+  }
+
+  const { data: profile, error: profileError } = await admin
+    .from("profiles")
+    .select("id")
+    .ilike("username", trimmed)
+    .maybeSingle();
+
+  if (profileError || !profile?.id) {
+    if (profileError) {
+      console.warn("[auth] profiles lookup:", profileError.message);
+    }
     return null;
   }
-  return typeof data === "string" ? data : null;
+
+  const { data: userData, error: userError } =
+    await admin.auth.admin.getUserById(profile.id);
+  if (userError || !userData?.user?.email) {
+    if (userError) {
+      console.warn("[auth] getUserById:", userError.message);
+    }
+    return null;
+  }
+
+  return userData.user.email;
 }
 
 export async function getUserFromAccessToken(

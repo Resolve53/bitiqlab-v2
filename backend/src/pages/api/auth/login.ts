@@ -45,6 +45,24 @@ export default asyncHandler(async (req: NextApiRequest, res: NextApiResponse) =>
   });
 
   if (error || !data.session) {
+    const msg = error?.message?.toLowerCase() ?? "";
+    if (msg.includes("email not confirmed") || msg.includes("confirm")) {
+      return sendError(
+        res,
+        "Email not confirmed. In Supabase: Authentication → Users → open your user → confirm email, or disable Confirm email under Email provider settings.",
+        401,
+        req
+      );
+    }
+    if (msg.includes("invalid login") || msg.includes("invalid credentials")) {
+      return sendError(
+        res,
+        "Password does not match this account. Reset it in Supabase → Authentication → Users → your user → set a new password.",
+        401,
+        req
+      );
+    }
+    console.warn("[auth/login] signIn failed:", error?.message);
     return sendError(res, "Invalid username or password", 401, req);
   }
 
