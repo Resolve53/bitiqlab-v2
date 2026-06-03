@@ -340,6 +340,14 @@ export default function PaperTradingDashboard() {
               )}
             </div>
 
+            {gateInfo?.gate_enabled && (
+              <p className="text-slate-400 text-sm">
+                BUY entries require on-chain score ≥ {gateInfo.min_onchain_score} and no
+                high-impact macro events in the next {gateInfo.calendar_block_hours}h.
+                SELL exits are not gated.
+              </p>
+            )}
+
             <div className="pt-4 border-t border-slate-700">
               <p className="text-slate-400 text-sm mb-3">
                 {registered

@@ -7,6 +7,7 @@ import type { NextApiRequest, NextApiResponse } from "next";
 import { getDB } from "@/lib/db";
 import { sendSuccess, sendError, asyncHandler } from "@/lib/utils";
 import { getTradingClient } from "@/lib/binance-trading";
+import { confirmSignalBeforeExecution } from "@/lib/signal-confirmation-service";
 
 interface ExecuteSignalRequest {
   session_id: string;

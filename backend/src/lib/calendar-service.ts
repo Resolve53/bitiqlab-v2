@@ -93,6 +93,65 @@ export async function getEconomicCalendar(
   }
 }
 
+/**
+ * Returns high-impact macro events that may block new entries for a symbol
+ * within the next N hours (or on the same UTC calendar day when time is unknown).
+ */
+export async function getUpcomingHighImpactEvents(
+  symbol: string,
+  hoursAhead: number = 4
+): Promise<{
+  hasBlockingEvent: boolean;
+  eventName?: string;
+  importance?: string;
+  hoursUntil?: number;
+}> {
+  const now = new Date();
+  const endWindow = new Date(now.getTime() + hoursAhead * 60 * 60 * 1000);
+  const startStr = new Date(now.getTime() - 24 * 60 * 60 * 1000).toISOString().split("T")[0];
+  const endStr = new Date(now.getTime() + 48 * 60 * 60 * 1000).toISOString().split("T")[0];
+
+  const events = await getEconomicCalendar(startStr, endStr);
+  const base = symbol.replace(/USDT|EUR|GBP|JPY$/i, "").toUpperCase();
+  const todayUtc = now.toISOString().split("T")[0];
+
+  for (const event of events) {
+    if (event.importance !== "high") continue;
+
+    const affects = event.affectedSymbols.some(
+      (s) =>
+        s === symbol ||
+        s.replace(/USDT|EUR|GBP|JPY$/i, "").toUpperCase() === base ||
+        symbol.toUpperCase().startsWith(s.replace(/USDT$/i, "").toUpperCase())
+    );
+    if (!affects) continue;
+
+    const eventTime = new Date(event.eventDate);
+    const hasValidTime = !Number.isNaN(eventTime.getTime()) && event.eventDate.includes("T");
+
+    if (hasValidTime) {
+      if (eventTime >= now && eventTime <= endWindow) {
+        const hoursUntil = (eventTime.getTime() - now.getTime()) / (60 * 60 * 1000);
+        return {
+          hasBlockingEvent: true,
+          eventName: event.eventName,
+          importance: event.importance,
+          hoursUntil: Math.round(hoursUntil * 10) / 10,
+        };
+      }
+    } else if (event.eventDate === todayUtc || event.eventDate === endWindow.toISOString().split("T")[0]) {
+      return {
+        hasBlockingEvent: true,
+        eventName: event.eventName,
+        importance: event.importance,
+        hoursUntil: 0,
+      };
+    }
+  }
+
+  return { hasBlockingEvent: false };
+}
+
 export async function getEventImpact(
   symbol: string,
   eventDate: string
