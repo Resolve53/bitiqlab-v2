@@ -11,7 +11,7 @@
 import type { NextApiRequest, NextApiResponse } from "next";
 import { getDB } from "@/lib/db";
 import { sendSuccess, sendError, asyncHandler } from "@/lib/utils";
-import { getSessionTradingContext } from "@/lib/session-trading-client";
+import { getTradingClient } from "@/lib/binance-trading";
 import { getEvaluator } from "@/lib/strategy-evaluator";
 import { getTradingViewMCP } from "@/lib/tradingview-mcp-client";
 
@@ -44,8 +44,7 @@ export default asyncHandler(async (req: NextApiRequest, res: NextApiResponse) =>
     console.log(`[MONITOR] Starting monitoring for session: ${session_id}`);
 
     const db = getDB();
-    const { client: tradingClient, marketType, leverage } =
-      await getSessionTradingContext(session_id);
+    const tradingClient = getTradingClient(true);
     const evaluator = getEvaluator();
     const tvMCP = getTradingViewMCP();
 
@@ -67,8 +66,8 @@ export default asyncHandler(async (req: NextApiRequest, res: NextApiResponse) =>
       session = {
         session_id,
         strategy_id: "demo-strategy",
-        initial_balance: 10000,
-        current_balance: 10000,
+        initial_balance: 5000,
+        current_balance: 5000,
         total_pnl: 0,
       };
       strategy = {
@@ -206,10 +205,7 @@ export default asyncHandler(async (req: NextApiRequest, res: NextApiResponse) =>
         if (tradeSignal === "BUY") {
           quantity = riskAmount / currentPrice;
         } else {
-          quantity = await tradingClient.resolveSellQuantity(
-            strategy.symbol,
-            lastBuyQuantity
-          );
+          quantity = lastBuyQuantity;
         }
 
         quantity = Math.round(quantity * 10000) / 10000;

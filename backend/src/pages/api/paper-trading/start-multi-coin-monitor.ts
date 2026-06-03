@@ -67,8 +67,8 @@ export default asyncHandler(async (req: NextApiRequest, res: NextApiResponse) =>
       session = {
         session_id,
         strategy_id,
-        initial_balance: 10000,
-        current_balance: 10000,
+        initial_balance: 5000,
+        current_balance: 5000,
         total_pnl: 0,
       };
       strategy = {

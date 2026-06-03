@@ -6,7 +6,7 @@
 import type { NextApiRequest, NextApiResponse } from "next";
 import { getDB } from "@/lib/db";
 import { sendSuccess, sendError, asyncHandler } from "@/lib/utils";
-import { getSessionTradingContext } from "@/lib/session-trading-client";
+import { getTradingClient } from "@/lib/binance-trading";
 import { getEvaluator } from "@/lib/strategy-evaluator";
 
 interface ScanRequest {
@@ -29,8 +29,7 @@ export default asyncHandler(async (req: NextApiRequest, res: NextApiResponse) =>
     console.log(`[MULTI-COIN-SCAN] Starting scan for session: ${session_id}`);
 
     const db = getDB();
-    const { client: tradingClient, marketType, leverage } =
-      await getSessionTradingContext(session_id);
+    const tradingClient = getTradingClient(true);
     const evaluator = getEvaluator();
 
     // Get session
@@ -46,14 +45,26 @@ export default asyncHandler(async (req: NextApiRequest, res: NextApiResponse) =>
         return sendError(res, "Strategy not found", 404, req);
       }
 
-      // Get multi-coin config
-      const storedConfig = await db.getMultiCoinConfig(session_id);
-      config =
-        storedConfig ||
-        (session as { metadata?: { multi_coin_config?: typeof config } })
-          .metadata?.multi_coin_config;
+      const saved = await db.getMultiCoinConfig(session_id);
+      config = saved
+        ? {
+            coin_count: saved.coin_count,
+            custom_coins: saved.custom_coins,
+            scan_frequency: saved.scan_frequency,
+            position_size_per_coin: saved.position_size_per_coin,
+            max_concurrent_positions: saved.max_concurrent_positions,
+            stop_loss_percent: saved.stop_loss_percent,
+            take_profit_percent: saved.take_profit_percent,
+            trading_type: saved.trading_type,
+          }
+        : session.metadata?.multi_coin_config;
       if (!config) {
-        return sendError(res, "Multi-coin config not found", 400, req);
+        return sendError(
+          res,
+          "Multi-coin config not found. Start paper trading again to enable top-20 monitoring.",
+          400,
+          req
+        );
       }
     } catch (dbError) {
       console.warn(
@@ -133,11 +144,12 @@ export default asyncHandler(async (req: NextApiRequest, res: NextApiResponse) =>
 
           if (openPositions < config.max_concurrent_positions) {
             try {
-              const rawQty = config.position_size_per_coin / currentPrice;
-              const quantity = await tradingClient.formatQuantity(coin, rawQty);
-              const order = await tradingClient.marketOrder(coin, "BUY", quantity, {
-                leverage: marketType === "futures" ? leverage : undefined,
-              });
+              const quantity = config.position_size_per_coin / currentPrice;
+              const order = await tradingClient.marketOrder(
+                coin,
+                "BUY",
+                quantity
+              );
 
               scanResults.trades_executed++;
               console.log(

@@ -1,12 +1,16 @@
 /**
  * POST /api/paper-trading/start - Start paper trading session
- * Automatically deploys strategy to TradingView via MCP
+ * Creates session with $5k demo capital and top-20 multi-coin monitor by default.
  */
 
 import type { NextApiRequest, NextApiResponse } from "next";
 import { getDB } from "@/lib/db";
 import { sendSuccess, sendError, asyncHandler } from "@/lib/utils";
 import { getTradingViewMCPService } from "@/lib/tradingview-mcp-service";
+import {
+  PAPER_TRADING_DEFAULT_CAPITAL,
+  buildDefaultMultiCoinConfig,
+} from "@/lib/trading-constants";
 
 interface StartRequest {
   strategy_id: string;
@@ -14,6 +18,7 @@ interface StartRequest {
   initial_balance?: number;
   use_testnet?: boolean;
   created_by?: string;
+  enable_multi_coin?: boolean;
 }
 
 export default asyncHandler(async (req: NextApiRequest, res: NextApiResponse) => {
@@ -24,13 +29,12 @@ export default asyncHandler(async (req: NextApiRequest, res: NextApiResponse) =>
 
   const {
     strategy_id,
-    version,
     initial_balance,
     use_testnet,
     created_by,
+    enable_multi_coin = true,
   }: StartRequest = req.body;
 
-  // Validate required fields
   if (!strategy_id) {
     return sendError(res, "Missing required field: strategy_id", 400, req);
   }
@@ -38,30 +42,35 @@ export default asyncHandler(async (req: NextApiRequest, res: NextApiResponse) =>
   try {
     const db = getDB();
     const mcpService = getTradingViewMCPService();
-
-    // Verify strategy exists
     const strategy = await db.getStrategy(strategy_id);
+    const capital = initial_balance ?? PAPER_TRADING_DEFAULT_CAPITAL;
 
-    // Create paper trading session
     const session = await db.createTradingSession({
       strategy_id,
       session_name: `Paper Trading - ${strategy.name}`,
-      initial_balance: initial_balance || 10000,
+      initial_balance: capital,
       exchange: "binance",
       is_testnet: use_testnet !== false,
     });
 
-    // Update strategy status
-    await db.updateStrategy(strategy_id, {
-      status: "testing",
-    });
+    let multiCoinConfig = null;
+    if (enable_multi_coin !== false) {
+      const marketType =
+        strategy.market_type === "futures" ? "futures" : "spot";
+      multiCoinConfig = buildDefaultMultiCoinConfig(capital, marketType);
+      try {
+        await db.saveMultiCoinConfig(session.id, strategy_id, multiCoinConfig);
+      } catch (mcErr) {
+        console.warn("[API] Multi-coin config save failed:", mcErr);
+      }
+    }
 
-    // Deploy to TradingView via MCP (non-blocking)
+    await db.updateStrategy(strategy_id, { status: "testing" });
+
     let mcpStatus = { success: false, message: "MCP not available" };
     try {
       const isHealthy = await mcpService.healthCheck();
       if (isHealthy) {
-        console.log(`[API] Deploying strategy to TradingView via MCP...`);
         mcpStatus = await mcpService.deployStrategy(strategy);
         if (mcpStatus.success) {
           await mcpService.startMonitoring(
@@ -72,18 +81,13 @@ export default asyncHandler(async (req: NextApiRequest, res: NextApiResponse) =>
         }
       }
     } catch (mcpError) {
-      console.warn(
-        "[API] MCP deployment failed (non-critical):",
-        mcpError
-      );
-      // Continue anyway - MCP is optional
+      console.warn("[API] MCP deployment failed (non-critical):", mcpError);
     }
 
-    // Log audit
     await db.createStrategyAuditLog({
       strategy_id,
       action: "START_PAPER_TRADING",
-      new_values: session,
+      new_values: { session, multi_coin: multiCoinConfig },
       changed_by: created_by || "system",
     });
 
@@ -98,7 +102,11 @@ export default asyncHandler(async (req: NextApiRequest, res: NextApiResponse) =>
         is_testnet: session.is_testnet,
         tradingview_status: mcpStatus.success ? "deployed" : "pending",
         tradingview_message: mcpStatus.message,
-        message: "Paper trading session started",
+        multi_coin_enabled: Boolean(multiCoinConfig),
+        coins_monitored: multiCoinConfig?.custom_coins?.length ?? 0,
+        message: multiCoinConfig
+          ? `Paper trading started with $${capital} on Binance testnet. Monitoring top ${multiCoinConfig.coin_count} coins.`
+          : "Paper trading session started",
       },
       201,
       req
