@@ -36,6 +36,8 @@ interface DerivativesData {
   longLiquidationSharePct: number;
   derivativesVolume24h: number;
   lastUpdated: string;
+  dataSource?: string;
+  notice?: string;
 }
 
 interface TechnicalRow {
@@ -133,6 +135,7 @@ export default function OnChain() {
   const [fearGreedSource, setFearGreedSource] = useState<string | null>(null);
   const [summary, setSummary] = useState<OverviewSummary | null>(null);
   const [loading, setLoading] = useState(true);
+  const [dataNotices, setDataNotices] = useState<{ derivatives?: string; technical?: string }>({});
   const [error, setError] = useState<string | null>(null);
 
   useEffect(() => {
@@ -170,6 +173,7 @@ export default function OnChain() {
       setMarketTa(data?.technicalAnalysis?.market || null);
       setSymbolTa(data?.technicalAnalysis?.symbols || []);
       setFearGreedSource(data?.fearGreed?.source || null);
+      setDataNotices(data?.dataNotices || {});
     } catch (err) {
       console.error("Error fetching on-chain data:", err);
       setError(
@@ -445,6 +449,12 @@ export default function OnChain() {
                 shorts.
               </p>
               {derivatives ? (
+                <>
+                  {derivatives.notice && (
+                    <p className="text-amber-200/90 text-sm mb-4 p-3 rounded-lg bg-amber-900/20 border border-amber-700/40">
+                      {derivatives.notice}
+                    </p>
+                  )}
                 <div className="grid grid-cols-1 md:grid-cols-2 gap-6">
                   <div className="p-5 rounded-lg bg-slate-950/50 border border-slate-700">
                     <p className="text-slate-400 text-sm">Avg funding rate</p>
@@ -497,13 +507,13 @@ export default function OnChain() {
                   </div>
                   <p className="text-slate-500 text-xs md:col-span-2">
                     Updated: {new Date(derivatives.lastUpdated).toLocaleString()} ·
-                    Source: CoinMarketCap
+                    Source: {derivatives.dataSource === "coinmarketcap" ? "CoinMarketCap" : "Binance + CMC volume"}
                   </p>
                 </div>
+                </>
               ) : (
                 <p className="text-slate-500">
-                  Derivatives funding data unavailable. Confirm COINMARKETCAP_API_KEY is
-                  set on Railway and your plan includes derivatives endpoints.
+                  Derivatives funding data unavailable. Confirm COINMARKETCAP_API_KEY is set on Railway.
                 </p>
               )}
             </div>
@@ -517,11 +527,29 @@ export default function OnChain() {
               </p>
               {derivatives ? (
                 <div className="grid grid-cols-1 md:grid-cols-3 gap-6">
-                  <div className="p-5 rounded-lg bg-slate-950/50 border border-slate-700 md:col-span-3">
-                    <p className="text-slate-400 text-sm">Total 24h liquidations</p>
-                    <p className="text-4xl font-bold text-white mt-1">
-                      {formatUsd(derivatives.liquidations24hUsd)}
+                  {derivatives.notice && (
+                    <p className="text-amber-200/90 text-sm md:col-span-3 p-3 rounded-lg bg-amber-900/20 border border-amber-700/40">
+                      {derivatives.notice}
                     </p>
+                  )}
+                  {derivatives.derivativesVolume24h > 0 && (
+                    <div className="p-5 rounded-lg bg-slate-950/50 border border-slate-700 md:col-span-3">
+                      <p className="text-slate-400 text-sm">Global derivatives volume (CMC)</p>
+                      <p className="text-3xl font-bold text-white mt-1">
+                        {formatUsd(derivatives.derivativesVolume24h)}
+                      </p>
+                    </div>
+                  )}
+                  <div className="p-5 rounded-lg bg-slate-950/50 border border-slate-700 md:col-span-3">
+                    <p className="text-slate-400 text-sm">Total 24h liquidations (CMC detail)</p>
+                    <p className="text-4xl font-bold text-white mt-1">
+                      {derivatives.liquidations24hUsd > 0 ? formatUsd(derivatives.liquidations24hUsd) : "—"}
+                    </p>
+                    {derivatives.liquidations24hUsd <= 0 && (
+                      <p className="text-slate-500 text-xs mt-2">
+                        Liquidation breakdown needs CMC derivatives v3 (unavailable on your API tier). Use Funding Rates tab for live Binance funding.
+                      </p>
+                    )}
                   </div>
                   <div className="p-5 rounded-lg bg-red-500/10 border border-red-500/30">
                     <p className="text-slate-400 text-sm">Long liquidations</p>
@@ -564,6 +592,9 @@ export default function OnChain() {
 
           {tab === "rsi" && !loading && (
             <div className="space-y-6">
+              {dataNotices.technical && (
+                <p className="text-amber-200/90 text-sm p-3 rounded-lg bg-amber-900/20 border border-amber-700/40">{dataNotices.technical}</p>
+              )}
               <div className="bg-slate-800/50 border border-slate-700 rounded-lg p-8">
                 <h2 className="text-lg font-bold text-white mb-2">
                   TOTAL MARKET RSI

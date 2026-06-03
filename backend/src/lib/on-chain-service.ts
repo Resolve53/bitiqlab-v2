@@ -65,7 +65,7 @@ export async function getOnChainMetrics(symbol: string): Promise<OnChainMetrics>
         confidence: whales.confidence,
       },
       fundingRate: {
-        rate: fundingSignal?.score || 0,
+        rate: fundingRates[0]?.fundingRate ?? 0,
         bullishSignal: fundingSignal?.bullishSignal || false,
         score: fundingSignal?.score || 50,
       },
