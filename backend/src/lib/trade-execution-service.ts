@@ -1,5 +1,6 @@
-import { BinanceTradingClient, Order } from './binance-trading';
+import { BinanceTradingClient } from './binance-trading';
 import { PortfolioRiskManager } from './portfolio-risk-manager';
+import type { TradingMarketType } from './trading-market-resolver';
 
 export interface ExecutionContext {
   symbol: string;
@@ -8,6 +9,8 @@ export interface ExecutionContext {
   entryPrice: number;
   stopLossPercent: number;
   takeProfitPercent: number;
+  marketType?: TradingMarketType;
+  leverage?: number;
   maxRetries?: number;
   retryDelayMs?: number;
 }
@@ -32,8 +35,13 @@ export class TradeExecutionService {
   private client: BinanceTradingClient;
   private riskManager: PortfolioRiskManager;
 
-  constructor(accountBalance: number, apiKey?: string, apiSecret?: string) {
-    this.client = new BinanceTradingClient(apiKey, apiSecret, true);
+  constructor(
+    accountBalance: number,
+    apiKey?: string,
+    apiSecret?: string,
+    marketType: TradingMarketType = 'spot'
+  ) {
+    this.client = new BinanceTradingClient(apiKey, apiSecret, true, marketType);
     this.riskManager = new PortfolioRiskManager(accountBalance);
   }
 
@@ -44,7 +52,6 @@ export class TradeExecutionService {
     let lastError: Error | null = null;
     let attempt = 0;
 
-    // Calculate SL and TP prices
     const slPrice = this.calculateStopLossPrice(
       context.entryPrice,
       context.side,
@@ -60,7 +67,6 @@ export class TradeExecutionService {
       attempt++;
 
       try {
-        // Validate position size before placement
         const validation = this.riskManager.validatePositionSize(
           {
             symbol: context.symbol,
@@ -71,7 +77,7 @@ export class TradeExecutionService {
             unrealizedPnL: 0,
           },
           context.stopLossPercent,
-          0 // Current portfolio exposure (simplified)
+          0
         );
 
         if (!validation.isValid) {
@@ -85,11 +91,19 @@ export class TradeExecutionService {
           };
         }
 
-        // Place order
+        const qty = await this.client.formatQuantity(
+          context.symbol,
+          context.quantity
+        );
+
         const order = await this.client.marketOrder(
           context.symbol,
           context.side,
-          context.quantity
+          qty,
+          {
+            leverage:
+              context.marketType === 'futures' ? context.leverage : undefined,
+          }
         );
 
         return {
@@ -107,7 +121,6 @@ export class TradeExecutionService {
         console.warn(`Trade execution attempt ${attempt} failed:`, lastError.message);
 
         if (attempt < maxRetries) {
-          // Exponential backoff
           const delay = retryDelay * Math.pow(EXPONENTIAL_BACKOFF, attempt - 1);
           await this.sleep(delay);
         }
@@ -131,9 +144,8 @@ export class TradeExecutionService {
   ): number {
     if (side === 'BUY') {
       return entryPrice * (1 - slPercent / 100);
-    } else {
-      return entryPrice * (1 + slPercent / 100);
     }
+    return entryPrice * (1 + slPercent / 100);
   }
 
   private calculateTakeProfitPrice(
@@ -143,9 +155,8 @@ export class TradeExecutionService {
   ): number {
     if (side === 'BUY') {
       return entryPrice * (1 + tpPercent / 100);
-    } else {
-      return entryPrice * (1 - tpPercent / 100);
     }
+    return entryPrice * (1 - tpPercent / 100);
   }
 
   private mapOrderStatus(binanceStatus: string): 'FILLED' | 'PARTIAL' | 'REJECTED' | 'PENDING' {
@@ -176,19 +187,17 @@ export class TradeExecutionService {
     tpPrice: number,
     pollIntervalMs: number = 10000
   ): Promise<{ exitReason: 'SL' | 'TP' | 'TIMEOUT'; exitPrice: number }> {
-    const timeoutMs = 24 * 60 * 60 * 1000; // 24 hours
+    const timeoutMs = 24 * 60 * 60 * 1000;
     const startTime = Date.now();
 
     while (Date.now() - startTime < timeoutMs) {
       try {
         const currentPrice = await this.client.getPrice(symbol);
 
-        // Check if SL hit
         if (currentPrice <= slPrice) {
           return { exitReason: 'SL', exitPrice: currentPrice };
         }
 
-        // Check if TP hit
         if (currentPrice >= tpPrice) {
           return { exitReason: 'TP', exitPrice: currentPrice };
         }
@@ -200,7 +209,6 @@ export class TradeExecutionService {
       }
     }
 
-    // Timeout after 24 hours
     const finalPrice = await this.client.getPrice(symbol);
     return { exitReason: 'TIMEOUT', exitPrice: finalPrice };
   }
@@ -215,7 +223,8 @@ export class TradeExecutionService {
 
     try {
       const closeSide = side === 'BUY' ? 'SELL' : 'BUY';
-      const order = await this.client.marketOrder(symbol, closeSide, quantity);
+      const qty = await this.client.formatQuantity(symbol, quantity);
+      const order = await this.client.marketOrder(symbol, closeSide, qty);
 
       return {
         success: true,

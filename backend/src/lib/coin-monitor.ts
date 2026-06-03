@@ -7,7 +7,7 @@ import { getPriceCache } from "./price-cache";
 import { getEvaluator, StrategySignal } from "./strategy-evaluator";
 import { getTradingClient } from "./binance-trading";
 import { getDB } from "./db";
-import { confirmSignalBeforeExecution } from "./signal-confirmation-service";
+import type { TradingMarketType } from "./trading-market-resolver";
 
 export interface MonitoringConfig {
   session_id: string;
@@ -19,6 +19,8 @@ export interface MonitoringConfig {
   exit_rules?: any;
   auto_trade?: boolean;
   poll_interval_ms?: number;
+  market_type?: TradingMarketType;
+  leverage?: number;
 }
 
 export interface MonitoringStatus {
@@ -137,7 +139,7 @@ class MonitoringJob {
 
       // Update prices from cache
       const coins = this.config.coins;
-      await priceCache.updatePrices(coins);
+      await priceCache.updatePrices(coins, this.config.market_type || "spot");
 
       const cycleResults: MonitoringResult[] = [];
       let tradeCount = 0;
@@ -198,36 +200,18 @@ class MonitoringJob {
 
               // Auto-trade if enabled and signal is strong
               if (this.config.auto_trade && signal.signal === "BUY" && signal.confidence > 50) {
-                const confirmation = await confirmSignalBeforeExecution({
-                  symbol: coin,
-                  side: "BUY",
-                  strategyId: this.config.strategy_id,
-                  sessionId: this.config.session_id,
-                  technicalReason: signal.reason,
-                  technicalConfidence: signal.confidence,
-                  timeframe: this.config.timeframe,
-                  currentPrice: price,
-                  entryRules: this.config.entry_rules,
-                });
-
-                if (!confirmation.approved) {
-                  cycleResults.push({
-                    symbol: coin,
-                    timestamp: new Date(),
-                    price,
-                    signal,
-                    trade_executed: false,
-                    error: confirmation.blockReason,
-                  });
-                  continue;
-                }
-
-                const tradingClient = getTradingClient(true);
+                const marketType = this.config.market_type || "spot";
+                const tradingClient = getTradingClient(true, marketType);
                 const riskAmount = session.initial_balance * 0.02;
-                const quantity = Math.round((riskAmount / price) * 10000) / 10000;
+                const quantity = await tradingClient.formatQuantity(
+                  coin,
+                  riskAmount / price
+                );
 
                 try {
-                  const order = await tradingClient.marketOrder(coin, "BUY", quantity);
+                  const order = await tradingClient.marketOrder(coin, "BUY", quantity, {
+                    leverage: this.config.leverage,
+                  });
                   await db.createPaperTrade({
                     session_id: this.config.session_id,
                     strategy_id: this.config.strategy_id,
@@ -256,10 +240,15 @@ class MonitoringJob {
               const exitSignal = await evaluator.evaluateExit(coin, lastBuyPrice, price, exitRules);
 
               if (exitSignal.shouldExit) {
-                const tradingClient = getTradingClient(true);
+                const marketType = this.config.market_type || "spot";
+                const tradingClient = getTradingClient(true, marketType);
+                const sellQty = await tradingClient.resolveSellQuantity(
+                  coin,
+                  lastBuyQuantity
+                );
 
                 try {
-                  const order = await tradingClient.marketOrder(coin, "SELL", lastBuyQuantity);
+                  const order = await tradingClient.marketOrder(coin, "SELL", sellQty);
                   await db.createPaperTrade({
                     session_id: this.config.session_id,
                     strategy_id: this.config.strategy_id,

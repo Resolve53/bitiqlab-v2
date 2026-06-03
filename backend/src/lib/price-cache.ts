@@ -1,8 +1,13 @@
 /**
- * Price Cache Service
- * Manages real-time price data from Binance with intelligent caching
- * to avoid hitting rate limits (1200 requests/min)
+ * Price Cache Service — Binance spot or USD-M futures public ticker prices.
  */
+
+import type { TradingMarketType } from "./trading-market-resolver";
+
+const SPOT_PRICE_BASE = "https://api.binance.com/api/v3";
+const FUTURES_PRICE_BASE =
+  process.env.BINANCE_FUTURES_TESTNET_BASE_URL ||
+  "https://demo-fapi.binance.com";
 
 interface PriceData {
   symbol: string;
@@ -22,39 +27,28 @@ class PriceCache {
     lastUpdate: new Date(0),
   };
 
-  private cacheMinIntervalMs = 3000; // Minimum 3 seconds between Binance calls
+  private cacheMinIntervalMs = 3000;
   private isUpdating = false;
 
-  /**
-   * Get current prices from cache
-   * Returns cached prices immediately without waiting
-   */
   getPrices(symbols: string[]): PriceData[] {
     return symbols
       .map((symbol) => this.cache.prices.get(symbol))
       .filter((price): price is PriceData => price !== undefined);
   }
 
-  /**
-   * Get a single price from cache
-   */
   getPrice(symbol: string): PriceData | undefined {
     return this.cache.prices.get(symbol);
   }
 
-  /**
-   * Update prices from Binance API
-   * Respects rate limits by caching for minimum 3 seconds
-   */
-  async updatePrices(symbols: string[]): Promise<void> {
-    // Check if we should update based on cache age
+  async updatePrices(
+    symbols: string[],
+    marketType: TradingMarketType = "spot"
+  ): Promise<void> {
     const timeSinceLastUpdate = Date.now() - this.cache.lastUpdate.getTime();
     if (timeSinceLastUpdate < this.cacheMinIntervalMs) {
-      // Still within cache window, skip update
       return;
     }
 
-    // Prevent multiple simultaneous updates
     if (this.isUpdating) {
       return;
     }
@@ -62,34 +56,38 @@ class PriceCache {
     this.isUpdating = true;
 
     try {
-      // Batch symbols into groups of 50 (Binance limit)
       const batches = this.batchSymbols(symbols, 50);
 
       for (const batch of batches) {
-        await this.fetchBatch(batch);
+        await this.fetchBatch(batch, marketType);
       }
 
       this.cache.lastUpdate = new Date();
     } catch (error) {
       console.error("Error updating prices:", error);
-      // Silently fail - return cached data
     } finally {
       this.isUpdating = false;
     }
   }
 
-  /**
-   * Fetch a batch of prices from Binance
-   * Uses the efficient /ticker/price endpoint
-   */
-  private async fetchBatch(symbols: string[]): Promise<void> {
+  private priceBase(marketType: TradingMarketType): string {
+    return marketType === "futures"
+      ? `${FUTURES_PRICE_BASE}/fapi/v1`
+      : SPOT_PRICE_BASE;
+  }
+
+  private async fetchBatch(
+    symbols: string[],
+    marketType: TradingMarketType = "spot"
+  ): Promise<void> {
     if (symbols.length === 0) return;
 
+    const base = this.priceBase(marketType);
+
     try {
-      // For single symbol, use direct endpoint
       if (symbols.length === 1) {
         const response = await fetch(
-          `https://api.binance.com/api/v3/ticker/price?symbol=${symbols[0]}`
+          `${base}/ticker/price?symbol=${symbols[0]}`
         );
         const data = await response.json();
 
@@ -97,15 +95,13 @@ class PriceCache {
           this.cache.prices.set(data.symbol, {
             symbol: data.symbol,
             price: parseFloat(data.price),
-            change24h: 0, // Would need 24hr endpoint for this
+            change24h: 0,
             timestamp: new Date(),
           });
         }
       } else {
-        // For multiple symbols, fetch individual prices
-        // (Binance doesn't have a single endpoint for multiple spot prices)
         const promises = symbols.map((symbol) =>
-          fetch(`https://api.binance.com/api/v3/ticker/price?symbol=${symbol}`)
+          fetch(`${base}/ticker/price?symbol=${symbol}`)
             .then((res) => res.json())
             .then((data) => {
               if (data.symbol && data.price) {
@@ -129,52 +125,14 @@ class PriceCache {
     }
   }
 
-  /**
-   * Fetch 24hr change stats for better data
-   */
-  private async fetch24hrStats(symbols: string[]): Promise<void> {
-    try {
-      if (symbols.length === 0) return;
-
-      const promises = symbols.map((symbol) =>
-        fetch(`https://api.binance.com/api/v3/ticker/24hr?symbol=${symbol}`)
-          .then((res) => res.json())
-          .then((data) => {
-            if (data.symbol) {
-              const existing = this.cache.prices.get(data.symbol);
-              if (existing) {
-                existing.change24h = parseFloat(data.priceChangePercent);
-              }
-            }
-          })
-          .catch(() => {
-            // Silently fail for 24hr stats
-          })
-      );
-
-      await Promise.all(promises);
-    } catch (error) {
-      console.error("Error fetching 24hr stats:", error);
-    }
-  }
-
-  /**
-   * Get cache age in milliseconds
-   */
   getCacheAgeMs(): number {
     return Date.now() - this.cache.lastUpdate.getTime();
   }
 
-  /**
-   * Check if cache is stale
-   */
   isStale(): boolean {
     return this.getCacheAgeMs() > this.cacheMinIntervalMs * 2;
   }
 
-  /**
-   * Batch array into chunks
-   */
   private batchSymbols(symbols: string[], batchSize: number): string[][] {
     const batches: string[][] = [];
     for (let i = 0; i < symbols.length; i += batchSize) {
@@ -184,7 +142,6 @@ class PriceCache {
   }
 }
 
-// Singleton instance
 let instance: PriceCache | null = null;
 
 export function getPriceCache(): PriceCache {

@@ -1,10 +1,12 @@
 /**
- * Binance Trading Client for Testnet
- * Handles authentication, order placement, and position management
+ * Binance Trading Client for Spot and USD-M Futures (testnet + live)
  */
 
 import crypto from "crypto";
 import axios, { AxiosInstance } from "axios";
+import type { TradingMarketType } from "./trading-market-resolver";
+
+export type { TradingMarketType };
 
 export interface Order {
   orderId: number;
@@ -58,31 +60,57 @@ export interface TradeResult {
   price?: number;
 }
 
+const SPOT_TESTNET_BASE = "https://testnet.binance.vision/api";
+const SPOT_LIVE_BASE = "https://api.binance.com/api";
+const FUTURES_TESTNET_BASE =
+  process.env.BINANCE_FUTURES_TESTNET_BASE_URL ||
+  "https://demo-fapi.binance.com";
+const FUTURES_LIVE_BASE = "https://fapi.binance.com";
+
 export class BinanceTradingClient {
   private apiKey: string;
   private apiSecret: string;
-  private baseUrl: string = "https://testnet.binance.vision/api";
+  private baseUrl: string;
   private client: AxiosInstance;
+  readonly marketType: TradingMarketType;
+  readonly useTestnet: boolean;
+  private quantityStepCache = new Map<string, number>();
+  private leverageSetForSymbol = new Set<string>();
 
-  constructor(apiKey?: string, apiSecret?: string, useTestnet: boolean = true) {
-    this.apiKey = apiKey || process.env.BINANCE_TESTNET_API_KEY || "";
-    this.apiSecret = apiSecret || process.env.BINANCE_TESTNET_API_SECRET || "";
+  constructor(
+    apiKey?: string,
+    apiSecret?: string,
+    useTestnet: boolean = true,
+    marketType: TradingMarketType = "spot"
+  ) {
+    this.marketType = marketType;
+    this.useTestnet = useTestnet;
 
-    if (useTestnet) {
-      this.baseUrl = "https://testnet.binance.vision/api";
+    if (marketType === "futures") {
+      this.apiKey =
+        apiKey ||
+        process.env.BINANCE_FUTURES_TESTNET_API_KEY ||
+        process.env.BINANCE_TESTNET_API_KEY ||
+        "";
+      this.apiSecret =
+        apiSecret ||
+        process.env.BINANCE_FUTURES_TESTNET_API_SECRET ||
+        process.env.BINANCE_TESTNET_API_SECRET ||
+        "";
+      this.baseUrl = useTestnet ? FUTURES_TESTNET_BASE : FUTURES_LIVE_BASE;
     } else {
-      this.baseUrl = "https://api.binance.com/api";
+      this.apiKey = apiKey || process.env.BINANCE_TESTNET_API_KEY || "";
+      this.apiSecret =
+        apiSecret || process.env.BINANCE_TESTNET_API_SECRET || "";
+      this.baseUrl = useTestnet ? SPOT_TESTNET_BASE : SPOT_LIVE_BASE;
     }
 
     this.client = axios.create({
       baseURL: this.baseUrl,
-      timeout: 10000,
+      timeout: 15000,
     });
   }
 
-  /**
-   * Generate signature for authenticated requests
-   */
   private getSignature(queryString: string): string {
     return crypto
       .createHmac("sha256", this.apiSecret)
@@ -90,67 +118,111 @@ export class BinanceTradingClient {
       .digest("hex");
   }
 
-  /**
-   * Make authenticated API request
-   */
   private async authenticatedRequest<T>(
     method: string,
     endpoint: string,
-    params: Record<string, any> = {}
+    params: Record<string, string | number> = {}
   ): Promise<T> {
     try {
       const timestamp = Date.now();
-      const queryParams = {
+      const queryParams: Record<string, string | number> = {
         ...params,
         timestamp,
       };
 
-      // Build query string
       const queryString = Object.entries(queryParams)
-        .map(([key, value]) => `${key}=${encodeURIComponent(value)}`)
+        .map(([key, value]) => `${key}=${encodeURIComponent(String(value))}`)
         .join("&");
 
       const signature = this.getSignature(queryString);
       const url = `${endpoint}?${queryString}&signature=${signature}`;
 
-      const config = {
+      const response = await this.client.request<T>({
         method: method.toLowerCase(),
         url,
         headers: {
           "X-MBX-APIKEY": this.apiKey,
         },
-      };
+      });
 
-      const response = await this.client.request<T>(config);
       return response.data;
     } catch (error) {
       if (axios.isAxiosError(error)) {
+        const msg =
+          error.response?.data?.msg ||
+          error.response?.data?.message ||
+          error.message;
         throw new Error(
-          `Binance API Error: ${error.response?.status} ${error.response?.data?.msg || error.message}`
+          `Binance ${this.marketType} API Error: ${error.response?.status} ${msg}`
         );
       }
       throw error;
     }
   }
 
-  /**
-   * Get account information including balances
-   */
+  private accountEndpoint(): string {
+    return this.marketType === "futures" ? "/fapi/v2/account" : "/v3/account";
+  }
+
+  private orderEndpoint(): string {
+    return this.marketType === "futures" ? "/fapi/v1/order" : "/v3/order";
+  }
+
+  private openOrdersEndpoint(): string {
+    return this.marketType === "futures"
+      ? "/fapi/v1/openOrders"
+      : "/v3/openOrders";
+  }
+
+  private tickerPriceEndpoint(): string {
+    return this.marketType === "futures"
+      ? "/fapi/v1/ticker/price"
+      : "/v3/ticker/price";
+  }
+
+  async ping(): Promise<boolean> {
+    try {
+      const path =
+        this.marketType === "futures" ? "/fapi/v1/ping" : "/v3/ping";
+      await this.client.get(path);
+      return true;
+    } catch {
+      return false;
+    }
+  }
+
   async getAccountInfo(): Promise<{
     balances: AccountBalance[];
     makerCommission: number;
     takerCommission: number;
   }> {
-    const result = await this.authenticatedRequest(
+    const result = await this.authenticatedRequest<any>(
       "GET",
-      "/v3/account"
+      this.accountEndpoint()
     );
-    return result as any;
+
+    if (this.marketType === "futures") {
+      const balances: AccountBalance[] = (result.assets || []).map(
+        (a: { asset: string; availableBalance: string; walletBalance: string }) => ({
+          asset: a.asset,
+          free: parseFloat(a.availableBalance || "0"),
+          locked: Math.max(
+            0,
+            parseFloat(a.walletBalance || "0") -
+              parseFloat(a.availableBalance || "0")
+          ),
+        })
+      );
+      return {
+        balances,
+        makerCommission: result.feeTier ?? 0,
+        takerCommission: result.feeTier ?? 0,
+      };
+    }
+
+    return result;
   }
 
-  /**
-   * Get balance for a specific asset
-   */
   async getBalance(asset: string = "USDT"): Promise<number> {
     try {
       const account = await this.getAccountInfo();
@@ -164,104 +236,156 @@ export class BinanceTradingClient {
     }
   }
 
-  /**
-   * Place a market order
-   */
-  async marketOrder(
-    symbol: string,
-    side: "BUY" | "SELL",
-    quantity: number
-  ): Promise<TradeResult> {
+  async getLongPositionQuantity(symbol: string): Promise<number> {
+    if (this.marketType !== "futures") {
+      return 0;
+    }
+
     try {
-      const params = {
-        symbol: symbol.toUpperCase(),
-        side: side.toUpperCase(),
-        type: "MARKET",
-        quantity: quantity.toString(),
-      };
+      const rows = await this.authenticatedRequest<
+        Array<{ symbol: string; positionAmt: string }>
+      >("GET", "/fapi/v2/positionRisk", { symbol: symbol.toUpperCase() });
 
-      const result = await this.authenticatedRequest<Order>(
-        "POST",
-        "/v3/order",
-        params
-      );
-
-      return {
-        symbol: result.symbol,
-        orderId: result.orderId,
-        clientOrderId: result.clientOrderId,
-        executedQty: result.executedQty,
-        cummulativeQuoteAssetTransacted:
-          result.cummulativeQuoteAssetTransacted,
-        status: result.status,
-      };
+      const row = Array.isArray(rows)
+        ? rows.find((r) => r.symbol === symbol.toUpperCase())
+        : undefined;
+      const amt = parseFloat(row?.positionAmt || "0");
+      return amt > 0 ? amt : 0;
     } catch (error) {
-      console.error("Market order error:", error);
-      throw error;
+      console.error("Error fetching futures position:", error);
+      return 0;
     }
   }
 
-  /**
-   * Place a limit order
-   */
+  async setLeverage(symbol: string, leverage: number): Promise<void> {
+    if (this.marketType !== "futures") return;
+
+    const key = `${symbol.toUpperCase()}:${leverage}`;
+    if (this.leverageSetForSymbol.has(key)) return;
+
+    const clamped = Math.min(125, Math.max(1, Math.floor(leverage)));
+    await this.authenticatedRequest("POST", "/fapi/v1/leverage", {
+      symbol: symbol.toUpperCase(),
+      leverage: clamped,
+    });
+    this.leverageSetForSymbol.add(key);
+  }
+
+  async formatQuantity(symbol: string, quantity: number): Promise<number> {
+    const step = await this.getQuantityStep(symbol);
+    if (step <= 0) {
+      return Math.round(quantity * 10000) / 10000;
+    }
+    const rounded = Math.floor(quantity / step) * step;
+    const decimals = Math.max(0, Math.ceil(-Math.log10(step)));
+    return parseFloat(rounded.toFixed(decimals));
+  }
+
+  private async getQuantityStep(symbol: string): Promise<number> {
+    const sym = symbol.toUpperCase();
+    if (this.quantityStepCache.has(sym)) {
+      return this.quantityStepCache.get(sym)!;
+    }
+
+    try {
+      const path =
+        this.marketType === "futures"
+          ? "/fapi/v1/exchangeInfo"
+          : "/v3/exchangeInfo";
+      const response = await this.client.get(path);
+      const info = response.data.symbols?.find(
+        (s: { symbol: string }) => s.symbol === sym
+      );
+      const lot = info?.filters?.find(
+        (f: { filterType: string }) => f.filterType === "LOT_SIZE"
+      );
+      const step = parseFloat(lot?.stepSize || "0.001");
+      this.quantityStepCache.set(sym, step);
+      return step;
+    } catch {
+      return 0.001;
+    }
+  }
+
+  async marketOrder(
+    symbol: string,
+    side: "BUY" | "SELL",
+    quantity: number,
+    options?: { leverage?: number }
+  ): Promise<TradeResult> {
+    const formattedQty = await this.formatQuantity(symbol, quantity);
+    if (formattedQty <= 0) {
+      throw new Error(`Invalid order quantity for ${symbol}`);
+    }
+
+    if (this.marketType === "futures" && options?.leverage) {
+      await this.setLeverage(symbol, options.leverage);
+    }
+
+    const params: Record<string, string | number> = {
+      symbol: symbol.toUpperCase(),
+      side: side.toUpperCase(),
+      type: "MARKET",
+      quantity: formattedQty.toString(),
+    };
+
+    const result = await this.authenticatedRequest<Order>(
+      "POST",
+      this.orderEndpoint(),
+      params
+    );
+
+    return {
+      symbol: result.symbol,
+      orderId: result.orderId,
+      clientOrderId: result.clientOrderId,
+      executedQty: result.executedQty,
+      cummulativeQuoteAssetTransacted: result.cummulativeQuoteAssetTransacted,
+      status: result.status,
+    };
+  }
+
   async limitOrder(
     symbol: string,
     side: "BUY" | "SELL",
     quantity: number,
     price: number
   ): Promise<TradeResult> {
-    try {
-      const params = {
-        symbol: symbol.toUpperCase(),
-        side: side.toUpperCase(),
-        type: "LIMIT",
-        timeInForce: "GTC",
-        quantity: quantity.toString(),
-        price: price.toString(),
-      };
+    const formattedQty = await this.formatQuantity(symbol, quantity);
 
-      const result = await this.authenticatedRequest<Order>(
-        "POST",
-        "/v3/order",
-        params
-      );
+    const params: Record<string, string | number> = {
+      symbol: symbol.toUpperCase(),
+      side: side.toUpperCase(),
+      type: "LIMIT",
+      timeInForce: "GTC",
+      quantity: formattedQty.toString(),
+      price: price.toString(),
+    };
 
-      return {
-        symbol: result.symbol,
-        orderId: result.orderId,
-        clientOrderId: result.clientOrderId,
-        executedQty: result.executedQty,
-        cummulativeQuoteAssetTransacted:
-          result.cummulativeQuoteAssetTransacted,
-        status: result.status,
-        price: result.price,
-      };
-    } catch (error) {
-      console.error("Limit order error:", error);
-      throw error;
-    }
+    const result = await this.authenticatedRequest<Order>(
+      "POST",
+      this.orderEndpoint(),
+      params
+    );
+
+    return {
+      symbol: result.symbol,
+      orderId: result.orderId,
+      clientOrderId: result.clientOrderId,
+      executedQty: result.executedQty,
+      cummulativeQuoteAssetTransacted: result.cummulativeQuoteAssetTransacted,
+      status: result.status,
+      price: result.price,
+    };
   }
 
-  /**
-   * Cancel an order
-   */
   async cancelOrder(symbol: string, orderId: number): Promise<void> {
-    try {
-      const params = {
-        symbol: symbol.toUpperCase(),
-        orderId,
-      };
-
-      await this.authenticatedRequest("DELETE", "/v3/order", params);
-    } catch (error) {
-      console.error("Cancel order error:", error);
-      throw error;
-    }
+    await this.authenticatedRequest("DELETE", this.orderEndpoint(), {
+      symbol: symbol.toUpperCase(),
+      orderId,
+    });
   }
 
-  /**
-   * Get order status
-   */
   async getOrderStatus(
     symbol: string,
     orderId: number
@@ -271,71 +395,43 @@ export class BinanceTradingClient {
     executedQty: number;
     origQty: number;
   }> {
-    try {
-      const params = {
+    const result = await this.authenticatedRequest<any>(
+      "GET",
+      this.orderEndpoint(),
+      {
         symbol: symbol.toUpperCase(),
         orderId,
-      };
-
-      const result = await this.authenticatedRequest<any>(
-        "GET",
-        "/v3/order",
-        params
-      );
-
-      return {
-        symbol: result.symbol,
-        status: result.status,
-        executedQty: parseFloat(result.executedQty),
-        origQty: parseFloat(result.origQty),
-      };
-    } catch (error) {
-      console.error("Get order status error:", error);
-      throw error;
-    }
-  }
-
-  /**
-   * Get all open orders
-   */
-  async getOpenOrders(symbol?: string): Promise<OpenOrder[]> {
-    try {
-      const params: Record<string, any> = {};
-      if (symbol) {
-        params.symbol = symbol.toUpperCase();
       }
+    );
 
-      const result = await this.authenticatedRequest<OpenOrder[]>(
-        "GET",
-        "/v3/openOrders",
-        params
-      );
-
-      return result;
-    } catch (error) {
-      console.error("Get open orders error:", error);
-      throw error;
-    }
+    return {
+      symbol: result.symbol,
+      status: result.status,
+      executedQty: parseFloat(result.executedQty),
+      origQty: parseFloat(result.origQty),
+    };
   }
 
-  /**
-   * Get current price for a symbol
-   */
+  async getOpenOrders(symbol?: string): Promise<OpenOrder[]> {
+    const params: Record<string, string | number> = {};
+    if (symbol) {
+      params.symbol = symbol.toUpperCase();
+    }
+
+    return this.authenticatedRequest<OpenOrder[]>(
+      "GET",
+      this.openOrdersEndpoint(),
+      params
+    );
+  }
+
   async getPrice(symbol: string): Promise<number> {
-    try {
-      const response = await this.client.get("/v3/ticker/price", {
-        params: { symbol: symbol.toUpperCase() },
-      });
-      return parseFloat(response.data.price);
-    } catch (error) {
-      console.error("Get price error:", error);
-      throw error;
-    }
+    const response = await this.client.get(this.tickerPriceEndpoint(), {
+      params: { symbol: symbol.toUpperCase() },
+    });
+    return parseFloat(response.data.price);
   }
 
-  /**
-   * Get recent trades for a symbol
-   */
   async getRecentTrades(
     symbol: string,
     limit: number = 5
@@ -348,53 +444,77 @@ export class BinanceTradingClient {
       isBuyerMaker: boolean;
     }>
   > {
-    try {
-      const response = await this.client.get("/v3/trades", {
-        params: { symbol: symbol.toUpperCase(), limit },
-      });
-      return response.data.map((trade: any) => ({
-        id: trade.id,
-        price: parseFloat(trade.price),
-        qty: parseFloat(trade.qty),
-        time: trade.time,
-        isBuyerMaker: trade.isBuyerMaker,
-      }));
-    } catch (error) {
-      console.error("Get recent trades error:", error);
-      throw error;
-    }
+    const path =
+      this.marketType === "futures" ? "/fapi/v1/trades" : "/v3/trades";
+    const response = await this.client.get(path, {
+      params: { symbol: symbol.toUpperCase(), limit },
+    });
+    return response.data.map((trade: any) => ({
+      id: trade.id,
+      price: parseFloat(trade.price),
+      qty: parseFloat(trade.qty),
+      time: trade.time,
+      isBuyerMaker: trade.isBuyerMaker,
+    }));
   }
 
-  /**
-   * Get order book for a symbol
-   */
-  async getOrderBook(symbol: string, limit: number = 20): Promise<{
+  async getOrderBook(
+    symbol: string,
+    limit: number = 20
+  ): Promise<{
     bids: [string, string][];
     asks: [string, string][];
   } | null> {
     try {
-      const response = await this.client.get("/v3/depth", {
+      const path =
+        this.marketType === "futures" ? "/fapi/v1/depth" : "/v3/depth";
+      const response = await this.client.get(path, {
         params: { symbol: symbol.toUpperCase(), limit },
       });
       return {
         bids: response.data.bids || [],
         asks: response.data.asks || [],
       };
-    } catch (error) {
-      console.error("Get order book error:", error);
+    } catch {
       return null;
     }
   }
+
+  async resolveSellQuantity(
+    symbol: string,
+    fallbackQuantity: number
+  ): Promise<number> {
+    if (this.marketType === "futures") {
+      const pos = await this.getLongPositionQuantity(symbol);
+      if (pos > 0) return pos;
+      return fallbackQuantity;
+    }
+
+    const openOrders = await this.getOpenOrders(symbol);
+    const buyOrders = openOrders.filter((o) => o.side === "BUY");
+    if (buyOrders.length > 0) {
+      return parseFloat(buyOrders[buyOrders.length - 1].origQty);
+    }
+    return fallbackQuantity;
+  }
 }
 
-// Singleton instance for easy access
-let tradingClient: BinanceTradingClient | null = null;
+const tradingClients = new Map<string, BinanceTradingClient>();
 
 export function getTradingClient(
-  useTestnet: boolean = true
+  useTestnet: boolean = true,
+  marketType: TradingMarketType = "spot"
 ): BinanceTradingClient {
-  if (!tradingClient) {
-    tradingClient = new BinanceTradingClient(undefined, undefined, useTestnet);
+  const key = `${useTestnet ? "testnet" : "live"}:${marketType}`;
+  let client = tradingClients.get(key);
+  if (!client) {
+    client = new BinanceTradingClient(
+      undefined,
+      undefined,
+      useTestnet,
+      marketType
+    );
+    tradingClients.set(key, client);
   }
-  return tradingClient;
+  return client;
 }

@@ -5,7 +5,7 @@
 import type { NextApiRequest, NextApiResponse } from "next";
 import { getDB } from "@/lib/db";
 import { sendSuccess, sendError, asyncHandler } from "@/lib/utils";
-import { getTradingClient } from "@/lib/binance-trading";
+import { getSessionTradingContext } from "@/lib/session-trading-client";
 
 interface MonitorConfig {
   coin_count: number;
@@ -24,6 +24,7 @@ interface SessionStats {
   strategy_name: string;
   status: string;
   exchange: string;
+  market_type: "spot" | "futures";
   is_testnet: boolean;
   initial_balance: number;
   current_balance: number;
@@ -68,7 +69,7 @@ export default asyncHandler(async (req: NextApiRequest, res: NextApiResponse) =>
 
   try {
     const db = getDB();
-    const client = getTradingClient(true); // Use testnet
+    const { client, marketType } = await getSessionTradingContext(session_id);
 
     // Get trading session
     const session = await db.getTradingSession(session_id);
@@ -174,7 +175,9 @@ export default asyncHandler(async (req: NextApiRequest, res: NextApiResponse) =>
       strategy_id: session.strategy_id,
       strategy_name: strategy?.name || "Unknown",
       status: session.status || "active",
-      exchange: session.exchange,
+      exchange:
+        marketType === "futures" ? "binance_futures_testnet" : session.exchange,
+      market_type: marketType,
       is_testnet: session.is_testnet,
       initial_balance: session.initial_balance,
       current_balance: currentBalance,
