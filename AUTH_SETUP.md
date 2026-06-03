@@ -1,80 +1,37 @@
-# Bitiq Lab — Username & password login
+# Bitiq Lab — Login (Supabase Auth)
 
-## Overview
+## Simple setup (recommended)
 
-- **Sign in** at `/login` with **username** + **password**
-- **Sign out** from the sidebar (“Sign out”)
-- Accounts live in **Supabase Auth**; usernames are stored in `public.profiles`
+1. **Supabase → Authentication → Users** → add user with **email + password**
+2. **Railway** env (same Supabase project):
+   - `SUPABASE_URL`
+   - `SUPABASE_SERVICE_ROLE_KEY`
+   - `SUPABASE_ANON_KEY` ← required for login
+3. Redeploy **Railway** and **Vercel**
+4. Open your app **`/login`** → sign in with that **email** and **password**
 
-## 1. Supabase setup
+You do **not** need the `profiles` table or extra SQL for login.
 
-1. Open your Supabase project → **SQL Editor** → run `migrations/007_user_profiles.sql`
-2. **Authentication** → **Providers** → enable **Email**
-3. For internal tools, you can disable “Confirm email” under Email provider settings
+---
 
-## 2. Environment variables
+## Optional: profiles / username
 
-### Railway (backend `bitiqlab-v2`)
+Only if you want a login alias like `admin` instead of email — run `migrations/007_user_profiles.sql` and link the user. Normal use is **email + password only**.
 
-| Variable | Required | Notes |
-|----------|----------|--------|
-| `SUPABASE_URL` | Yes | Already used for DB |
-| `SUPABASE_SERVICE_ROLE_KEY` | Yes | Already used for DB |
-| `SUPABASE_ANON_KEY` | Yes | **Add** from Supabase → Settings → API |
-| `AUTH_REQUIRED` | Optional | `true` (default when keys set) forces API login |
-| `ALLOW_PUBLIC_SIGNUP` | Optional | `true` to allow `/register` |
-| `AUTH_BOOTSTRAP_SECRET` | Optional | One-time first-user creation (see below) |
+---
 
-### Vercel (frontend)
+## Troubleshooting
 
-| Variable | Required | Notes |
-|----------|----------|--------|
-| `NEXT_PUBLIC_ALLOW_SIGNUP` | Optional | `true` to show “Create account” on login |
-| `NEXT_PUBLIC_API_URL` | Yes | Railway URL (rewrites proxy `/api`) |
+| Problem | Fix |
+|--------|-----|
+| Invalid email or password | Use the **exact email** from Supabase Auth (not only a display name). Reset password in Supabase → Users. |
+| Auth not configured (503) | Add `SUPABASE_ANON_KEY` on Railway and redeploy. |
+| Email not confirmed | Confirm user in Supabase or disable “Confirm email” under Email provider. |
 
-Redeploy **both** Railway and Vercel after changing env vars.
+---
 
-## 3. Create your first user
+## Environment variables
 
-### Option A — Bootstrap API (recommended)
+**Railway:** `SUPABASE_URL`, `SUPABASE_SERVICE_ROLE_KEY`, `SUPABASE_ANON_KEY`, optional `AUTH_REQUIRED=true`
 
-1. Set `AUTH_BOOTSTRAP_SECRET` on Railway to a long random string
-2. Run once (replace values):
-
-```bash
-curl -X POST "https://bitiqlab-v2-production.up.railway.app/api/auth/bootstrap" \
-  -H "Content-Type: application/json" \
-  -H "x-bootstrap-secret: YOUR_SECRET" \
-  -d '{"username":"admin","password":"YourSecurePassword123!"}'
-```
-
-3. Remove or rotate `AUTH_BOOTSTRAP_SECRET` after success
-4. Sign in at `https://your-app.vercel.app/login`
-
-### Option B — Supabase Dashboard
-
-1. **Authentication** → **Users** → **Add user** → set email + password
-2. Copy the user **UUID**
-3. SQL Editor:
-
-```sql
-INSERT INTO public.profiles (id, username, display_name)
-VALUES ('PASTE-USER-UUID', 'admin', 'Admin');
-```
-
-3. Sign in with username `admin` and the password you set in Supabase
-
-### Option C — Public registration
-
-Set on Railway: `ALLOW_PUBLIC_SIGNUP=true`  
-Set on Vercel: `NEXT_PUBLIC_ALLOW_SIGNUP=true`  
-Users can register at `/register`.
-
-## 4. TradingView webhook
-
-`POST /api/paper-trading/tradingview-webhook` stays **public** (no login). Protect it with a shared secret in your TradingView alert URL if needed.
-
-## 5. Disable auth (development only)
-
-Railway: `AUTH_REQUIRED=false`  
-APIs work without a token; the frontend still redirects to `/login` unless you skip `AuthProvider` locally.
+**Vercel:** `NEXT_PUBLIC_API_URL` (Railway URL; rewrites proxy `/api`)

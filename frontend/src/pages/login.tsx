@@ -4,7 +4,7 @@ import { useAuth } from "@/context/AuthContext";
 
 export default function LoginPage() {
   const { login, loading: authLoading } = useAuth();
-  const [username, setUsername] = useState("");
+  const [email, setEmail] = useState("");
   const [password, setPassword] = useState("");
   const [error, setError] = useState<string | null>(null);
   const [submitting, setSubmitting] = useState(false);
@@ -14,7 +14,7 @@ export default function LoginPage() {
     setError(null);
     setSubmitting(true);
     try {
-      await login(username, password);
+      await login(email, password);
     } catch (err) {
       setError(err instanceof Error ? err.message : "Sign in failed");
     } finally {
@@ -39,27 +39,29 @@ export default function LoginPage() {
           </span>
           <div>
             <h1 className="text-xl font-semibold text-white">Bitiq Lab</h1>
-            <p className="text-sm text-slate-400">Sign in to continue</p>
+            <p className="text-sm text-slate-400">
+              Same email and password as Supabase Auth
+            </p>
           </div>
         </div>
 
         <form onSubmit={onSubmit} className="space-y-5">
           <div>
             <label
-              htmlFor="username"
+              htmlFor="email"
               className="block text-sm font-medium text-slate-300 mb-1.5"
             >
-              Username
+              Email
             </label>
             <input
-              id="username"
-              type="text"
-              autoComplete="username"
+              id="email"
+              type="email"
+              autoComplete="email"
               required
-              value={username}
-              onChange={(e) => setUsername(e.target.value)}
+              value={email}
+              onChange={(e) => setEmail(e.target.value)}
               className="w-full rounded-lg border border-slate-700 bg-slate-900/80 px-4 py-2.5 text-white placeholder-slate-500 focus:border-cyan-500 focus:outline-none focus:ring-1 focus:ring-cyan-500"
-              placeholder="your_username"
+              placeholder="you@example.com"
             />
           </div>
 
