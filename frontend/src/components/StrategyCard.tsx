@@ -200,7 +200,7 @@ export default function StrategyCard({
                   type="button"
                   onClick={() => {
                     if (
-                      confirm(`Remove strategy "${strategy.name}"?`)
+                      confirm(`Permanently delete "${strategy.name}" and all paper trades/sessions? This cannot be undone.`)
                     ) {
                       onDelete?.(strategy.id);
                     }

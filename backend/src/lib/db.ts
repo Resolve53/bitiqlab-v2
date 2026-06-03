@@ -69,17 +69,141 @@ export class DatabaseService {
     status?: string;
     symbol?: string;
     created_by?: string;
+    /** When false (default), hides soft-deleted strategies (status failed). */
+    include_archived?: boolean;
   }) {
     let query = this.client.from("strategies").select("*");
 
     if (filters?.status) query = query.eq("status", filters.status);
     if (filters?.symbol) query = query.eq("symbol", filters.symbol);
     if (filters?.created_by) query = query.eq("created_by", filters.created_by);
+    if (!filters?.include_archived) {
+      query = query.neq("status", "failed");
+    }
 
     const { data, error } = await query.order("updated_at", { ascending: false });
 
     if (error) throw new Error(`Failed to list strategies: ${error.message}`);
     return data as Strategy[];
+  }
+
+  /**
+   * Permanently remove a strategy and its paper trading / backtest data.
+   */
+  async deleteStrategyCompletely(strategyId: string) {
+    const sessions = await this.listTradingSessions({ strategy_id: strategyId });
+
+    for (const session of sessions) {
+      const sessionId = (session as { id: string }).id;
+      await this.deletePaperTradesForSession(sessionId);
+      await this.deleteMultiCoinConfigsForSession(sessionId);
+      await this.deleteMonitoringJobsForSession(sessionId);
+    }
+
+    await this.deletePaperTradesForStrategy(strategyId);
+    await this.deleteTradingSessionsForStrategy(strategyId);
+    await this.deleteBacktestsForStrategy(strategyId);
+    await this.deleteTradeSignalsForStrategy(strategyId);
+
+    const tables = [
+      "bitiq_promotions",
+      "strategy_performance",
+      "strategy_audit_log",
+      "ai_research_logs",
+    ];
+    for (const table of tables) {
+      const { error } = await this.client
+        .from(table)
+        .delete()
+        .eq("strategy_id", strategyId);
+      if (error && !error.message.includes("does not exist")) {
+        console.warn(`[deleteStrategy] ${table}:`, error.message);
+      }
+    }
+
+    const { error } = await this.client
+      .from("strategies")
+      .delete()
+      .eq("id", strategyId);
+
+    if (error) {
+      throw new Error(`Failed to delete strategy: ${error.message}`);
+    }
+  }
+
+  async deletePaperTradesForSession(sessionId: string) {
+    const { error } = await this.client
+      .from("paper_trades")
+      .delete()
+      .eq("session_id", sessionId);
+    if (error) throw new Error(`Failed to delete session trades: ${error.message}`);
+  }
+
+  async deletePaperTradesForStrategy(strategyId: string) {
+    const { error } = await this.client
+      .from("paper_trades")
+      .delete()
+      .eq("strategy_id", strategyId);
+    if (error) throw new Error(`Failed to delete strategy trades: ${error.message}`);
+  }
+
+  async deleteMultiCoinConfigsForSession(sessionId: string) {
+    const { error } = await this.client
+      .from("multi_coin_monitor_configs")
+      .delete()
+      .eq("session_id", sessionId);
+    if (error && error.code !== "PGRST116") {
+      console.warn(`Failed to delete multi-coin config: ${error.message}`);
+    }
+  }
+
+  async deleteMonitoringJobsForSession(sessionId: string) {
+    const { error } = await this.client
+      .from("monitoring_jobs")
+      .delete()
+      .eq("session_id", sessionId);
+    if (error && error.code !== "PGRST116") {
+      console.warn(`Failed to delete monitoring jobs: ${error.message}`);
+    }
+  }
+
+  async deleteTradingSessionsForStrategy(strategyId: string) {
+    const { error } = await this.client
+      .from("trading_sessions")
+      .delete()
+      .eq("strategy_id", strategyId);
+    if (error) {
+      throw new Error(`Failed to delete trading sessions: ${error.message}`);
+    }
+  }
+
+  async deleteTradingSession(sessionId: string) {
+    await this.deletePaperTradesForSession(sessionId);
+    await this.deleteMultiCoinConfigsForSession(sessionId);
+    await this.deleteMonitoringJobsForSession(sessionId);
+    const { error } = await this.client
+      .from("trading_sessions")
+      .delete()
+      .eq("id", sessionId);
+    if (error) {
+      throw new Error(`Failed to delete trading session: ${error.message}`);
+    }
+  }
+
+  async deleteBacktestsForStrategy(strategyId: string) {
+    const { error } = await this.client
+      .from("backtests")
+      .delete()
+      .eq("strategy_id", strategyId);
+    if (error) console.warn(`Failed to delete backtests: ${error.message}`);
+  }
+
+  async deleteTradeSignalsForStrategy(strategyId: string) {
+    const { error } = await this.client
+      .from("trade_signals")
+      .delete()
+      .eq("strategy_id", strategyId);
+    if (error) console.warn(`Failed to delete trade signals: ${error.message}`);
   }
 
   async updateStrategy(id: string, updates: Partial<Strategy>) {
@@ -193,7 +317,6 @@ export class DatabaseService {
     if (error) throw new Error(`Failed to list paper trades: ${error.message}`);
     return data;
   }
-
   async listPaperTradesByStrategy(strategyId: string, limit = 200) {
     const { data, error } = await this.client
       .from("paper_trades")
@@ -226,6 +349,7 @@ export class DatabaseService {
     if (error) throw new Error(`Failed to list trades: ${error.message}`);
     return data || [];
   }
+
 
   async updatePaperTrade(id: string, updates: any) {
     const { data, error } = await this.client

@@ -52,24 +52,28 @@ export default asyncHandler(async (req: NextApiRequest, res: NextApiResponse) =>
 
       return sendSuccess(res, updated, 200, req);
     } else if (req.method === "DELETE") {
-      // Get current strategy first
       const strategy = await db.getStrategy(id);
 
-      // Delete the strategy by setting status to 'failed'
-      const updated = await db.updateStrategy(id, {
-        status: "failed",
-      });
-
-      // Log audit
       await db.createStrategyAuditLog({
         strategy_id: id,
         action: "DELETE",
         old_values: strategy,
-        new_values: updated,
+        new_values: { permanently_removed: true },
         changed_by: req.body?.deleted_by || "system",
       });
 
-      return sendSuccess(res, { message: "Strategy deleted", id }, 200, req);
+      await db.deleteStrategyCompletely(id);
+
+      return sendSuccess(
+        res,
+        {
+          message:
+            "Strategy permanently deleted (including paper trades and sessions)",
+          id,
+        },
+        200,
+        req
+      );
     } else {
       res.setHeader("Allow", ["GET", "PATCH", "DELETE"]);
       return sendError(res, "Method not allowed", 405, req);

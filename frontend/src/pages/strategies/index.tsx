@@ -97,7 +97,7 @@ export default function StrategiesPage() {
   const handleDeleteStrategy = async (strategyId: string) => {
     try {
       await apiFetch(`/api/strategies/${strategyId}`, { method: "DELETE" });
-      setStrategies((prev) => prev.filter((s) => s.id !== strategyId));
+      await fetchStrategies();
     } catch (err) {
       setError(err instanceof Error ? err.message : "Failed to delete strategy");
     }
@@ -109,7 +109,33 @@ export default function StrategiesPage() {
         title="Strategies"
         subtitle="Paper trading uses $5,000 demo capital per session and monitors the top 20 USDT pairs on Binance testnet."
         actions={
-          <div className="flex gap-2">
+          <div className="flex gap-2 flex-wrap">
+            <button
+              type="button"
+              onClick={async () => {
+                if (
+                  !confirm(
+                    "Permanently delete ALL strategies previously marked as removed (failed)?"
+                  )
+                )
+                  return;
+                try {
+                  const res = await apiFetch<{ purged: number }>(
+                    "/api/strategies/purge-failed",
+                    { method: "POST" }
+                  );
+                  alert(`Removed ${res.purged} archived strategies`);
+                  await fetchStrategies();
+                } catch (e) {
+                  setError(
+                    e instanceof Error ? e.message : "Purge failed"
+                  );
+                }
+              }}
+              className="rounded-lg border border-slate-600 px-3 py-2 text-xs text-slate-300 hover:bg-slate-800"
+            >
+              Clean archived
+            </button>
             <Link
               href="/strategies/new"
               className="rounded-lg border border-slate-600 px-4 py-2 text-sm text-slate-200 hover:bg-slate-800"

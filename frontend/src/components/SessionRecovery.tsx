@@ -19,69 +19,113 @@ interface PastSession {
 
 interface SessionRecoveryProps {
   onSessionSelect?: (sessionId: string) => void;
+  /** Re-run validation when parent deletes a session elsewhere (e.g. Paper Trading page). */
+  refreshKey?: number;
+  onSessionsChanged?: () => void;
 }
 
-export default function SessionRecovery({ onSessionSelect }: SessionRecoveryProps) {
+function mapSaved(s: SessionSettings): PastSession {
+  return {
+    session_id: s.session_id,
+    strategy_name: s.strategy_id,
+    symbol: s.symbol,
+    timeframe: s.timeframe,
+    initial_balance: s.initial_balance,
+    created_at: s.created_at,
+    last_updated: s.last_updated,
+    status: "active",
+  };
+}
+
+export default function SessionRecovery({
+  onSessionSelect,
+  refreshKey = 0,
+  onSessionsChanged,
+}: SessionRecoveryProps) {
   const router = useRouter();
   const [sessions, setSessions] = useState<PastSession[]>([]);
   const [loading, setLoading] = useState(false);
   const [error, setError] = useState<string | null>(null);
   const [showAll, setShowAll] = useState(false);
+  const [pruning, setPruning] = useState(true);
 
   useEffect(() => {
-    loadSavedSessions();
-  }, []);
+    void loadSavedSessions();
+  }, [refreshKey]);
 
-  const loadSavedSessions = () => {
+  const loadSavedSessions = async () => {
+    setPruning(true);
     try {
       const savedSessions = sessionStorageManager.getActiveSessions();
-      setSessions(
-        savedSessions.map((s) => ({
-          session_id: s.session_id,
-          strategy_name: s.strategy_id,
-          symbol: s.symbol,
-          timeframe: s.timeframe,
-          initial_balance: s.initial_balance,
-          created_at: s.created_at,
-          last_updated: s.last_updated,
-          status: "active",
-        }))
-      );
+      const valid: PastSession[] = [];
+
+      for (const s of savedSessions) {
+        try {
+          await apiFetch(`/api/paper-trading/${s.session_id}/status`);
+          valid.push(mapSaved(s));
+        } catch {
+          // Session was deleted from DB — drop stale browser entry
+          sessionStorageManager.removeSession(s.session_id);
+        }
+      }
+
+      setSessions(valid);
+      setError(null);
     } catch (err) {
       console.error("Failed to load sessions:", err);
+    } finally {
+      setPruning(false);
     }
   };
 
   const handleResumeSession = async (session_id: string) => {
     setLoading(true);
+    setError(null);
     try {
-      // Verify session still exists on backend
-      const status = await apiFetch<unknown>(
-        `/api/paper-trading/${session_id}/status`
-      );
-
-      if (status) {
-        if (onSessionSelect) {
-          onSessionSelect(session_id);
-        } else {
-          router.push(`/paper-trading/${session_id}/dashboard`);
-        }
+      await apiFetch(`/api/paper-trading/${session_id}/status`);
+      if (onSessionSelect) {
+        onSessionSelect(session_id);
+      } else {
+        router.push(`/paper-trading/${session_id}/dashboard`);
       }
     } catch (err) {
+      sessionStorageManager.removeSession(session_id);
+      setSessions((prev) => prev.filter((s) => s.session_id !== session_id));
       setError(
-        err instanceof Error ? err.message : "Failed to resume session"
+        err instanceof Error
+          ? err.message
+          : "Session no longer exists — removed from this device"
       );
     } finally {
       setLoading(false);
     }
   };
 
-  const handleRemoveSession = (session_id: string) => {
+  const handleRemoveSession = async (session_id: string) => {
+    if (
+      !confirm(
+        "Permanently delete this paper session and all its trades from the database?"
+      )
+    ) {
+      return;
+    }
+    try {
+      await apiFetch(`/api/paper-trading/${session_id}/delete`, {
+        method: "DELETE",
+      });
+    } catch (err) {
+      const msg = err instanceof Error ? err.message : "";
+      if (!msg.includes("404") && !msg.toLowerCase().includes("not found")) {
+        setError(msg || "Failed to delete session");
+        return;
+      }
+    }
     sessionStorageManager.removeSession(session_id);
-    setSessions(sessions.filter((s) => s.session_id !== session_id));
+    setSessions((prev) => prev.filter((s) => s.session_id !== session_id));
+    onSessionsChanged?.();
   };
 
-  if (!sessions.length) {
+  if (pruning || !sessions.length) {
     return null;
   }
 
@@ -129,6 +173,7 @@ export default function SessionRecovery({ onSessionSelect }: SessionRecoveryProp
               <button
                 onClick={() => handleRemoveSession(session.session_id)}
                 className="bg-slate-700 hover:bg-slate-600 text-slate-300 px-3 py-2 rounded text-sm transition"
+                title="Delete session and all trades from database"
               >
                 ✕
               </button>

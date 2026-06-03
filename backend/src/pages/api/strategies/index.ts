@@ -34,7 +34,13 @@ export default asyncHandler(async (req: NextApiRequest, res: NextApiResponse) =>
       (key) => filters[key as keyof ListQuery] === undefined && delete filters[key as keyof ListQuery]
     );
 
-    const strategies = await db.listStrategies(filters);
+    const includeArchived =
+      req.query.include_archived === "true" ||
+      req.query.include_archived === "1";
+    const strategies = await db.listStrategies({
+      ...filters,
+      include_archived: includeArchived,
+    });
 
     sendSuccess(res, {
       strategies,
