@@ -1,4 +1,5 @@
 import { ReactNode, useState } from "react";
+import ConnectionBanner from "@/components/ConnectionBanner";
 import Link from "next/link";
 import { useRouter } from "next/router";
 
@@ -179,6 +180,7 @@ export default function AppShell({ children }: { children: ReactNode }) {
         }`}
       >
         <main className="min-h-screen px-4 py-6 sm:px-8 sm:py-8 max-w-7xl mx-auto">
+          <ConnectionBanner />
           {children}
         </main>
       </div>
