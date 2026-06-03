@@ -106,6 +106,34 @@ export default asyncHandler(async (req: NextApiRequest, res: NextApiResponse) =>
       return sendError(res, "Invalid order quantity calculated", 400, req);
     }
 
+
+    let strategy = null;
+    try {
+      strategy = await db.getStrategy(session.strategy_id);
+    } catch (_) {
+      /* optional */
+    }
+
+    const confirmation = await confirmSignalBeforeExecution({
+      symbol,
+      side: signal,
+      strategyId: session.strategy_id,
+      sessionId: session_id,
+      technicalReason: reason,
+      currentPrice,
+      timeframe: strategy?.timeframe || "1h",
+      entryRules: strategy?.entry_rules,
+    });
+
+    if (!confirmation.approved) {
+      return sendError(
+        res,
+        `Signal blocked by confirmation gate: ${confirmation.blockReason}`,
+        403,
+        req
+      );
+    }
+
     // Place market order on Binance testnet
     const order = await client.marketOrder(symbol, signal, quantity);
 

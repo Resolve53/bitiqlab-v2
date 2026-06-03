@@ -14,6 +14,7 @@ import { sendSuccess, sendError, asyncHandler } from "@/lib/utils";
 import { getTradingClient } from "@/lib/binance-trading";
 import { getEvaluator } from "@/lib/strategy-evaluator";
 import { getTradingViewMCP } from "@/lib/tradingview-mcp-client";
+import { confirmSignalBeforeExecution } from "@/lib/signal-confirmation-service";
 
 interface MonitorRequest {
   session_id: string;
@@ -26,6 +27,14 @@ interface MonitorResponse {
   session_id: string;
   message: string;
   price_source: string;
+  trade_executed?: boolean;
+  signal_blocked?: boolean;
+  block_reason?: string;
+  confirmation?: {
+    onChain: { passed: boolean; score: number; message: string };
+    calendar: { passed: boolean; message: string };
+    claude: { passed: boolean; score: number; message: string };
+  };
 }
 
 export default asyncHandler(async (req: NextApiRequest, res: NextApiResponse) => {
@@ -132,6 +141,7 @@ export default asyncHandler(async (req: NextApiRequest, res: NextApiResponse) =>
     let shouldTrade = false;
     let tradeSignal: "BUY" | "SELL" = "BUY";
     let signalReason = "";
+    let entryConfidence: number | undefined;
 
     if (!hasOpenPosition) {
       // Entry signal
@@ -160,6 +170,7 @@ export default asyncHandler(async (req: NextApiRequest, res: NextApiResponse) =>
         shouldTrade = true;
         tradeSignal = "BUY";
         signalReason = entrySignal.reason;
+        entryConfidence = entrySignal.confidence;
         console.log(`[MONITOR] ✓ BUY signal triggered!`);
       }
     } else {
@@ -194,8 +205,40 @@ export default asyncHandler(async (req: NextApiRequest, res: NextApiResponse) =>
       }
     }
 
+    let confirmationResult = null;
+
     // Execute trade if signal
     if (shouldTrade) {
+      confirmationResult = await confirmSignalBeforeExecution({
+        symbol: strategy.symbol,
+        side: tradeSignal,
+        strategyId: session.strategy_id,
+        sessionId: session_id,
+        technicalReason: signalReason,
+        technicalConfidence: entryConfidence,
+        timeframe: strategy.timeframe,
+        currentPrice,
+        entryRules: strategy.entry_rules,
+      });
+
+      if (!confirmationResult.approved) {
+        const response: MonitorResponse = {
+          status: "success",
+          session_id,
+          message: `Signal blocked: ${confirmationResult.blockReason}`,
+          price_source: priceSource,
+          trade_executed: false,
+          signal_blocked: true,
+          block_reason: confirmationResult.blockReason,
+          confirmation: {
+            onChain: confirmationResult.checks.onChain,
+            calendar: confirmationResult.checks.calendar,
+            claude: confirmationResult.checks.claude,
+          },
+        };
+        return sendSuccess(res, response, 200, req);
+      }
+
       try {
         console.log(`[MONITOR] Executing ${tradeSignal} trade...`);
 
@@ -287,6 +330,7 @@ export default asyncHandler(async (req: NextApiRequest, res: NextApiResponse) =>
         ? {
             onChain: confirmationResult.checks.onChain,
             calendar: confirmationResult.checks.calendar,
+            claude: confirmationResult.checks.claude,
           }
         : undefined,
     };
