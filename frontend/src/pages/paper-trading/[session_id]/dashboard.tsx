@@ -1,4 +1,5 @@
 import { useEffect, useState, useRef } from "react";
+import { apiPath } from "@/lib/api";
 import { useRouter } from "next/router";
 import axios from "axios";
 import Script from "next/script";
@@ -98,9 +99,8 @@ export default function PaperTradingDashboard() {
 
   const fetchStats = async () => {
     try {
-      const apiUrl = process.env.NEXT_PUBLIC_API_URL || "http://localhost:3000";
       const response = await axios.get(
-        `${apiUrl}/api/paper-trading/${session_id}/status`
+        apiPath(`/api/paper-trading/${session_id}/status`)
       );
       const stats = response.data.data;
       setStats(stats);
@@ -160,8 +160,7 @@ export default function PaperTradingDashboard() {
 
   const handleStartMonitoring = async () => {
     try {
-      const apiUrl = process.env.NEXT_PUBLIC_API_URL || "http://localhost:3000";
-      const response = await axios.post(`${apiUrl}/api/paper-trading/monitor`, {
+      const response = await axios.post(apiPath("/api/paper-trading/monitor"), {
         session_id,
         auto_trade: autoTrade,
       });
@@ -185,8 +184,7 @@ export default function PaperTradingDashboard() {
     if (!stats) return;
     try {
       setRegistering(true);
-      const apiUrl = process.env.NEXT_PUBLIC_API_URL || "http://localhost:3000";
-      const response = await axios.post(`${apiUrl}/api/paper-trading/register-tradingview`, {
+      const response = await axios.post(apiPath("/api/paper-trading/register-tradingview"), {
         strategy_id: stats.strategy_id,
         session_id: session_id,
       });

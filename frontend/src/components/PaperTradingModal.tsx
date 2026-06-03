@@ -1,5 +1,5 @@
 import { useState } from "react";
-import { apiUrl, getApiUrl } from "@/lib/api";
+import { apiPath } from "@/lib/api";
 import { useRouter } from "next/router";
 
 interface PaperTradingModalProps {
@@ -44,7 +44,7 @@ export default function PaperTradingModal({
       }
 
       
-      const response = await fetch(`paper-trading/start`, {
+      const response = await fetch(apiPath("/api/paper-trading/start"), {
         method: "POST",
         headers: {
           "Content-Type": "application/json",

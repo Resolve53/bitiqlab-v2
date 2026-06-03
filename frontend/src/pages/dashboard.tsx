@@ -86,8 +86,7 @@ export default function DashboardPage() {
 
       {error && (
         <div className="mb-6 rounded-lg border border-red-500/40 bg-red-500/10 px-4 py-3 text-sm text-red-200">
-          {error}. Set <code className="text-red-100">NEXT_PUBLIC_API_URL</code>{" "}
-          to your Railway backend URL in Vercel.
+          {error}
         </div>
       )}
 

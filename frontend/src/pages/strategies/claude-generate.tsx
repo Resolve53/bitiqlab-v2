@@ -1,4 +1,5 @@
 import { useRouter } from "next/router";
+import { apiPath } from "@/lib/api";
 import { useState } from "react";
 import PaperTradingModal from "@/components/PaperTradingModal";
 
@@ -42,9 +43,7 @@ export default function ClaudeGenerateStrategy() {
         return;
       }
 
-      const apiUrl = process.env.NEXT_PUBLIC_API_URL || "http://localhost:3000";
-
-      const response = await fetch(`${apiUrl}/api/research/claude-generate`, {
+      const response = await fetch(apiPath("/api/research/claude-generate"), {
         method: "POST",
         headers: {
           "Content-Type": "application/json",
