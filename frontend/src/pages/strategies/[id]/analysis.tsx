@@ -1,3 +1,4 @@
+import { apiUrl, getApiUrl } from "@/lib/api";
 /**
  * Strategy Analysis Page
  * Detailed analysis of a single strategy with metrics, charts, and backtest history
@@ -57,8 +58,7 @@ export default function StrategyAnalysisPage() {
     const fetchAnalysis = async () => {
       try {
         setLoading(true);
-        const apiUrl = process.env.NEXT_PUBLIC_API_URL || "http://localhost:3000";
-        const response = await fetch(`${apiUrl}/api/strategies/${id}/analysis`);
+                const response = await fetch(`strategies/${id}/analysis`);
 
         if (!response.ok) {
           throw new Error("Failed to fetch analysis");

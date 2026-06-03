@@ -1,4 +1,5 @@
 import { useEffect, useState } from "react";
+import { apiUrl, getApiUrl } from "@/lib/api";
 import axios from "axios";
 import MainLayout from "@/components/MainLayout";
 
@@ -52,7 +53,7 @@ export default function Strategies() {
       const analysisMap: { [key: string]: StrategyAnalysis } = {};
       for (const strategy of mockStrategies) {
         try {
-          const res = await axios.get(`http://localhost:4003/api/analysis/strategy/${strategy.id}`).catch(() => null);
+          const res = await axios.get(`/* removed */${strategy.id}`).catch(() => null);
           if (res?.data?.data) {
             analysisMap[strategy.id] = res.data.data;
           }

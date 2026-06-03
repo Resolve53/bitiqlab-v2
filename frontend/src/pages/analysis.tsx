@@ -1,4 +1,5 @@
 import { useEffect, useState } from "react";
+import { apiUrl, getApiUrl } from "@/lib/api";
 import axios from "axios";
 import MainLayout from "@/components/MainLayout";
 
@@ -25,8 +26,7 @@ export default function Analysis() {
 
   const fetchMetrics = async () => {
     try {
-      const apiUrl = process.env.NEXT_PUBLIC_API_URL || "http://localhost:3000";
-      const response = await axios.get(`${apiUrl}/api/analysis/metrics`);
+            const response = await axios.get(`analysis/metrics`);
       setMetrics(response.data.data || []);
     } catch (error) {
       console.error("Error fetching metrics:", error);

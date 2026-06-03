@@ -1,4 +1,5 @@
 import { useEffect, useState, useRef } from "react";
+import { apiUrl, getApiUrl } from "@/lib/api";
 import { useRouter } from "next/router";
 import axios from "axios";
 import Script from "next/script";
@@ -125,9 +126,8 @@ export default function PaperTradingDashboard() {
   const fetchConfirmations = async () => {
     if (!session_id || typeof session_id !== "string") return;
     try {
-      const apiUrl = process.env.NEXT_PUBLIC_API_URL || "http://localhost:3000";
-      const response = await axios.get(
-        `${apiUrl}/api/paper-trading/signal-confirmations`,
+            const response = await axios.get(
+        `paper-trading/signal-confirmations`,
         { params: { session_id, limit: 15 } }
       );
       setConfirmations(response.data.data?.confirmations || []);
@@ -145,9 +145,8 @@ export default function PaperTradingDashboard() {
 
   const fetchStats = async () => {
     try {
-      const apiUrl = process.env.NEXT_PUBLIC_API_URL || "http://localhost:3000";
-      const response = await axios.get(
-        `${apiUrl}/api/paper-trading/${session_id}/status`
+            const response = await axios.get(
+        `paper-trading/${session_id}/status`
       );
       const stats = response.data.data;
       setStats(stats);
@@ -207,8 +206,7 @@ export default function PaperTradingDashboard() {
 
   const handleStartMonitoring = async () => {
     try {
-      const apiUrl = process.env.NEXT_PUBLIC_API_URL || "http://localhost:3000";
-      const response = await axios.post(`${apiUrl}/api/paper-trading/monitor`, {
+            const response = await axios.post(`paper-trading/monitor`, {
         session_id,
         auto_trade: autoTrade,
       });
@@ -244,8 +242,7 @@ export default function PaperTradingDashboard() {
     if (!stats) return;
     try {
       setRegistering(true);
-      const apiUrl = process.env.NEXT_PUBLIC_API_URL || "http://localhost:3000";
-      const response = await axios.post(`${apiUrl}/api/paper-trading/register-tradingview`, {
+            const response = await axios.post(`paper-trading/register-tradingview`, {
         strategy_id: stats.strategy_id,
         session_id: session_id,
       });

@@ -1,4 +1,5 @@
 import { useRouter } from "next/router";
+import { apiUrl, getApiUrl } from "@/lib/api";
 import { useState, useEffect } from "react";
 
 interface Position {
@@ -123,8 +124,7 @@ export default function TradingDashboard() {
     const fetchPrices = async () => {
       try {
         const symbols = positions.map((p) => p.symbol).join(",");
-        const apiUrl = process.env.NEXT_PUBLIC_API_URL || "http://localhost:3000";
-        const response = await fetch(`${apiUrl}/api/market/prices?symbols=${symbols}`);
+                const response = await fetch(`market/prices?symbols=${symbols}`);
 
         if (!response.ok) {
           throw new Error("Failed to fetch prices");

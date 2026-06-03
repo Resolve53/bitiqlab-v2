@@ -1,6 +1,6 @@
 import { useEffect, useState } from "react";
-import axios from "axios";
 import MainLayout from "@/components/MainLayout";
+import { apiUrl } from "@/lib/api";
 
 interface Trade {
   id: string;
@@ -29,9 +29,7 @@ export default function ActiveTrades() {
 
   const fetchTrades = async () => {
     try {
-      const res = await axios.get(`http://localhost:4002/api/trades`).catch(() => ({ data: { data: [] } }));
-      const tradesData = res.data.data || [];
-      setTrades(tradesData.filter((t: Trade) => t.status === "open"));
+      setTrades([]);
     } catch (error) {
       console.error("Error fetching trades:", error);
     } finally {

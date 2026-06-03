@@ -1,4 +1,5 @@
 import { useEffect, useState } from "react";
+import { apiUrl, getApiUrl } from "@/lib/api";
 import axios from "axios";
 import { useRouter } from "next/router";
 import BacktestModal from "@/components/BacktestModal";
@@ -40,7 +41,7 @@ export default function StrategiesPage() {
     try {
       setLoading(true);
       const response = await axios.get(
-        `${process.env.NEXT_PUBLIC_API_URL}/api/strategies`
+        `TEMPstrategies`
       );
       setStrategies(response.data.data.strategies);
       setError(null);
@@ -53,8 +54,7 @@ export default function StrategiesPage() {
 
   const handleStatusChange = async (strategyId: string, newStatus: string) => {
     try {
-      const apiUrl = process.env.NEXT_PUBLIC_API_URL || "http://localhost:3000";
-      await axios.patch(`${apiUrl}/api/strategies/${strategyId}`, {
+            await axios.patch(`strategies/${strategyId}`, {
         status: newStatus,
       });
       // Update local state
@@ -70,8 +70,7 @@ export default function StrategiesPage() {
 
   const handleDeleteStrategy = async (strategyId: string) => {
     try {
-      const apiUrl = process.env.NEXT_PUBLIC_API_URL || "http://localhost:3000";
-      await axios.delete(`${apiUrl}/api/strategies/${strategyId}`);
+            await axios.delete(`strategies/${strategyId}`);
       // Remove from local state - keep strategies with status 'failed' hidden
       setStrategies(strategies.filter((s) => s.id !== strategyId));
     } catch (err) {
@@ -242,9 +241,8 @@ function StrategyCard({ strategy, onRunBacktest, onStartPaperTrading, onStatusCh
   const handleViewLiveTrading = async () => {
     try {
       setLoadingSession(true);
-      const apiUrl = process.env.NEXT_PUBLIC_API_URL || "http://localhost:3000";
-      const response = await axios.get(
-        `${apiUrl}/api/paper-trading/sessions?strategy_id=${strategy.id}&limit=1`
+            const response = await axios.get(
+        `paper-trading/sessions?strategy_id=${strategy.id}&limit=1`
       );
 
       if (response.data.data?.sessions && response.data.data.sessions.length > 0) {
@@ -263,9 +261,8 @@ function StrategyCard({ strategy, onRunBacktest, onStartPaperTrading, onStatusCh
 
   const handleViewMonitoringSettings = async () => {
     try {
-      const apiUrl = process.env.NEXT_PUBLIC_API_URL || "http://localhost:3000";
-      const response = await axios.get(
-        `${apiUrl}/api/paper-trading/sessions?strategy_id=${strategy.id}&limit=1`
+            const response = await axios.get(
+        `paper-trading/sessions?strategy_id=${strategy.id}&limit=1`
       );
 
       if (response.data.data?.sessions && response.data.data.sessions.length > 0) {

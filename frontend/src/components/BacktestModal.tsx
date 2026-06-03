@@ -1,4 +1,5 @@
 import { useState } from "react";
+import { apiUrl, getApiUrl } from "@/lib/api";
 
 interface BacktestModalProps {
   strategyId: string;
@@ -27,9 +28,8 @@ export default function BacktestModal({
     setLoading(true);
 
     try {
-      const apiUrl = process.env.NEXT_PUBLIC_API_URL || "http://localhost:3000";
-
-      const response = await fetch(`${apiUrl}/api/backtest/run`, {
+      
+      const response = await fetch(`backtest/run`, {
         method: "POST",
         headers: {
           "Content-Type": "application/json",

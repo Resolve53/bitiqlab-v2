@@ -1,4 +1,5 @@
 import { useState } from "react";
+import { apiUrl, getApiUrl } from "@/lib/api";
 import axios from "axios";
 
 interface MonitorConfig {
@@ -37,9 +38,8 @@ export default function MonitoringSettingsModal({
 
     setLoading(true);
     try {
-      const apiUrl = process.env.NEXT_PUBLIC_API_URL || "http://localhost:3000";
-      const response = await axios.get(
-        `${apiUrl}/api/paper-trading/${sessionId}/status`
+            const response = await axios.get(
+        `paper-trading/${sessionId}/status`
       );
 
       if (response.data.data.multi_coin_config) {

@@ -1,3 +1,4 @@
+import { apiUrl, getApiUrl } from "@/lib/api";
 /**
  * Strategy Comparison Page
  * Compare multiple strategies side-by-side with metrics and rankings
@@ -53,8 +54,7 @@ export default function StrategyComparePage() {
     const fetchStrategies = async () => {
       try {
         setLoading(true);
-        const apiUrl = process.env.NEXT_PUBLIC_API_URL || "http://localhost:3000";
-        const response = await fetch(`${apiUrl}/api/strategies`);
+                const response = await fetch(`strategies`);
 
         if (!response.ok) {
           throw new Error("Failed to fetch strategies");
@@ -90,9 +90,8 @@ export default function StrategyComparePage() {
     const fetchComparison = async () => {
       try {
         setComparing(true);
-        const apiUrl = process.env.NEXT_PUBLIC_API_URL || "http://localhost:3000";
-        const response = await fetch(
-          `${apiUrl}/api/strategies/compare?ids=${selectedIds.join(",")}`
+                const response = await fetch(
+          `strategies/compare?ids=${selectedIds.join(",")}`
         );
 
         if (!response.ok) {

@@ -1,4 +1,5 @@
 import { useEffect, useState } from "react";
+import { apiUrl, getApiUrl } from "@/lib/api";
 import axios from "axios";
 import MainLayout from "@/components/MainLayout";
 
@@ -96,7 +97,7 @@ export default function Backtest() {
   const handleRunBacktest = async () => {
     setRunning(true);
     try {
-      const response = await axios.post(`http://localhost:4001/api/backtest`, config).catch(() => null);
+      const response = await axios.post(`/* removed */`, config).catch(() => null);
       if (response?.data?.data) {
         setResults([response.data.data, ...results]);
       }
