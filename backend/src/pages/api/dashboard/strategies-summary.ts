@@ -15,7 +15,7 @@ export default asyncHandler(async (req: NextApiRequest, res: NextApiResponse) =>
 
   try {
     const db = getDB();
-    const strategies = await db.listStrategies();
+    const strategies = await db.listStrategies({ include_archived: false });
     const allTrades = await db.listAllPaperTrades({ limit: 500 });
 
     const summary = await Promise.all(

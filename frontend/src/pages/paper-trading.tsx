@@ -60,6 +60,29 @@ export default function PaperTradingPage() {
   const [data, setData] = useState<Overview | null>(null);
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState<string | null>(null);
+  const [deletingId, setDeletingId] = useState<string | null>(null);
+
+
+  async function handleDeleteSession(sessionId: string) {
+    if (
+      !confirm(
+        "Permanently delete this session and all its trades? This cannot be undone."
+      )
+    ) {
+      return;
+    }
+    try {
+      setDeletingId(sessionId);
+      await apiFetch(`/api/paper-trading/${sessionId}/delete`, {
+        method: "DELETE",
+      });
+      await load();
+    } catch (e) {
+      setError(e instanceof Error ? e.message : "Failed to delete session");
+    } finally {
+      setDeletingId(null);
+    }
+  }
 
   async function load() {
     try {
@@ -179,19 +202,31 @@ export default function PaperTradingPage() {
               </h2>
               <div className="space-y-2">
                 {data.sessions.map((s) => (
-                  <Link
+                  <div
                     key={s.session_id}
-                    href={`/paper-trading/${s.session_id}/dashboard`}
-                    className="flex flex-wrap items-center justify-between gap-2 rounded-lg border border-slate-800 bg-slate-900/50 px-4 py-3 hover:border-cyan-500/40"
+                    className="flex flex-wrap items-center justify-between gap-2 rounded-lg border border-slate-800 bg-slate-900/50 px-4 py-3"
                   >
-                    <span className="text-sm text-white">
-                      {s.session_name || s.session_id.slice(0, 8)}
-                    </span>
-                    <span className="text-xs text-slate-400">
-                      ${Number(s.initial_balance).toLocaleString()} demo ·{" "}
-                      {s.status || "active"}
-                    </span>
-                  </Link>
+                    <Link
+                      href={`/paper-trading/${s.session_id}/dashboard`}
+                      className="flex-1 hover:text-cyan-300"
+                    >
+                      <span className="text-sm text-white block">
+                        {s.session_name || s.session_id.slice(0, 8)}
+                      </span>
+                      <span className="text-xs text-slate-400">
+                        ${Number(s.initial_balance).toLocaleString()} demo ·{" "}
+                        {s.status || "active"}
+                      </span>
+                    </Link>
+                    <button
+                      type="button"
+                      onClick={() => handleDeleteSession(s.session_id)}
+                      disabled={deletingId === s.session_id}
+                      className="rounded-lg border border-red-500/40 px-3 py-1.5 text-xs text-red-300 hover:bg-red-500/10 disabled:opacity-50"
+                    >
+                      {deletingId === s.session_id ? "…" : "Delete"}
+                    </button>
+                  </div>
                 ))}
               </div>
             </section>

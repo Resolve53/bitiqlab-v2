@@ -1,6 +1,7 @@
 import { useEffect, useState } from "react";
 import { useRouter } from "next/router";
 import { apiFetch } from "@/lib/api";
+import axios from "axios";
 import {
   sessionStorageManager,
   type SessionSettings,
@@ -56,11 +57,12 @@ export default function SessionRecovery({ onSessionSelect }: SessionRecoveryProp
     setLoading(true);
     try {
       // Verify session still exists on backend
-      const status = await apiFetch<unknown>(
-        `/api/paper-trading/${session_id}/status`
+      const apiUrl = process.env.NEXT_PUBLIC_API_URL || "http://localhost:3000";
+      const response = await axios.get(
+        `${apiUrl}/api/paper-trading/${session_id}/status`
       );
 
-      if (status) {
+      if (response.data.data) {
         if (onSessionSelect) {
           onSessionSelect(session_id);
         } else {
@@ -76,9 +78,25 @@ export default function SessionRecovery({ onSessionSelect }: SessionRecoveryProp
     }
   };
 
-  const handleRemoveSession = (session_id: string) => {
-    sessionStorageManager.removeSession(session_id);
-    setSessions(sessions.filter((s) => s.session_id !== session_id));
+  const handleRemoveSession = async (session_id: string) => {
+    if (
+      !confirm(
+        "Permanently delete this paper session and all its trades from the database?"
+      )
+    ) {
+      return;
+    }
+    try {
+      await apiFetch(`/api/paper-trading/${session_id}/delete`, {
+        method: "DELETE",
+      });
+      sessionStorageManager.removeSession(session_id);
+      setSessions((prev) => prev.filter((s) => s.session_id !== session_id));
+    } catch (err) {
+      setError(
+        err instanceof Error ? err.message : "Failed to delete session"
+      );
+    }
   };
 
   if (!sessions.length) {
