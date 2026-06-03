@@ -14,6 +14,7 @@ const PUBLIC_API_PATHS = [
   "/api/auth/register",
   "/api/auth/logout",
   "/api/auth/bootstrap",
+  "/api/auth/diagnose",
   "/api/paper-trading/tradingview-webhook",
 ];
 
