@@ -1,9 +1,12 @@
+import { PageHeader } from "@/components/AppShell";
+import { apiFetch, apiPath } from "@/lib/api";
 /**
  * Strategy Analysis Page
  * Detailed analysis of a single strategy with metrics, charts, and backtest history
  */
 
 import { useRouter } from "next/router";
+import Link from "next/link";
 import { useState, useEffect } from "react";
 import PerformanceMetricsCard from "@/components/PerformanceMetricsCard";
 import EquityCurveChart from "@/components/EquityCurveChart";
@@ -66,15 +69,8 @@ export default function StrategyAnalysisPage() {
     const fetchAnalysis = async () => {
       try {
         setLoading(true);
-        const apiUrl = process.env.NEXT_PUBLIC_API_URL || "http://localhost:3000";
-        const response = await fetch(`${apiUrl}/api/strategies/${id}/analysis`);
-
-        if (!response.ok) {
-          throw new Error("Failed to fetch analysis");
-        }
-
-        const data = await response.json();
-        setAnalysis(data.data);
+        const data = await apiFetch<AnalysisData>(`/api/strategies/${id}/analysis`);
+        setAnalysis(data);
         setError(null);
       } catch (err) {
         setError(err instanceof Error ? err.message : "Failed to load analysis");
@@ -86,14 +82,10 @@ export default function StrategyAnalysisPage() {
 
     const fetchPromotion = async () => {
       try {
-        const apiUrl = process.env.NEXT_PUBLIC_API_URL || "http://localhost:3000";
-        const res = await fetch(
-          `${apiUrl}/api/bitiq/promotion-status?strategy_id=${id}`
-        );
-        if (res.ok) {
-          const json = await res.json();
-          setPromotionStatus(json.data);
-        }
+        const status = await apiFetch<PromotionStatusData>(
+          `/api/bitiq/promotion-status?strategy_id=${id}`
+        ).catch(() => null);
+        if (status) setPromotionStatus(status);
       } catch {
         // optional
       }
@@ -108,21 +100,17 @@ export default function StrategyAnalysisPage() {
     setPromoting(true);
     setPromoteMessage(null);
     try {
-      const apiUrl = process.env.NEXT_PUBLIC_API_URL || "http://localhost:3000";
-      const res = await fetch(`${apiUrl}/api/strategies/${id}/promote-to-bitiq`, {
-        method: "POST",
-        headers: { "Content-Type": "application/json" },
-        body: JSON.stringify({ force, notes: "Promoted from strategy analysis" }),
-      });
-      const json = await res.json();
-      if (!res.ok) {
-        const blockers = json.data?.readiness?.blockers?.join(", ");
-        throw new Error(blockers || json.error || "Promotion failed");
-      }
-      setPromoteMessage(json.data?.message || "Promoted to Bitiq");
+      const json = await apiFetch<{ message?: string; readiness?: PromotionStatusData["readiness"] }>(
+        `/api/strategies/${id}/promote-to-bitiq`,
+        {
+          method: "POST",
+          body: JSON.stringify({ force, notes: "Promoted from strategy analysis" }),
+        }
+      );
+      setPromoteMessage(json.message || "Promoted to Bitiq");
       setPromotionStatus({
         deployed_to_bitiq: true,
-        readiness: json.data?.readiness,
+        readiness: json.readiness,
       });
     } catch (err) {
       setPromoteMessage(err instanceof Error ? err.message : "Promotion failed");
@@ -133,22 +121,7 @@ export default function StrategyAnalysisPage() {
 
   if (loading) {
     return (
-      <div className="min-h-screen bg-gradient-to-b from-slate-950 via-slate-900 to-slate-950">
-        <header className="border-b border-slate-800 bg-slate-950/50 backdrop-blur sticky top-0 z-40">
-          <div className="max-w-7xl mx-auto px-4 sm:px-6 lg:px-8 py-6">
-            <button
-              onClick={() => router.back()}
-              className="text-emerald-400 hover:text-emerald-300 mb-4 font-semibold transition"
-            >
-              ← Back
-            </button>
-            <h1 className="text-4xl font-bold text-white">Loading Analysis...</h1>
-          </div>
-        </header>
-        <main className="max-w-7xl mx-auto px-4 sm:px-6 lg:px-8 py-8">
-          <p className="text-slate-400">Fetching strategy analysis data...</p>
-        </main>
-      </div>
+<p className="text-slate-400">Loading analysis…</p>
     );
   }
 

@@ -194,6 +194,39 @@ export class DatabaseService {
     return data;
   }
 
+  async listPaperTradesByStrategy(strategyId: string, limit = 200) {
+    const { data, error } = await this.client
+      .from("paper_trades")
+      .select("*")
+      .eq("strategy_id", strategyId)
+      .order("entry_time", { ascending: false })
+      .limit(limit);
+
+    if (error) {
+      throw new Error(`Failed to list strategy trades: ${error.message}`);
+    }
+    return data || [];
+  }
+
+  async listAllPaperTrades(options?: {
+    strategy_id?: string;
+    limit?: number;
+  }) {
+    let query = this.client.from("paper_trades").select("*");
+
+    if (options?.strategy_id) {
+      query = query.eq("strategy_id", options.strategy_id);
+    }
+
+    const limit = Math.min(options?.limit ?? 100, 500);
+    const { data, error } = await query
+      .order("entry_time", { ascending: false })
+      .limit(limit);
+
+    if (error) throw new Error(`Failed to list trades: ${error.message}`);
+    return data || [];
+  }
+
   async updatePaperTrade(id: string, updates: any) {
     const { data, error } = await this.client
       .from("paper_trades")
@@ -515,7 +548,6 @@ export class DatabaseService {
     }
     return data || null;
   }
-
   /**
    * Bitiq promotion pipeline
    */
@@ -609,6 +641,7 @@ export class DatabaseService {
     }
     return data || [];
   }
+
 }
 
 /**

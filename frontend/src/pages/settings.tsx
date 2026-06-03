@@ -1,5 +1,5 @@
 import { useState } from "react";
-import MainLayout from "@/components/MainLayout";
+import { PageHeader } from "@/components/AppShell";
 
 export default function Settings() {
   const [email] = useState("user@bitiq.ai");
@@ -7,7 +7,9 @@ export default function Settings() {
   const [showApiKey, setShowApiKey] = useState(false);
 
   return (
-    <MainLayout title="Settings">
+    <>
+      <PageHeader title="Settings" subtitle="API keys and account preferences." />
+    
       <div className="w-full max-w-2xl space-y-4 sm:space-y-6">
         {/* Account Settings */}
         <div className="bg-slate-800/50 border border-slate-700 rounded-lg p-4 sm:p-6">
@@ -115,6 +117,7 @@ export default function Settings() {
           </button>
         </div>
       </div>
-    </MainLayout>
+    
+    </>
   );
 }

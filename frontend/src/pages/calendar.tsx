@@ -1,6 +1,6 @@
 import { useEffect, useState } from "react";
 import axios from "axios";
-import MainLayout from "@/components/MainLayout";
+import { PageHeader } from "@/components/AppShell";
 import { apiUrl } from "@/lib/api";
 
 interface EconomicEvent {
@@ -118,7 +118,7 @@ export default function Calendar() {
     highCount >= 3 ? "High" : highCount >= 1 ? "Medium" : "Low";
 
   return (
-    <MainLayout title="Economic Calendar">
+    <><PageHeader title="Economic Calendar" subtitle="Macro events that can affect open positions." />
       <div className="space-y-6">
         {error && (
           <div className="p-4 bg-amber-900/30 border border-amber-700/50 rounded-lg text-amber-200 text-sm">
@@ -283,7 +283,7 @@ export default function Calendar() {
           </div>
         </div>
       </div>
-    </MainLayout>
+    </>
   );
 }
 

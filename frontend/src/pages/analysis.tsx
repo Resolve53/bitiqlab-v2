@@ -1,141 +1,88 @@
 import { useEffect, useState } from "react";
-import { apiUrl, getApiUrl } from "@/lib/api";
-import axios from "axios";
-import MainLayout from "@/components/MainLayout";
+import Link from "next/link";
+import { PageHeader } from "@/components/AppShell";
+import { apiFetch } from "@/lib/api";
 
-interface StrategyMetrics {
-  strategy_id: string;
-  strategy_name: string;
-  win_rate: number;
-  total_trades: number;
-  winning_trades: number;
-  losing_trades: number;
-  avg_profit: number;
+interface StrategyRow {
+  id: string;
+  name: string;
+  symbol: string;
+  status: string;
+  trade_count: number;
   total_pnl: number;
-  sharpe_ratio: number;
-  max_drawdown: number;
+  win_rate: number;
+  current_sharpe: number;
 }
 
-export default function Analysis() {
-  const [metrics, setMetrics] = useState<StrategyMetrics[]>([]);
+export default function AnalysisPage() {
+  const [strategies, setStrategies] = useState<StrategyRow[]>([]);
   const [loading, setLoading] = useState(true);
+  const [error, setError] = useState<string | null>(null);
 
   useEffect(() => {
-    fetchMetrics();
+    apiFetch<{ strategies: StrategyRow[] }>("/api/dashboard/strategies-summary")
+      .then((d) => setStrategies(d.strategies || []))
+      .catch((e) => setError(e instanceof Error ? e.message : "Failed to load"))
+      .finally(() => setLoading(false));
   }, []);
 
-  const fetchMetrics = async () => {
-    try {
-            const response = await axios.get(`analysis/metrics`);
-      setMetrics(response.data.data || []);
-    } catch (error) {
-      console.error("Error fetching metrics:", error);
-      setMetrics([]);
-    } finally {
-      setLoading(false);
-    }
-  };
-
   return (
-    <MainLayout title="Analysis">
-      <div className="space-y-6">
-        {/* Performance Overview */}
-        <div className="bg-slate-800/50 border border-slate-700 rounded-lg p-6">
-          <h2 className="text-2xl font-bold text-white mb-6">Strategy Performance</h2>
-
-          {loading ? (
-            <div className="text-slate-400 text-center py-8">Loading metrics...</div>
-          ) : metrics.length === 0 ? (
-            <div className="text-slate-400 text-center py-8">
-              No strategy metrics available yet. Create and run strategies to see performance data.
+    <>
+      <PageHeader
+        title="Analysis"
+        subtitle="Cross-strategy performance from live backend data."
+      />
+      {error && <p className="text-red-300 text-sm mb-4">{error}</p>}
+      {loading ? (
+        <p className="text-slate-400">Loading…</p>
+      ) : (
+        <div className="grid gap-4 md:grid-cols-2">
+          {strategies.map((s) => (
+            <div
+              key={s.id}
+              className="rounded-xl border border-slate-800 bg-slate-900/50 p-5"
+            >
+              <h3 className="font-semibold text-white">{s.name}</h3>
+              <p className="text-sm text-slate-400 mt-1">{s.symbol}</p>
+              <div className="mt-4 grid grid-cols-2 gap-3 text-sm">
+                <div>
+                  <p className="text-slate-500">Trades</p>
+                  <p className="text-white">{s.trade_count}</p>
+                </div>
+                <div>
+                  <p className="text-slate-500">P&L</p>
+                  <p
+                    className={
+                      s.total_pnl >= 0 ? "text-emerald-400" : "text-red-400"
+                    }
+                  >
+                    {s.total_pnl.toFixed(2)}
+                  </p>
+                </div>
+                <div>
+                  <p className="text-slate-500">Win rate</p>
+                  <p className="text-white">{Number(s.win_rate).toFixed(1)}%</p>
+                </div>
+                <div>
+                  <p className="text-slate-500">Sharpe</p>
+                  <p className="text-white">
+                    {Number(s.current_sharpe).toFixed(2)}
+                  </p>
+                </div>
+              </div>
+              <Link
+                href={`/strategies/${s.id}/analysis`}
+                className="inline-block mt-4 text-sm text-cyan-400 hover:text-cyan-300"
+              >
+                Deep dive →
+              </Link>
             </div>
-          ) : (
-            <div className="overflow-x-auto">
-              <table className="w-full">
-                <thead>
-                  <tr className="border-b border-slate-700">
-                    <th className="text-left py-3 px-4 text-slate-300 font-semibold">Strategy</th>
-                    <th className="text-right py-3 px-4 text-slate-300 font-semibold">Win Rate</th>
-                    <th className="text-right py-3 px-4 text-slate-300 font-semibold">Total Trades</th>
-                    <th className="text-right py-3 px-4 text-slate-300 font-semibold">Avg Profit</th>
-                    <th className="text-right py-3 px-4 text-slate-300 font-semibold">Total P&L</th>
-                    <th className="text-right py-3 px-4 text-slate-300 font-semibold">Sharpe Ratio</th>
-                    <th className="text-right py-3 px-4 text-slate-300 font-semibold">Max Drawdown</th>
-                  </tr>
-                </thead>
-                <tbody>
-                  {metrics.map((metric) => (
-                    <tr key={metric.strategy_id} className="border-b border-slate-700/50 hover:bg-slate-700/20">
-                      <td className="py-4 px-4 text-white">{metric.strategy_name}</td>
-                      <td className={`text-right py-4 px-4 font-semibold ${
-                        metric.win_rate >= 50 ? "text-emerald-400" : "text-red-400"
-                      }`}>
-                        {metric.win_rate.toFixed(1)}%
-                      </td>
-                      <td className="text-right py-4 px-4 text-slate-300">{metric.total_trades}</td>
-                      <td className={`text-right py-4 px-4 font-semibold ${
-                        metric.avg_profit >= 0 ? "text-emerald-400" : "text-red-400"
-                      }`}>
-                        ${metric.avg_profit.toFixed(2)}
-                      </td>
-                      <td className={`text-right py-4 px-4 font-semibold ${
-                        metric.total_pnl >= 0 ? "text-emerald-400" : "text-red-400"
-                      }`}>
-                        ${metric.total_pnl.toLocaleString()}
-                      </td>
-                      <td className="text-right py-4 px-4 text-slate-300">{metric.sharpe_ratio.toFixed(2)}</td>
-                      <td className={`text-right py-4 px-4 ${
-                        metric.max_drawdown <= -10 ? "text-red-400" : "text-orange-400"
-                      }`}>
-                        {metric.max_drawdown.toFixed(2)}%
-                      </td>
-                    </tr>
-                  ))}
-                </tbody>
-              </table>
-            </div>
+          ))}
+          {strategies.length === 0 && (
+            <p className="text-slate-500 col-span-2">No strategies to analyze.</p>
           )}
         </div>
-
-        {/* Top Strategies */}
-        {metrics.length > 0 && (
-          <div className="grid grid-cols-1 sm:grid-cols-2 gap-3 sm:gap-6">
-            {/* Best Performing */}
-            <div className="bg-slate-800/50 border border-slate-700 rounded-lg p-6">
-              <h3 className="text-lg font-bold text-white mb-4">Best Performing Strategy</h3>
-              {(() => {
-                const best = metrics.reduce((prev, current) =>
-                  current.total_pnl > prev.total_pnl ? current : prev
-                );
-                return (
-                  <div className="space-y-2">
-                    <p className="text-slate-300">{best.strategy_name}</p>
-                    <p className="text-3xl font-bold text-emerald-400">${best.total_pnl.toLocaleString()}</p>
-                    <p className="text-sm text-slate-400">{best.win_rate.toFixed(1)}% win rate</p>
-                  </div>
-                );
-              })()}
-            </div>
-
-            {/* Highest Win Rate */}
-            <div className="bg-slate-800/50 border border-slate-700 rounded-lg p-6">
-              <h3 className="text-lg font-bold text-white mb-4">Highest Win Rate</h3>
-              {(() => {
-                const best = metrics.reduce((prev, current) =>
-                  current.win_rate > prev.win_rate ? current : prev
-                );
-                return (
-                  <div className="space-y-2">
-                    <p className="text-slate-300">{best.strategy_name}</p>
-                    <p className="text-3xl font-bold text-blue-400">{best.win_rate.toFixed(1)}%</p>
-                    <p className="text-sm text-slate-400">{best.winning_trades} / {best.total_trades} trades</p>
-                  </div>
-                );
-              })()}
-            </div>
-          </div>
-        )}
-      </div>
-    </MainLayout>
+      )}
+    </>
   );
 }

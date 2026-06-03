@@ -1,314 +1,262 @@
 import { useEffect, useState } from "react";
-import axios from "axios";
 import Link from "next/link";
-import MainLayout from "@/components/MainLayout";
-import { apiUrl } from "@/lib/api";
+import { PageHeader } from "@/components/AppShell";
+import { apiFetch } from "@/lib/api";
 
-interface Signal {
-  id: string;
-  coin: string;
-  direction: string;
-  entry_price: number;
-  ai_score: number;
-  reason: string;
-  created_at: string;
-}
-
-interface Trade {
-  id: string;
-  coin: string;
-  direction: string;
-  entry_price: number;
-  current_price: number;
-  unrealized_pnl_usd: number;
-  unrealized_pnl_percent: number;
-  status: string;
-}
-
-interface Strategy {
+interface StrategyRow {
   id: string;
   name: string;
+  symbol: string;
   status: string;
-  sharpe_ratio: number;
-  profit_factor: number;
+  trade_count: number;
+  total_pnl: number;
+  win_rate: number;
+  current_sharpe: number;
+  active_sessions: number;
+  latest_session_id?: string;
 }
 
-export default function Dashboard() {
-  const [signals, setSignals] = useState<Signal[]>([]);
-  const [trades, setTrades] = useState<Trade[]>([]);
-  const [strategies, setStrategies] = useState<Strategy[]>([]);
+interface DashboardData {
+  totals: {
+    strategies: number;
+    total_trades: number;
+    total_pnl: number;
+    active_sessions: number;
+  };
+  strategies: StrategyRow[];
+  recent_trades: Array<{
+    id: string;
+    strategy_id: string;
+    symbol: string;
+    side: string;
+    entry_price: number;
+    pnl?: number;
+    entry_time: string;
+  }>;
+}
+
+export default function DashboardPage() {
+  const [data, setData] = useState<DashboardData | null>(null);
+  const [metrics, setMetrics] = useState<Record<string, number> | null>(null);
+  const [error, setError] = useState<string | null>(null);
   const [loading, setLoading] = useState(true);
 
   useEffect(() => {
-    fetchData();
-    const interval = setInterval(fetchData, 10000);
-    return () => clearInterval(interval);
+    load();
+    const t = setInterval(load, 30000);
+    return () => clearInterval(t);
   }, []);
 
-  const fetchData = async () => {
+  async function load() {
     try {
-      setSignals([]);
-
-      const strategiesRes = await axios
-        .get(apiUrl("/api/strategies"))
-        .catch(() => ({ data: { data: { strategies: [] } } }));
-      const list = strategiesRes.data?.data?.strategies || [];
-      setStrategies(
-        list.slice(0, 6).map((s: { id: string; name: string; status: string; current_sharpe?: number; total_return?: number }) => ({
-          id: s.id,
-          name: s.name,
-          status: s.status === "approved" ? "live" : "paper",
-          sharpe_ratio: s.current_sharpe ?? 0,
-          profit_factor: Math.max(0.5, 1 + (s.total_return ?? 0) / 100),
-        }))
-      );
-
-      setTrades([]);
-    } catch (error) {
-      console.error("Error fetching data:", error);
+      setLoading(true);
+      const [summary, dashMetrics] = await Promise.all([
+        apiFetch<DashboardData>("/api/dashboard/strategies-summary"),
+        apiFetch<Record<string, number>>("/api/dashboard/metrics").catch(
+          () => null
+        ),
+      ]);
+      setData(summary);
+      setMetrics(dashMetrics);
+      setError(null);
+    } catch (e) {
+      setError(e instanceof Error ? e.message : "Failed to load dashboard");
     } finally {
       setLoading(false);
     }
-  };
+  }
 
-  const totalPnL = trades.reduce((sum, t) => sum + t.unrealized_pnl_usd, 0);
-  const paperTrades = trades.filter((t) => t.status === "paper").length;
-  const liveStrategies = strategies.filter((s) => s.status === "live").length;
-  const totalStrategies = strategies.length;
-  const avgSharpe = strategies.length > 0 ? (strategies.reduce((sum, s) => sum + s.sharpe_ratio, 0) / strategies.length).toFixed(2) : "0";
+  const totals = data?.totals;
+  const totalPnl = totals?.total_pnl ?? 0;
 
   return (
-    <MainLayout title="Dashboard">
-      <div className="space-y-8">
-        {/* KPI Cards */}
-        <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-4 gap-6">
-          <KpiCard
-            label="Total Strategies"
-            value={totalStrategies}
-            icon="⚡"
-            gradient="from-blue-600 to-cyan-600"
-            subtitle={`${liveStrategies} live, ${totalStrategies - liveStrategies} paper`}
-          />
-          <KpiCard
-            label="Live P&L"
-            value={`${totalPnL >= 0 ? "+" : ""}$${totalPnL.toLocaleString(undefined, { maximumFractionDigits: 0 })}`}
-            icon="💰"
-            gradient="from-emerald-600 to-green-600"
-            subtitle={`${liveStrategies} active strategies`}
-            valueColor={totalPnL >= 0 ? "text-emerald-400" : "text-red-400"}
-          />
-          <KpiCard
-            label="Open Trades"
-            value={trades.length}
-            icon="📊"
-            gradient="from-purple-600 to-pink-600"
-            subtitle="Positions live"
-          />
-          <KpiCard
-            label="Avg Sharpe"
-            value={avgSharpe}
-            icon="📈"
-            gradient="from-orange-600 to-red-600"
-            subtitle="Target ≥ 1.0"
-            valueColor={parseFloat(avgSharpe) >= 1.0 ? "text-emerald-400" : "text-orange-400"}
-          />
+    <>
+      <PageHeader
+        title="Dashboard"
+        subtitle="Strategy performance, paper trading P&L, and recent activity. Data comes from your Railway backend — TradingView is optional."
+        actions={
+          <Link
+            href="/strategies/claude-generate"
+            className="rounded-lg bg-cyan-600 px-4 py-2 text-sm font-medium text-white hover:bg-cyan-500"
+          >
+            New strategy
+          </Link>
+        }
+      />
+
+      {error && (
+        <div className="mb-6 rounded-lg border border-red-500/40 bg-red-500/10 px-4 py-3 text-sm text-red-200">
+          {error}. Set <code className="text-red-100">NEXT_PUBLIC_API_URL</code>{" "}
+          to your Railway backend URL in Vercel.
         </div>
+      )}
 
-        {/* Main Grid */}
-        <div className="grid grid-cols-1 lg:grid-cols-3 gap-6">
-          {/* Latest Signals - Large */}
-          <div className="lg:col-span-2 rounded-xl border border-slate-800/50 bg-gradient-to-b from-slate-900/50 to-slate-950/50 backdrop-blur p-6 hover:border-slate-700/50 transition-all duration-300">
-            <div className="flex items-center justify-between mb-6">
-              <h3 className="text-xl font-bold text-white">Recent Signals</h3>
-              <Link href="/live-signals" className="text-sm text-cyan-400 hover:text-cyan-300 transition">
-                View All →
-              </Link>
-            </div>
+      {loading && !data ? (
+        <p className="text-slate-400">Loading dashboard…</p>
+      ) : (
+        <>
+          <div className="grid grid-cols-1 gap-4 sm:grid-cols-2 lg:grid-cols-4 mb-8">
+            <StatCard label="Strategies" value={String(totals?.strategies ?? 0)} />
+            <StatCard label="Paper trades" value={String(totals?.total_trades ?? 0)} />
+            <StatCard
+              label="Combined P&L"
+              value={`${totalPnl >= 0 ? "+" : ""}$${totalPnl.toFixed(2)}`}
+              accent={totalPnl >= 0 ? "text-emerald-400" : "text-red-400"}
+            />
+            <StatCard
+              label="Active sessions"
+              value={String(totals?.active_sessions ?? 0)}
+            />
+          </div>
 
-            {signals.length > 0 ? (
-              <div className="space-y-3">
-                {signals.slice(0, 4).map((signal) => (
-                  <div
-                    key={signal.id}
-                    className="flex items-center justify-between p-4 rounded-lg bg-slate-950/50 border border-slate-800/50 hover:border-slate-700/50 transition-all duration-200 group cursor-pointer"
-                  >
-                    <div className="flex items-center gap-4 flex-1">
-                      <div className="w-12 h-12 rounded-lg bg-gradient-to-br from-cyan-500/20 to-blue-500/20 flex items-center justify-center font-bold text-cyan-400">
-                        {signal.coin.substring(0, 2)}
-                      </div>
-                      <div>
-                        <p className="text-white font-semibold">{signal.coin}</p>
-                        <p className="text-xs text-slate-400">{new Date(signal.created_at).toLocaleTimeString()}</p>
-                      </div>
-                    </div>
-                    <div className="flex items-center gap-4">
-                      <div
-                        className={`px-3 py-1 rounded-full font-bold text-sm ${
-                          signal.direction === "BUY"
-                            ? "bg-emerald-500/20 text-emerald-400"
-                            : "bg-red-500/20 text-red-400"
+          {metrics && (
+            <p className="text-xs text-slate-500 mb-6">
+              Approved strategies: {metrics.approved_strategies ?? 0} · Avg Sharpe:{" "}
+              {(metrics.average_sharpe as number)?.toFixed?.(2) ?? "—"}
+            </p>
+          )}
+
+          <section className="mb-10">
+            <h2 className="text-lg font-semibold text-white mb-4">
+              Strategy performance
+            </h2>
+            <div className="overflow-hidden rounded-xl border border-slate-800 bg-slate-900/50">
+              <table className="w-full text-sm text-left">
+                <thead className="bg-slate-800/80 text-slate-400 text-xs uppercase">
+                  <tr>
+                    <th className="px-4 py-3">Strategy</th>
+                    <th className="px-4 py-3">Symbol</th>
+                    <th className="px-4 py-3">Status</th>
+                    <th className="px-4 py-3">Trades</th>
+                    <th className="px-4 py-3">P&L</th>
+                    <th className="px-4 py-3">Sharpe</th>
+                    <th className="px-4 py-3"></th>
+                  </tr>
+                </thead>
+                <tbody className="divide-y divide-slate-800">
+                  {(data?.strategies ?? []).map((s) => (
+                    <tr key={s.id} className="hover:bg-slate-800/40">
+                      <td className="px-4 py-3 font-medium text-white">{s.name}</td>
+                      <td className="px-4 py-3 text-slate-400">{s.symbol}</td>
+                      <td className="px-4 py-3">
+                        <StatusBadge status={s.status} />
+                      </td>
+                      <td className="px-4 py-3 text-slate-300">{s.trade_count}</td>
+                      <td
+                        className={`px-4 py-3 font-medium ${
+                          s.total_pnl >= 0 ? "text-emerald-400" : "text-red-400"
                         }`}
                       >
-                        {signal.direction === "BUY" ? "↗ BUY" : "↘ SELL"}
-                      </div>
-                      <div className={`text-right ${signal.ai_score > 75 ? "text-emerald-400" : "text-yellow-400"} font-bold`}>
-                        {signal.ai_score}%
-                      </div>
-                    </div>
-                  </div>
-                ))}
-              </div>
-            ) : (
-              <div className="py-12 text-center">
-                <p className="text-slate-500 text-sm">Waiting for TradingView data...</p>
-              </div>
-            )}
-          </div>
-
-          {/* Performance Summary */}
-          <div className="rounded-xl border border-slate-800/50 bg-gradient-to-b from-slate-900/50 to-slate-950/50 backdrop-blur p-6 hover:border-slate-700/50 transition-all duration-300">
-            <h3 className="text-xl font-bold text-white mb-6">Performance</h3>
-            <div className="space-y-6">
-              <div>
-                <div className="flex justify-between items-center mb-2">
-                  <p className="text-slate-400 text-sm">Win Rate</p>
-                  <p className="text-white font-bold">—</p>
-                </div>
-                <div className="w-full h-2 bg-slate-800/50 rounded-full overflow-hidden">
-                  <div className="h-full w-0 bg-gradient-to-r from-emerald-500 to-green-500 rounded-full"></div>
-                </div>
-              </div>
-
-              <div>
-                <div className="flex justify-between items-center mb-2">
-                  <p className="text-slate-400 text-sm">Profit Factor</p>
-                  <p className="text-emerald-400 font-bold">{strategies[0]?.profit_factor.toFixed(2)}x</p>
-                </div>
-                <div className="w-full h-2 bg-slate-800/50 rounded-full overflow-hidden">
-                  <div className="h-full w-2/3 bg-gradient-to-r from-emerald-500 to-green-500 rounded-full"></div>
-                </div>
-              </div>
-
-              <div>
-                <div className="flex justify-between items-center mb-2">
-                  <p className="text-slate-400 text-sm">Sharpe Ratio</p>
-                  <p className="text-cyan-400 font-bold">{avgSharpe}</p>
-                </div>
-                <div className="w-full h-2 bg-slate-800/50 rounded-full overflow-hidden">
-                  <div className="h-full w-3/4 bg-gradient-to-r from-cyan-500 to-blue-500 rounded-full"></div>
-                </div>
-              </div>
+                        {s.total_pnl >= 0 ? "+" : ""}
+                        {s.total_pnl.toFixed(2)}
+                      </td>
+                      <td className="px-4 py-3 text-slate-300">
+                        {Number(s.current_sharpe).toFixed(2)}
+                      </td>
+                      <td className="px-4 py-3 text-right space-x-2">
+                        <Link
+                          href={`/strategies/${s.id}/trades`}
+                          className="text-cyan-400 hover:text-cyan-300"
+                        >
+                          Trades
+                        </Link>
+                        <Link
+                          href={`/strategies/${s.id}/analysis`}
+                          className="text-slate-400 hover:text-white"
+                        >
+                          Analysis
+                        </Link>
+                        {s.latest_session_id && (
+                          <Link
+                            href={`/paper-trading/${s.latest_session_id}/dashboard`}
+                            className="text-slate-400 hover:text-white"
+                          >
+                            Session
+                          </Link>
+                        )}
+                      </td>
+                    </tr>
+                  ))}
+                </tbody>
+              </table>
+              {(!data?.strategies || data.strategies.length === 0) && (
+                <p className="p-8 text-center text-slate-500">
+                  No strategies yet.{" "}
+                  <Link href="/strategies/new" className="text-cyan-400">
+                    Create one
+                  </Link>
+                </p>
+              )}
             </div>
+          </section>
 
-            <Link
-              href="/backtest"
-              className="mt-6 w-full px-4 py-2 rounded-lg bg-gradient-to-r from-cyan-600/50 to-blue-600/50 hover:from-cyan-600 hover:to-blue-600 text-white font-semibold transition-all duration-200 text-center border border-cyan-500/30 hover:border-cyan-500/50 block"
-            >
-              Run Backtest →
-            </Link>
-          </div>
-        </div>
-
-        {/* Strategies Grid */}
-        <div className="rounded-xl border border-slate-800/50 bg-gradient-to-b from-slate-900/50 to-slate-950/50 backdrop-blur p-6 hover:border-slate-700/50 transition-all duration-300">
-          <div className="flex items-center justify-between mb-6">
-            <h3 className="text-xl font-bold text-white">Active Strategies</h3>
-            <Link href="/strategies" className="text-sm text-cyan-400 hover:text-cyan-300 transition">
-              View All →
-            </Link>
-          </div>
-
-          <div className="grid grid-cols-1 md:grid-cols-3 gap-4">
-            {strategies.map((strategy) => (
-              <div
-                key={strategy.id}
-                className="p-4 rounded-lg bg-slate-950/50 border border-slate-800/50 hover:border-slate-700/50 transition-all duration-200 group cursor-pointer"
-              >
-                <div className="flex items-start justify-between mb-4">
-                  <h4 className="text-white font-semibold">{strategy.name}</h4>
-                  <span
-                    className={`px-2 py-1 rounded-full text-xs font-bold ${
-                      strategy.status === "live"
-                        ? "bg-emerald-500/20 text-emerald-400"
-                        : "bg-blue-500/20 text-blue-400"
-                    }`}
-                  >
-                    {strategy.status === "live" ? "🔴 Live" : "📋 Paper"}
+          <section>
+            <h2 className="text-lg font-semibold text-white mb-4">Recent trades</h2>
+            <div className="rounded-xl border border-slate-800 bg-slate-900/50 divide-y divide-slate-800">
+              {(data?.recent_trades ?? []).slice(0, 15).map((t) => (
+                <div
+                  key={t.id}
+                  className="flex flex-wrap items-center justify-between gap-2 px-4 py-3 text-sm"
+                >
+                  <span className="text-white font-medium">{t.symbol}</span>
+                  <span className="text-slate-400">{t.side}</span>
+                  <span className="text-slate-400">
+                    ${Number(t.entry_price).toFixed(2)}
                   </span>
+                  <Link
+                    href={`/strategies/${t.strategy_id}/trades`}
+                    className="text-cyan-400 text-xs"
+                  >
+                    View strategy log
+                  </Link>
                 </div>
-
-                <div className="grid grid-cols-2 gap-4">
-                  <div>
-                    <p className="text-slate-500 text-xs uppercase tracking-wide">Sharpe</p>
-                    <p className={`font-bold text-lg mt-1 ${strategy.sharpe_ratio >= 1.0 ? "text-emerald-400" : "text-orange-400"}`}>
-                      {strategy.sharpe_ratio.toFixed(2)}
-                    </p>
-                  </div>
-                  <div>
-                    <p className="text-slate-500 text-xs uppercase tracking-wide">Profit</p>
-                    <p className="font-bold text-lg mt-1 text-cyan-400">{strategy.profit_factor.toFixed(2)}x</p>
-                  </div>
-                </div>
-              </div>
-            ))}
-          </div>
-        </div>
-
-        {/* CTA Section */}
-        <div className="grid grid-cols-1 md:grid-cols-2 gap-6">
-          <Link
-            href="/live-signals"
-            className="group relative overflow-hidden rounded-xl border border-cyan-500/30 bg-gradient-to-br from-cyan-600/20 to-blue-600/20 hover:from-cyan-600/30 hover:to-blue-600/30 p-6 transition-all duration-300 hover:shadow-lg hover:shadow-cyan-500/20"
-          >
-            <p className="text-white font-bold text-lg flex items-center gap-2">
-              <span>📡</span> Live Signals Feed
-            </p>
-            <p className="text-slate-400 text-sm mt-2">Monitor real-time trading signals</p>
-          </Link>
-
-          <Link
-            href="/strategies"
-            className="group relative overflow-hidden rounded-xl border border-purple-500/30 bg-gradient-to-br from-purple-600/20 to-pink-600/20 hover:from-purple-600/30 hover:to-pink-600/30 p-6 transition-all duration-300 hover:shadow-lg hover:shadow-purple-500/20"
-          >
-            <p className="text-white font-bold text-lg flex items-center gap-2">
-              <span>⚡</span> Manage Strategies
-            </p>
-            <p className="text-slate-400 text-sm mt-2">Optimize & deploy new strategies</p>
-          </Link>
-        </div>
-      </div>
-    </MainLayout>
+              ))}
+              {(!data?.recent_trades || data.recent_trades.length === 0) && (
+                <p className="p-6 text-center text-slate-500">No trades logged yet.</p>
+              )}
+            </div>
+          </section>
+        </>
+      )}
+    </>
   );
 }
 
-function KpiCard({
+function StatCard({
   label,
   value,
-  icon,
-  gradient,
-  subtitle,
-  valueColor = "text-white",
+  accent,
 }: {
   label: string;
-  value: string | number;
-  icon: string;
-  gradient: string;
-  subtitle: string;
-  valueColor?: string;
+  value: string;
+  accent?: string;
 }) {
   return (
-    <div className={`rounded-xl border border-slate-800/50 bg-gradient-to-b from-slate-900/50 to-slate-950/50 backdrop-blur p-6 hover:border-slate-700/50 transition-all duration-300 group cursor-pointer relative overflow-hidden`}>
-      <div className={`absolute top-0 right-0 w-24 h-24 bg-gradient-to-br ${gradient} opacity-0 group-hover:opacity-10 transition-opacity duration-300 rounded-full -mr-12 -mt-12`}></div>
-
-      <div className="relative z-10">
-        <div className="flex items-center justify-between mb-4">
-          <p className="text-slate-400 text-sm font-medium uppercase tracking-wide">{label}</p>
-          <span className="text-2xl">{icon}</span>
-        </div>
-
-        <p className={`text-4xl font-bold mb-2 ${valueColor}`}>{value}</p>
-        <p className="text-slate-500 text-sm">{subtitle}</p>
-      </div>
+    <div className="rounded-xl border border-slate-800 bg-slate-900/60 p-5">
+      <p className="text-xs font-medium uppercase tracking-wide text-slate-500">
+        {label}
+      </p>
+      <p className={`mt-2 text-2xl font-semibold ${accent || "text-white"}`}>
+        {value}
+      </p>
     </div>
+  );
+}
+
+function StatusBadge({ status }: { status: string }) {
+  const colors: Record<string, string> = {
+    draft: "bg-slate-700 text-slate-300",
+    testing: "bg-blue-900/50 text-blue-300",
+    approved: "bg-emerald-900/50 text-emerald-300",
+    failed: "bg-red-900/50 text-red-300",
+  };
+  return (
+    <span
+      className={`inline-block rounded-full px-2 py-0.5 text-xs ${
+        colors[status] || colors.draft
+      }`}
+    >
+      {status}
+    </span>
   );
 }

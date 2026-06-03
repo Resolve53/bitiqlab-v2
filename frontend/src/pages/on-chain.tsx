@@ -1,6 +1,6 @@
 import { useEffect, useState } from "react";
 import axios from "axios";
-import MainLayout from "@/components/MainLayout";
+import { PageHeader } from "@/components/AppShell";
 import { apiUrl } from "@/lib/api";
 
 interface FearGreedData {
@@ -114,7 +114,7 @@ export default function OnChain() {
         : "bg-yellow-500/20 text-yellow-400";
 
   return (
-    <MainLayout title="On-Chain Analytics">
+    <><PageHeader title="On-Chain Analytics" subtitle="Fear & greed, whale flow, and funding from the backend." />
       <div className="space-y-6">
         {error && (
           <div className="p-4 bg-amber-900/30 border border-amber-700/50 rounded-lg text-amber-200 text-sm">
@@ -308,6 +308,6 @@ export default function OnChain() {
           </div>
         </div>
       </div>
-    </MainLayout>
+    </>
   );
 }
