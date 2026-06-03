@@ -197,6 +197,26 @@ class MonitoringJob {
 
               // Auto-trade if enabled and signal is strong
               if (this.config.auto_trade && signal.signal === "BUY" && signal.confidence > 50) {
+                const confirmation = await confirmSignalBeforeExecution({
+                  symbol: coin,
+                  side: "BUY",
+                  strategyId: this.config.strategy_id,
+                  sessionId: this.config.session_id,
+                  technicalReason: signal.reason,
+                });
+
+                if (!confirmation.approved) {
+                  cycleResults.push({
+                    symbol: coin,
+                    timestamp: new Date(),
+                    price,
+                    signal,
+                    trade_executed: false,
+                    error: confirmation.blockReason,
+                  });
+                  continue;
+                }
+
                 const tradingClient = getTradingClient(true);
                 const riskAmount = session.initial_balance * 0.02;
                 const quantity = Math.round((riskAmount / price) * 10000) / 10000;

@@ -279,8 +279,16 @@ export default asyncHandler(async (req: NextApiRequest, res: NextApiResponse) =>
     const response: MonitorResponse = {
       status: "success",
       session_id,
-      message: "Monitor cycle completed",
+      message: shouldTrade ? "Monitor cycle completed — trade executed" : "Monitor cycle completed",
       price_source: priceSource,
+      trade_executed: shouldTrade,
+      signal_blocked: false,
+      confirmation: confirmationResult
+        ? {
+            onChain: confirmationResult.checks.onChain,
+            calendar: confirmationResult.checks.calendar,
+          }
+        : undefined,
     };
 
     console.log(`[MONITOR] ✓ Monitor cycle complete\n`);

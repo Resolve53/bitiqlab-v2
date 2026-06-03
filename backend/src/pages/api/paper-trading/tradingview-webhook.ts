@@ -112,6 +112,26 @@ export default asyncHandler(async (req: NextApiRequest, res: NextApiResponse) =>
       return sendError(res, "Invalid order quantity calculated", 400, req);
     }
 
+    const confirmation = await confirmSignalBeforeExecution({
+      symbol: payload.symbol,
+      side: payload.signal,
+      strategyId: session.strategy_id,
+      sessionId: payload.session_id,
+      technicalReason: payload.reason,
+    });
+
+    if (!confirmation.approved) {
+      console.warn(
+        `[TradingView Webhook] Signal blocked: ${confirmation.blockReason}`
+      );
+      return sendError(
+        res,
+        `Signal blocked by confirmation gate: ${confirmation.blockReason}`,
+        403,
+        req
+      );
+    }
+
     // Place market order on Binance testnet
     console.log(`[TradingView Webhook] Placing ${payload.signal} order: ${quantity} ${payload.symbol}`);
     const order = await client.marketOrder(payload.symbol, payload.signal, quantity);

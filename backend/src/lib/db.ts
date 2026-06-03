@@ -471,6 +471,42 @@ export class DatabaseService {
   }
 
   /**
+   * Trade signal log (entries blocked or confirmed)
+   */
+  async createTradeSignal(signal: {
+    strategy_id: string;
+    symbol: string;
+    signal_type: string;
+    signal_strength?: number;
+    confidence_score?: number;
+    reasoning?: string;
+    on_chain_data?: unknown;
+    macro_context?: string;
+    technical_indicators?: unknown;
+  }) {
+    const { data, error } = await this.client
+      .from("trade_signals")
+      .insert([
+        {
+          strategy_id: signal.strategy_id,
+          symbol: signal.symbol,
+          signal_type: signal.signal_type,
+          signal_strength: signal.signal_strength ?? null,
+          confidence_score: signal.confidence_score ?? null,
+          reasoning: signal.reasoning ?? null,
+          on_chain_data: signal.on_chain_data ?? null,
+          macro_context: signal.macro_context ?? null,
+          technical_indicators: signal.technical_indicators ?? null,
+        },
+      ])
+      .select()
+      .single();
+
+    if (error) throw new Error(`Failed to create trade signal: ${error.message}`);
+    return data;
+  }
+
+  /**
    * Trade Scoring Operations
    */
   async saveTradeScore(tradeScore: {
