@@ -27,6 +27,24 @@ interface SymbolMetric {
   fearGreedIndex: { value: number; classification: string };
   whaleActivity: { largeOrderCount: number; bullishSignal: boolean; confidence: number };
   fundingRate: { rate: number; bullishSignal: boolean };
+  cmcQuote?: {
+    price: number;
+    percentChange24h: number;
+    percentChange7d: number;
+    marketCap: number;
+    volume24h: number;
+  } | null;
+}
+
+interface GlobalMetrics {
+  btcDominance: number;
+  ethDominance: number;
+  totalMarketCap: number;
+  totalVolume24h: number;
+  marketCapChange24hPct: number;
+  volumeChange24hPct: number;
+  lastUpdated: string;
+  source: string;
 }
 
 interface OverviewSummary {
@@ -34,12 +52,15 @@ interface OverviewSummary {
   bullishWhaleCount: number;
   symbolsScanned: number;
   marketSignal: "bullish" | "bearish" | "neutral";
+  cmcConfigured?: boolean;
 }
 
 export default function OnChain() {
   const [fearGreed, setFearGreed] = useState<FearGreedData | null>(null);
   const [whales, setWhales] = useState<WhaleRow[]>([]);
   const [metrics, setMetrics] = useState<SymbolMetric[]>([]);
+  const [globalMetrics, setGlobalMetrics] = useState<GlobalMetrics | null>(null);
+  const [fearGreedSource, setFearGreedSource] = useState<string | null>(null);
   const [summary, setSummary] = useState<OverviewSummary | null>(null);
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState<string | null>(null);
@@ -67,6 +88,8 @@ export default function OnChain() {
       setWhales(data?.whales || []);
       setMetrics(data?.metrics || []);
       setSummary(data?.summary || null);
+      setGlobalMetrics(data?.globalMetrics || null);
+      setFearGreedSource(data?.fearGreed?.source || null);
     } catch (err) {
       console.error("Error fetching on-chain data:", err);
       setError(
@@ -114,11 +137,11 @@ export default function OnChain() {
         : "bg-yellow-500/20 text-yellow-400";
 
   return (
-    <><PageHeader title="On-Chain Analytics" subtitle="Fear & greed, whale flow, and funding from the backend." />
+    <><PageHeader title="On-Chain Analytics" subtitle="Fear & Greed and market metrics from CoinMarketCap; whale signals from Binance order books." />
       <div className="space-y-6">
         {error && (
           <div className="p-4 bg-amber-900/30 border border-amber-700/50 rounded-lg text-amber-200 text-sm">
-            {error}. Check NEXT_PUBLIC_API_URL points to your Railway backend.
+            {error}. Set COINMARKETCAP_API_KEY on Railway for live Fear & Greed from CoinMarketCap.
           </div>
         )}
 
@@ -162,15 +185,15 @@ export default function OnChain() {
                   </span>
                 </div>
 
-                <div className="border-t border-slate-700 pt-4">
+                <div className="border-t border-slate-700 pt-4 space-y-1">
                   <p className="text-slate-400 text-xs">
-                    Last updated:{" "}
-                    {new Date(
-                      fearGreed.timestamp > 1e12
-                        ? fearGreed.timestamp
-                        : fearGreed.timestamp * 1000
-                    ).toLocaleString()}
+                    Last updated: {new Date(fearGreed.timestamp).toLocaleString()}
                   </p>
+                  {fearGreedSource && (
+                    <p className="text-slate-500 text-xs">
+                      Source: {fearGreedSource === "coinmarketcap" ? "CoinMarketCap" : fearGreedSource}
+                    </p>
+                  )}
                 </div>
               </div>
             ) : (
@@ -181,6 +204,27 @@ export default function OnChain() {
           <div className="bg-slate-800/50 border border-slate-700 rounded-lg p-6">
             <h3 className="text-lg font-bold text-white mb-4">MARKET CONDITIONS</h3>
             <div className="space-y-3">
+              {globalMetrics && (
+                <>
+                  <div>
+                    <p className="text-slate-400 text-sm mb-1">BTC Dominance (CMC)</p>
+                    <p className="text-white font-bold">{globalMetrics.btcDominance.toFixed(1)}%</p>
+                  </div>
+                  <div>
+                    <p className="text-slate-400 text-sm mb-1">24h Market Cap Change</p>
+                    <p
+                      className={`font-bold ${
+                        globalMetrics.marketCapChange24hPct >= 0
+                          ? "text-emerald-400"
+                          : "text-red-400"
+                      }`}
+                    >
+                      {globalMetrics.marketCapChange24hPct >= 0 ? "+" : ""}
+                      {globalMetrics.marketCapChange24hPct.toFixed(2)}%
+                    </p>
+                  </div>
+                </>
+              )}
               <div>
                 <p className="text-slate-400 text-sm mb-1">Avg On-Chain Score</p>
                 <div className="flex items-center gap-2">
@@ -300,8 +344,20 @@ export default function OnChain() {
                 </div>
                 <p className="text-slate-400 text-xs line-clamp-2">{m.recommendation}</p>
                 <p className="text-slate-500 text-xs mt-2">
-                  Funding: {m.fundingRate.rate.toFixed(4)}% · Whales:{" "}
-                  {m.whaleActivity.largeOrderCount} large orders
+                  {m.cmcQuote ? (
+                    <>
+                      CMC 24h: {m.cmcQuote.percentChange24h >= 0 ? "+" : ""}
+                      {m.cmcQuote.percentChange24h.toFixed(2)}% · ${" "}
+                      {m.cmcQuote.price.toLocaleString(undefined, {
+                        maximumFractionDigits: 2,
+                      })}
+                    </>
+                  ) : (
+                    <>
+                      Funding: {m.fundingRate.rate.toFixed(4)}% · Whales:{" "}
+                      {m.whaleActivity.largeOrderCount} large orders
+                    </>
+                  )}
                 </p>
               </div>
             ))}
