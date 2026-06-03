@@ -1,4 +1,5 @@
 import { useEffect, useState } from "react";
+import { apiUrl, getApiUrl } from "@/lib/api";
 import axios from "axios";
 import MainLayout from "@/components/MainLayout";
 
@@ -26,7 +27,7 @@ export default function LiveSignals() {
 
   const fetchSignals = async () => {
     try {
-      const res = await axios.get(`http://localhost:4001/api/signals?limit=100`).catch(() => ({ data: { data: [] } }));
+      const res = await axios.get(`/* removed */`).catch(() => ({ data: { data: [] } }));
       setSignals(res.data.data || []);
     } catch (error) {
       console.error("Error fetching signals:", error);

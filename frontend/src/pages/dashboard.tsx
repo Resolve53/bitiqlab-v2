@@ -2,6 +2,7 @@ import { useEffect, useState } from "react";
 import axios from "axios";
 import Link from "next/link";
 import MainLayout from "@/components/MainLayout";
+import { apiUrl } from "@/lib/api";
 
 interface Signal {
   id: string;
@@ -46,20 +47,23 @@ export default function Dashboard() {
 
   const fetchData = async () => {
     try {
-      const apiUrl = process.env.NEXT_PUBLIC_API_URL || "http://localhost:4001";
+      setSignals([]);
 
-      const signalsRes = await axios.get(`${apiUrl}/api/signals?limit=10`).catch(() => ({ data: { data: [] } }));
-      setSignals(signalsRes.data.data || []);
+      const strategiesRes = await axios
+        .get(apiUrl("/api/strategies"))
+        .catch(() => ({ data: { data: { strategies: [] } } }));
+      const list = strategiesRes.data?.data?.strategies || [];
+      setStrategies(
+        list.slice(0, 6).map((s: { id: string; name: string; status: string; current_sharpe?: number; total_return?: number }) => ({
+          id: s.id,
+          name: s.name,
+          status: s.status === "approved" ? "live" : "paper",
+          sharpe_ratio: s.current_sharpe ?? 0,
+          profit_factor: Math.max(0.5, 1 + (s.total_return ?? 0) / 100),
+        }))
+      );
 
-      const tradeUrl = process.env.NEXT_PUBLIC_TRADE_URL || "http://localhost:4002";
-      const tradesRes = await axios.get(`${tradeUrl}/api/trades`).catch(() => ({ data: { data: [] } }));
-      setTrades(tradesRes.data.data || []);
-
-      setStrategies([
-        { id: "1", name: "ETH BB Breakout", status: "live", sharpe_ratio: 1.78, profit_factor: 2.15 },
-        { id: "2", name: "BTC RSI+MACD", status: "paper", sharpe_ratio: 1.42, profit_factor: 1.82 },
-        { id: "3", name: "AVAX Momentum", status: "paper", sharpe_ratio: 1.15, profit_factor: 1.54 },
-      ]);
+      setTrades([]);
     } catch (error) {
       console.error("Error fetching data:", error);
     } finally {

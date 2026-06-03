@@ -1,4 +1,5 @@
 import { useState } from "react";
+import { apiUrl, getApiUrl } from "@/lib/api";
 import axios from "axios";
 
 interface MonitorConfig {
@@ -109,8 +110,7 @@ export default function MultiCoinMonitorWizard({
         trading_type: tradingType,
       };
 
-      const apiUrl = process.env.NEXT_PUBLIC_API_URL || "http://localhost:3000";
-      await axios.post(`${apiUrl}/api/paper-trading/start-multi-coin-monitor`, {
+      await axios.post(apiUrl('/api/paper-trading/start-multi-coin-monitor'), {
         session_id: sessionId,
         strategy_id: strategyId,
         config,

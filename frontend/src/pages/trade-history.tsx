@@ -1,4 +1,5 @@
 import { useEffect, useState } from "react";
+import { apiUrl, getApiUrl } from "@/lib/api";
 import axios from "axios";
 import MainLayout from "@/components/MainLayout";
 
@@ -38,7 +39,7 @@ export default function TradeHistory() {
 
   const fetchTrades = async () => {
     try {
-      const res = await axios.get(`http://localhost:4002/api/trades`).catch(() => ({ data: { data: [] } }));
+      const res = await axios.get(`/* removed */`).catch(() => ({ data: { data: [] } }));
       const tradesData = res.data.data || [];
       const closed = tradesData.filter((t: Trade) => t.status === "closed");
       setTrades(closed);
@@ -47,7 +48,7 @@ export default function TradeHistory() {
       const scoreMap: { [key: string]: TradeScore } = {};
       for (const trade of closed) {
         try {
-          const scoreRes = await axios.get(`http://localhost:4003/api/analysis/trade/${trade.id}`).catch(() => null);
+          const scoreRes = await axios.get(`apiUrl('/api/health')`).catch(() => null);
           if (scoreRes?.data?.data) {
             scoreMap[trade.id] = scoreRes.data.data;
           }

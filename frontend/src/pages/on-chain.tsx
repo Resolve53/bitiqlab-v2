@@ -1,25 +1,48 @@
 import { useEffect, useState } from "react";
 import axios from "axios";
 import MainLayout from "@/components/MainLayout";
+import { apiUrl } from "@/lib/api";
 
 interface FearGreedData {
   value: number;
   value_classification: string;
-  timestamp: string;
+  timestamp: number;
 }
 
-interface WhaleActivity {
+interface WhaleRow {
   symbol: string;
-  amount: number;
-  type: "buy" | "sell";
-  timestamp: string;
-  price: number;
+  largeOrderCount: number;
+  buyVolume: number;
+  sellVolume: number;
+  netVolume: number;
+  bullishSignal: boolean;
+  confidence: number;
+  timestamp: number;
+}
+
+interface SymbolMetric {
+  symbol: string;
+  combinedScore: number;
+  recommendation: string;
+  fearGreedIndex: { value: number; classification: string };
+  whaleActivity: { largeOrderCount: number; bullishSignal: boolean; confidence: number };
+  fundingRate: { rate: number; bullishSignal: boolean };
+}
+
+interface OverviewSummary {
+  avgOnChainScore: number;
+  bullishWhaleCount: number;
+  symbolsScanned: number;
+  marketSignal: "bullish" | "bearish" | "neutral";
 }
 
 export default function OnChain() {
   const [fearGreed, setFearGreed] = useState<FearGreedData | null>(null);
-  const [whaleActivity, setWhaleActivity] = useState<WhaleActivity[]>([]);
+  const [whales, setWhales] = useState<WhaleRow[]>([]);
+  const [metrics, setMetrics] = useState<SymbolMetric[]>([]);
+  const [summary, setSummary] = useState<OverviewSummary | null>(null);
   const [loading, setLoading] = useState(true);
+  const [error, setError] = useState<string | null>(null);
 
   useEffect(() => {
     fetchOnChainData();
@@ -29,27 +52,26 @@ export default function OnChain() {
 
   const fetchOnChainData = async () => {
     try {
-      // Fetch Fear & Greed Index
-      const fgRes = await axios.get("https://api.alternative.me/fng/?limit=1&format=json").catch(() => null);
-      if (fgRes?.data?.data?.[0]) {
+      setError(null);
+      const res = await axios.get(apiUrl("/api/analysis/on-chain-overview"));
+      const data = res.data?.data;
+
+      if (data?.fearGreed) {
         setFearGreed({
-          value: parseInt(fgRes.data.data[0].value),
-          value_classification: fgRes.data.data[0].value_classification,
-          timestamp: fgRes.data.data[0].timestamp,
+          value: data.fearGreed.value,
+          value_classification: data.fearGreed.classification,
+          timestamp: data.fearGreed.timestamp,
         });
       }
 
-      // Mock whale activity data
-      const mockWhales: WhaleActivity[] = [
-        { symbol: "BTC", amount: 2.5, type: "buy", timestamp: new Date(Date.now() - 5 * 60000).toISOString(), price: 45230 },
-        { symbol: "ETH", amount: 45.2, type: "sell", timestamp: new Date(Date.now() - 12 * 60000).toISOString(), price: 2850 },
-        { symbol: "SOL", amount: 125000, type: "buy", timestamp: new Date(Date.now() - 18 * 60000).toISOString(), price: 142.5 },
-        { symbol: "BNB", amount: 850, type: "sell", timestamp: new Date(Date.now() - 25 * 60000).toISOString(), price: 612.8 },
-        { symbol: "XRP", amount: 5000000, type: "buy", timestamp: new Date(Date.now() - 32 * 60000).toISOString(), price: 2.38 },
-      ];
-      setWhaleActivity(mockWhales);
-    } catch (error) {
-      console.error("Error fetching on-chain data:", error);
+      setWhales(data?.whales || []);
+      setMetrics(data?.metrics || []);
+      setSummary(data?.summary || null);
+    } catch (err) {
+      console.error("Error fetching on-chain data:", err);
+      setError(
+        err instanceof Error ? err.message : "Failed to load on-chain overview"
+      );
     } finally {
       setLoading(false);
     }
@@ -64,24 +86,47 @@ export default function OnChain() {
 
   const getFGLabel = (classification: string) => {
     const labels: { [key: string]: string } = {
-      "Extreme Fear": "📍 Extreme Fear",
-      "Fear": "😨 Fear",
-      "Neutral": "😐 Neutral",
-      "Greed": "🤑 Greed",
-      "Extreme Greed": "🚀 Extreme Greed",
+      "Extreme Fear": "Extreme Fear",
+      Fear: "Fear",
+      Neutral: "Neutral",
+      Greed: "Greed",
+      "Extreme Greed": "Extreme Greed",
     };
     return labels[classification] || classification;
   };
 
-  const buyVolume = whaleActivity.filter((w) => w.type === "buy").length;
-  const sellVolume = whaleActivity.filter((w) => w.type === "sell").length;
+  const bullishWhales = whales.filter((w) => w.bullishSignal).length;
+  const bearishWhales = whales.length - bullishWhales;
+  const avgScore = summary?.avgOnChainScore ?? 50;
+
+  const marketSignalLabel =
+    summary?.marketSignal === "bullish"
+      ? "Bullish"
+      : summary?.marketSignal === "bearish"
+        ? "Bearish"
+        : "Neutral";
+
+  const marketSignalClass =
+    summary?.marketSignal === "bullish"
+      ? "bg-emerald-500/20 text-emerald-400"
+      : summary?.marketSignal === "bearish"
+        ? "bg-red-500/20 text-red-400"
+        : "bg-yellow-500/20 text-yellow-400";
 
   return (
     <MainLayout title="On-Chain Analytics">
       <div className="space-y-6">
-        {/* Fear & Greed Section */}
+        {error && (
+          <div className="p-4 bg-amber-900/30 border border-amber-700/50 rounded-lg text-amber-200 text-sm">
+            {error}. Check NEXT_PUBLIC_API_URL points to your Railway backend.
+          </div>
+        )}
+
+        {loading && (
+          <p className="text-slate-400 text-center py-4">Loading on-chain data…</p>
+        )}
+
         <div className="grid grid-cols-1 lg:grid-cols-3 gap-6">
-          {/* Main FG Card */}
           <div className="lg:col-span-2 bg-slate-800/50 border border-slate-700 rounded-lg p-8">
             <h2 className="text-lg font-bold text-white mb-6">FEAR & GREED INDEX</h2>
 
@@ -95,13 +140,12 @@ export default function OnChain() {
                     </p>
                   </div>
 
-                  {/* Gauge visualization */}
                   <div className="flex-1 ml-8">
                     <div className="w-full h-3 bg-gradient-to-r from-red-500 via-yellow-500 to-emerald-500 rounded-full overflow-hidden">
                       <div
                         className="h-full bg-white/30"
                         style={{ width: `${fearGreed.value}%` }}
-                      ></div>
+                      />
                     </div>
                     <div className="flex justify-between text-xs text-slate-400 mt-2">
                       <span>0 (Fear)</span>
@@ -119,73 +163,70 @@ export default function OnChain() {
                 </div>
 
                 <div className="border-t border-slate-700 pt-4">
-                  <p className="text-slate-400 text-xs">Last updated: {new Date(parseInt(fearGreed.timestamp) * 1000).toLocaleTimeString()}</p>
+                  <p className="text-slate-400 text-xs">
+                    Last updated:{" "}
+                    {new Date(
+                      fearGreed.timestamp > 1e12
+                        ? fearGreed.timestamp
+                        : fearGreed.timestamp * 1000
+                    ).toLocaleString()}
+                  </p>
                 </div>
               </div>
             ) : (
-              <p className="text-slate-500">Loading Fear & Greed Index...</p>
+              <p className="text-slate-500">Fear & Greed data unavailable</p>
             )}
           </div>
 
-          {/* Market Conditions */}
           <div className="bg-slate-800/50 border border-slate-700 rounded-lg p-6">
             <h3 className="text-lg font-bold text-white mb-4">MARKET CONDITIONS</h3>
             <div className="space-y-3">
               <div>
-                <p className="text-slate-400 text-sm mb-1">Trend Strength</p>
+                <p className="text-slate-400 text-sm mb-1">Avg On-Chain Score</p>
                 <div className="flex items-center gap-2">
                   <div className="flex-1 h-2 bg-slate-700 rounded overflow-hidden">
-                    <div className="h-full w-3/4 bg-emerald-500 rounded"></div>
+                    <div
+                      className="h-full bg-cyan-500 rounded"
+                      style={{ width: `${avgScore}%` }}
+                    />
                   </div>
-                  <span className="text-white font-bold text-sm">75%</span>
+                  <span className="text-white font-bold text-sm">{avgScore}/100</span>
                 </div>
               </div>
 
               <div>
-                <p className="text-slate-400 text-sm mb-1">Volatility</p>
-                <div className="flex items-center gap-2">
-                  <div className="flex-1 h-2 bg-slate-700 rounded overflow-hidden">
-                    <div className="h-full w-1/2 bg-yellow-500 rounded"></div>
-                  </div>
-                  <span className="text-white font-bold text-sm">50%</span>
-                </div>
-              </div>
-
-              <div>
-                <p className="text-slate-400 text-sm mb-1">Whale Activity</p>
-                <div className="flex items-center gap-2">
-                  <div className="flex-1 h-2 bg-slate-700 rounded overflow-hidden">
-                    <div className="h-full w-2/3 bg-orange-500 rounded"></div>
-                  </div>
-                  <span className="text-white font-bold text-sm">67%</span>
-                </div>
+                <p className="text-slate-400 text-sm mb-1">Whale Signals (bullish)</p>
+                <p className="text-white font-bold">
+                  {bullishWhales} / {whales.length} symbols
+                </p>
               </div>
 
               <div className="pt-3 border-t border-slate-700">
                 <p className="text-slate-400 text-sm mb-2">Market Signal</p>
-                <span className="px-3 py-1 rounded text-sm font-bold bg-emerald-500/20 text-emerald-400">
-                  ↑ Bullish
+                <span className={`px-3 py-1 rounded text-sm font-bold ${marketSignalClass}`}>
+                  {marketSignalLabel}
                 </span>
               </div>
             </div>
           </div>
         </div>
 
-        {/* Whale Activity Section */}
         <div className="bg-slate-800/50 border border-slate-700 rounded-lg p-6">
           <div className="flex justify-between items-start mb-4">
             <div>
-              <h2 className="text-lg font-bold text-white">WHALE ACTIVITY (&gt;$500k)</h2>
-              <p className="text-slate-400 text-sm mt-1">Large on-chain transfers in the last hour</p>
+              <h2 className="text-lg font-bold text-white">WHALE ORDER BOOK SIGNALS</h2>
+              <p className="text-slate-400 text-sm mt-1">
+                Large resting orders (&gt;$500k) detected on Binance spot books
+              </p>
             </div>
             <div className="flex gap-4">
               <div className="text-right">
-                <p className="text-slate-400 text-xs">Buy Transfers</p>
-                <p className="text-emerald-400 font-bold text-lg">{buyVolume}</p>
+                <p className="text-slate-400 text-xs">Bullish</p>
+                <p className="text-emerald-400 font-bold text-lg">{bullishWhales}</p>
               </div>
               <div className="text-right">
-                <p className="text-slate-400 text-xs">Sell Transfers</p>
-                <p className="text-red-400 font-bold text-lg">{sellVolume}</p>
+                <p className="text-slate-400 text-xs">Neutral/Bearish</p>
+                <p className="text-red-400 font-bold text-lg">{bearishWhales}</p>
               </div>
             </div>
           </div>
@@ -194,60 +235,76 @@ export default function OnChain() {
             <table className="w-full text-sm">
               <thead>
                 <tr className="border-b border-slate-700">
-                  <th className="text-left py-3 px-4 text-slate-300">TIME</th>
-                  <th className="text-left py-3 px-4 text-slate-300">COIN</th>
-                  <th className="text-left py-3 px-4 text-slate-300">TYPE</th>
-                  <th className="text-left py-3 px-4 text-slate-300">AMOUNT</th>
-                  <th className="text-left py-3 px-4 text-slate-300">PRICE</th>
-                  <th className="text-left py-3 px-4 text-slate-300">USD VALUE</th>
+                  <th className="text-left py-3 px-4 text-slate-300">SYMBOL</th>
+                  <th className="text-left py-3 px-4 text-slate-300">LARGE ORDERS</th>
+                  <th className="text-left py-3 px-4 text-slate-300">NET FLOW</th>
+                  <th className="text-left py-3 px-4 text-slate-300">SIGNAL</th>
+                  <th className="text-left py-3 px-4 text-slate-300">CONFIDENCE</th>
                 </tr>
               </thead>
               <tbody>
-                {whaleActivity.map((activity, idx) => {
-                  const usdValue = activity.amount * activity.price;
-                  const typeColor = activity.type === "buy" ? "text-emerald-400" : "text-red-400";
-                  const typeLabel = activity.type === "buy" ? "🟢 BUY" : "🔴 SELL";
-
-                  return (
-                    <tr key={idx} className="border-b border-slate-700/50 hover:bg-slate-700/30">
-                      <td className="py-3 px-4 text-slate-400 text-xs">
-                        {new Date(activity.timestamp).toLocaleTimeString()}
+                {whales.length > 0 ? (
+                  whales.map((w) => (
+                    <tr key={w.symbol} className="border-b border-slate-700/50 hover:bg-slate-700/30">
+                      <td className="py-3 px-4 text-white font-bold">{w.symbol}</td>
+                      <td className="py-3 px-4 text-slate-300">{w.largeOrderCount}</td>
+                      <td
+                        className={`py-3 px-4 font-bold ${w.netVolume >= 0 ? "text-emerald-400" : "text-red-400"}`}
+                      >
+                        {w.netVolume >= 0 ? "+" : ""}$
+                        {(w.netVolume / 1e6).toFixed(2)}M
                       </td>
-                      <td className="py-3 px-4 text-white font-bold">{activity.symbol}</td>
-                      <td className={`py-3 px-4 font-bold ${typeColor}`}>{typeLabel}</td>
-                      <td className="py-3 px-4 text-white">
-                        {activity.amount.toLocaleString(undefined, { maximumFractionDigits: 2 })}
+                      <td className="py-3 px-4">
+                        {w.bullishSignal ? (
+                          <span className="text-emerald-400 font-bold">Bullish</span>
+                        ) : (
+                          <span className="text-slate-400">Neutral</span>
+                        )}
                       </td>
-                      <td className="py-3 px-4 text-slate-400">${activity.price.toFixed(2)}</td>
-                      <td className="py-3 px-4 text-white font-bold">
-                        ${usdValue.toLocaleString(undefined, { maximumFractionDigits: 0 })}
-                      </td>
+                      <td className="py-3 px-4 text-white">{w.confidence}%</td>
                     </tr>
-                  );
-                })}
+                  ))
+                ) : (
+                  <tr>
+                    <td colSpan={5} className="py-6 text-center text-slate-500">
+                      No whale activity detected
+                    </td>
+                  </tr>
+                )}
               </tbody>
             </table>
           </div>
         </div>
 
-        {/* Market Sentiment */}
-        <div className="grid grid-cols-1 md:grid-cols-3 gap-6">
-          <div className="bg-slate-800/50 border border-slate-700 rounded-lg p-6">
-            <p className="text-slate-400 text-sm mb-2">Exchange Inflows (24h)</p>
-            <p className="text-3xl font-bold text-emerald-400">-$1.2B</p>
-            <p className="text-xs text-slate-500 mt-2">Coins leaving exchanges (bullish)</p>
-          </div>
-
-          <div className="bg-slate-800/50 border border-slate-700 rounded-lg p-6">
-            <p className="text-slate-400 text-sm mb-2">Open Interest</p>
-            <p className="text-3xl font-bold text-white">$28.5B</p>
-            <p className="text-xs text-slate-500 mt-2">+$2.1B from 24h ago</p>
-          </div>
-
-          <div className="bg-slate-800/50 border border-slate-700 rounded-lg p-6">
-            <p className="text-slate-400 text-sm mb-2">Long/Short Ratio</p>
-            <p className="text-3xl font-bold text-white">1.42</p>
-            <p className="text-xs text-slate-500 mt-2">More longs than shorts</p>
+        <div className="bg-slate-800/50 border border-slate-700 rounded-lg p-6">
+          <h2 className="text-lg font-bold text-white mb-4">PER-SYMBOL ON-CHAIN SCORES</h2>
+          <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-4">
+            {metrics.map((m) => (
+              <div
+                key={m.symbol}
+                className="p-4 rounded-lg bg-slate-950/50 border border-slate-700/50"
+              >
+                <div className="flex justify-between items-center mb-2">
+                  <span className="text-white font-bold">{m.symbol}</span>
+                  <span
+                    className={`text-lg font-bold ${
+                      m.combinedScore >= 65
+                        ? "text-emerald-400"
+                        : m.combinedScore <= 40
+                          ? "text-red-400"
+                          : "text-yellow-400"
+                    }`}
+                  >
+                    {m.combinedScore}
+                  </span>
+                </div>
+                <p className="text-slate-400 text-xs line-clamp-2">{m.recommendation}</p>
+                <p className="text-slate-500 text-xs mt-2">
+                  Funding: {m.fundingRate.rate.toFixed(4)}% · Whales:{" "}
+                  {m.whaleActivity.largeOrderCount} large orders
+                </p>
+              </div>
+            ))}
           </div>
         </div>
       </div>

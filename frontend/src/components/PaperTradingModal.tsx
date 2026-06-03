@@ -1,4 +1,5 @@
 import { useState } from "react";
+import { apiUrl, getApiUrl } from "@/lib/api";
 import { useRouter } from "next/router";
 
 interface PaperTradingModalProps {
@@ -42,9 +43,8 @@ export default function PaperTradingModal({
         throw new Error("Initial balance must be at least $100");
       }
 
-      const apiUrl = process.env.NEXT_PUBLIC_API_URL || "http://localhost:3000";
-
-      const response = await fetch(`${apiUrl}/api/paper-trading/start`, {
+      
+      const response = await fetch(`paper-trading/start`, {
         method: "POST",
         headers: {
           "Content-Type": "application/json",

@@ -1,4 +1,5 @@
 import { useState, useRef, useEffect } from "react";
+import { apiUrl, getApiUrl } from "@/lib/api";
 import { useRouter } from "next/router";
 
 interface SyntaxError {
@@ -188,8 +189,7 @@ if shortExit
 
     setIsAnalyzing(true);
     try {
-      const apiUrl = process.env.NEXT_PUBLIC_API_URL || "http://localhost:3000";
-      const response = await fetch(`${apiUrl}/api/strategies/analyze-pine-script`, {
+            const response = await fetch(`strategies/analyze-pine-script`, {
         method: "POST",
         headers: {
           "Content-Type": "application/json",
