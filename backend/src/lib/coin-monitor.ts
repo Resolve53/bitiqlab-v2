@@ -7,6 +7,7 @@ import { getPriceCache } from "./price-cache";
 import { getEvaluator, StrategySignal } from "./strategy-evaluator";
 import { getTradingClient } from "./binance-trading";
 import { getDB } from "./db";
+import { confirmSignalBeforeExecution } from "./signal-confirmation-service";
 
 export interface MonitoringConfig {
   session_id: string;
@@ -203,6 +204,10 @@ class MonitoringJob {
                   strategyId: this.config.strategy_id,
                   sessionId: this.config.session_id,
                   technicalReason: signal.reason,
+                  technicalConfidence: signal.confidence,
+                  timeframe: this.config.timeframe,
+                  currentPrice: price,
+                  entryRules: this.config.entry_rules,
                 });
 
                 if (!confirmation.approved) {

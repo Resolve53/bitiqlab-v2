@@ -7,6 +7,7 @@ import type { NextApiRequest, NextApiResponse } from "next";
 import { getDB } from "@/lib/db";
 import { sendSuccess, sendError, asyncHandler } from "@/lib/utils";
 import { getTradingClient } from "@/lib/binance-trading";
+import { confirmSignalBeforeExecution } from "@/lib/signal-confirmation-service";
 
 interface TradingViewWebhookPayload {
   session_id: string;
@@ -112,12 +113,22 @@ export default asyncHandler(async (req: NextApiRequest, res: NextApiResponse) =>
       return sendError(res, "Invalid order quantity calculated", 400, req);
     }
 
+    let strategy = null;
+    try {
+      strategy = await db.getStrategy(session.strategy_id);
+    } catch (_) {
+      /* optional */
+    }
+
     const confirmation = await confirmSignalBeforeExecution({
       symbol: payload.symbol,
       side: payload.signal,
       strategyId: session.strategy_id,
       sessionId: payload.session_id,
       technicalReason: payload.reason,
+      currentPrice,
+      timeframe: strategy?.timeframe || "1h",
+      entryRules: strategy?.entry_rules,
     });
 
     if (!confirmation.approved) {

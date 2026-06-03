@@ -57,6 +57,27 @@ interface SessionStats {
   coins_being_monitored?: string[];
 }
 
+interface SignalConfirmation {
+  approved: boolean;
+  symbol: string;
+  side: string;
+  blockReason?: string;
+  timestamp: string;
+  checks: {
+    onChain: { passed: boolean; score: number; message: string };
+    calendar: { passed: boolean; message: string };
+    claude: { passed: boolean; score: number; message: string; analysis?: string; skipped?: boolean };
+  };
+}
+
+interface ConfirmationGateInfo {
+  gate_enabled: boolean;
+  min_onchain_score: number;
+  calendar_block_hours: number;
+  require_claude_score?: boolean;
+  min_claude_score?: number;
+}
+
 export default function PaperTradingDashboard() {
   const router = useRouter();
   const { session_id } = router.query;
@@ -72,12 +93,18 @@ export default function PaperTradingDashboard() {
   const [multiCoinConfig, setMultiCoinConfig] = useState<any>(null);
   const [monitoredCoins, setMonitoredCoins] = useState<string[]>([]);
   const [showTradeHistory, setShowTradeHistory] = useState(false);
+  const [confirmations, setConfirmations] = useState<SignalConfirmation[]>([]);
+  const [gateInfo, setGateInfo] = useState<ConfirmationGateInfo | null>(null);
 
   useEffect(() => {
     if (!session_id || typeof session_id !== "string") return;
 
     fetchStats();
-    const interval = setInterval(fetchStats, 5000); // Refresh every 5 seconds
+    fetchConfirmations();
+    const interval = setInterval(() => {
+      fetchStats();
+      fetchConfirmations();
+    }, 5000);
 
     return () => clearInterval(interval);
   }, [session_id]);
@@ -94,6 +121,27 @@ export default function PaperTradingDashboard() {
   }, [monitoring, session_id]);
 
   const prevTradeCountRef = useRef(0);
+
+  const fetchConfirmations = async () => {
+    if (!session_id || typeof session_id !== "string") return;
+    try {
+      const apiUrl = process.env.NEXT_PUBLIC_API_URL || "http://localhost:3000";
+      const response = await axios.get(
+        `${apiUrl}/api/paper-trading/signal-confirmations`,
+        { params: { session_id, limit: 15 } }
+      );
+      setConfirmations(response.data.data?.confirmations || []);
+      setGateInfo({
+        gate_enabled: response.data.data?.gate_enabled ?? true,
+        min_onchain_score: response.data.data?.min_onchain_score ?? 50,
+        calendar_block_hours: response.data.data?.calendar_block_hours ?? 4,
+        require_claude_score: response.data.data?.require_claude_score ?? true,
+        min_claude_score: response.data.data?.min_claude_score ?? 65,
+      });
+    } catch (err) {
+      console.warn("[Confirmations] Could not load:", err);
+    }
+  };
 
   const fetchStats = async () => {
     try {
@@ -166,7 +214,19 @@ export default function PaperTradingDashboard() {
       });
       console.log("[Monitor] Cycle completed:", response.data);
       // Refresh stats after monitoring cycle
+      if (response.data.data?.signal_blocked && typeof session_id === "string") {
+        sessionStorageManager.addAlert({
+          id: "",
+          session_id,
+          type: "alert",
+          title: "Signal blocked",
+          message: response.data.data.block_reason || "Confirmation gate rejected entry",
+          timestamp: Date.now(),
+          read: false,
+        });
+      }
       await fetchStats();
+      await fetchConfirmations();
     } catch (err) {
       const errorMsg = err instanceof Error ? err.message : "Failed to monitor session";
       console.error("[Monitor] Error:", errorMsg);
@@ -389,6 +449,51 @@ export default function PaperTradingDashboard() {
               )}
             </div>
           </div>
+        </div>
+
+
+        <div className="bg-slate-800/50 border border-slate-700 rounded-lg p-6 mb-8">
+          <h2 className="text-xl font-bold text-white mb-2">Signal Confirmations</h2>
+          <p className="text-slate-400 text-sm mb-4">
+            On-chain, economic calendar, and Claude pre-trade checks before each BUY.
+          </p>
+          {confirmations.length === 0 ? (
+            <p className="text-slate-500 text-center py-6">No confirmation events yet</p>
+          ) : (
+            <div className="space-y-3 max-h-80 overflow-y-auto">
+              {confirmations.map((c, i) => (
+                <div
+                  key={`${c.timestamp}-${c.symbol}-${i}`}
+                  className={`rounded-lg p-4 border ${
+                    c.approved
+                      ? "bg-emerald-900/20 border-emerald-700/50"
+                      : "bg-amber-900/20 border-amber-700/50"
+                  }`}
+                >
+                  <div className="flex justify-between items-start gap-4">
+                    <div>
+                      <p className="font-semibold text-white">
+                        {c.approved ? "✓ Approved" : "✗ Blocked"} — {c.side} {c.symbol}
+                      </p>
+                      <p className="text-xs text-slate-500 mt-1">
+                        {new Date(c.timestamp).toLocaleString()}
+                      </p>
+                    </div>
+                    <span className="text-sm text-slate-300 text-right">
+                      On-chain {c.checks.onChain.score}
+                      {!c.checks.claude.skipped && ` · Claude ${c.checks.claude.score}`}
+                    </span>
+                  </div>
+                  {!c.approved && c.blockReason && (
+                    <p className="text-amber-200/90 text-sm mt-2">{c.blockReason}</p>
+                  )}
+                  {c.checks.claude.analysis && !c.checks.claude.skipped && (
+                    <p className="text-slate-300 text-xs mt-2 italic">{c.checks.claude.analysis}</p>
+                  )}
+                </div>
+              ))}
+            </div>
+          )}
         </div>
 
         {/* Open Positions */}

@@ -1,11 +1,18 @@
 /**
- * Pre-execution confirmation gate: on-chain metrics + economic calendar
- * before any BUY (entry) is sent to Binance testnet.
+ * Pre-execution confirmation gate:
+ * 1. On-chain metrics
+ * 2. Economic calendar
+ * 3. Claude pre-trade score (chart + context)
  */
 
 import { getOnChainMetrics } from "./on-chain-service";
 import { getUpcomingHighImpactEvents } from "./calendar-service";
 import { getDB } from "./db";
+import {
+  buildChartContext,
+  scorePreTradeSignal,
+  type PreTradeChartContext,
+} from "./pre-trade-scorer";
 
 export type SignalSide = "BUY" | "SELL";
 
@@ -15,6 +22,8 @@ export interface SignalConfirmationConfig {
   blockHighImpactCalendar?: boolean;
   calendarBlockHoursAhead?: number;
   gateBuyOnly?: boolean;
+  requireClaudeScore?: boolean;
+  minClaudeScore?: number;
 }
 
 export interface SignalConfirmationChecks {
@@ -24,6 +33,14 @@ export interface SignalConfirmationChecks {
     message: string;
     eventName?: string;
     hoursUntil?: number;
+  };
+  claude: {
+    passed: boolean;
+    score: number;
+    message: string;
+    recommendation?: string;
+    analysis?: string;
+    skipped?: boolean;
   };
 }
 
@@ -42,7 +59,18 @@ export interface SignalConfirmationResult {
 const recentBySession = new Map<string, SignalConfirmationResult[]>();
 const MAX_RECENT_PER_SESSION = 50;
 
-function getDefaultConfig(): Required<SignalConfirmationConfig> {
+function getDefaultConfig(): Required<
+  Pick<
+    SignalConfirmationConfig,
+    | "enabled"
+    | "minOnChainScore"
+    | "blockHighImpactCalendar"
+    | "calendarBlockHoursAhead"
+    | "gateBuyOnly"
+    | "requireClaudeScore"
+    | "minClaudeScore"
+  >
+> {
   return {
     enabled: process.env.SIGNAL_REQUIRE_CONFIRMATIONS !== "false",
     minOnChainScore: parseInt(process.env.SIGNAL_MIN_ONCHAIN_SCORE || "50", 10),
@@ -52,6 +80,8 @@ function getDefaultConfig(): Required<SignalConfirmationConfig> {
       10
     ),
     gateBuyOnly: process.env.SIGNAL_GATE_BUY_ONLY !== "false",
+    requireClaudeScore: process.env.SIGNAL_REQUIRE_CLAUDE_SCORE !== "false",
+    minClaudeScore: parseInt(process.env.SIGNAL_MIN_CLAUDE_SCORE || "65", 10),
   };
 }
 
@@ -84,12 +114,19 @@ async function persistSignal(
       symbol: result.symbol,
       signal_type: result.side.toLowerCase(),
       signal_strength: result.checks.onChain.score,
-      confidence_score: result.approved ? result.checks.onChain.score : 0,
+      confidence_score: result.approved ? result.checks.claude.score : 0,
       reasoning: result.approved
         ? `Confirmed: ${result.technicalReason || "signal"}`
         : result.blockReason || "Blocked by confirmation gate",
-      on_chain_data: result.checks.onChain,
+      on_chain_data: {
+        onChain: result.checks.onChain,
+        claude: result.checks.claude,
+      },
       macro_context: JSON.stringify(result.checks.calendar),
+      technical_indicators: {
+        claudeScore: result.checks.claude.score,
+        claudeRecommendation: result.checks.claude.recommendation,
+      },
     });
   } catch (err) {
     console.warn("[SIGNAL-CONFIRM] Could not persist to trade_signals:", err);
@@ -97,8 +134,7 @@ async function persistSignal(
 }
 
 /**
- * Run on-chain + calendar checks before placing an entry order.
- * SELL exits skip confirmation by default (gateBuyOnly).
+ * Run on-chain, calendar, and Claude checks before placing an entry order.
  */
 export async function confirmSignalBeforeExecution(params: {
   symbol: string;
@@ -106,6 +142,10 @@ export async function confirmSignalBeforeExecution(params: {
   strategyId?: string;
   sessionId?: string;
   technicalReason?: string;
+  technicalConfidence?: number;
+  timeframe?: string;
+  currentPrice?: number;
+  entryRules?: unknown;
   config?: SignalConfirmationConfig;
 }): Promise<SignalConfirmationResult> {
   const cfg = { ...getDefaultConfig(), ...params.config };
@@ -125,6 +165,7 @@ export async function confirmSignalBeforeExecution(params: {
       checks: {
         onChain: { passed: true, score: 100, message: "Skipped (exit or gate disabled)" },
         calendar: { passed: true, message: "Skipped" },
+        claude: { passed: true, score: 100, message: "Skipped", skipped: true },
       },
       timestamp,
     };
@@ -136,7 +177,7 @@ export async function confirmSignalBeforeExecution(params: {
     getOnChainMetrics(params.symbol),
     cfg.blockHighImpactCalendar
       ? getUpcomingHighImpactEvents(params.symbol, cfg.calendarBlockHoursAhead)
-      : Promise.resolve({ hasBlockingEvent: false }),
+      : Promise.resolve({ hasBlockingEvent: false } as Awaited<ReturnType<typeof getUpcomingHighImpactEvents>>),
   ]);
 
   const onChainPassed = onChain.combinedScore >= cfg.minOnChainScore;
@@ -151,6 +192,74 @@ export async function confirmSignalBeforeExecution(params: {
       ? `Blocked: ${calendar.eventName} (${calendar.importance})${calendar.hoursUntil != null ? ` in ~${calendar.hoursUntil}h` : " today"}`
       : "Calendar check failed";
 
+  let claudeCheck: SignalConfirmationChecks["claude"] = {
+    passed: true,
+    score: 0,
+    message: "Claude check skipped",
+    skipped: true,
+  };
+
+  let claudePassed = true;
+
+  if (cfg.requireClaudeScore && onChainPassed && calendarPassed) {
+    try {
+      const timeframe = params.timeframe || "1h";
+      let currentPrice = params.currentPrice ?? 0;
+      if (!currentPrice) {
+        const { getTradingClient } = await import("./binance-trading");
+        currentPrice = await getTradingClient(true).getPrice(params.symbol);
+      }
+
+      const chartCtx: PreTradeChartContext = await buildChartContext(
+        params.symbol,
+        timeframe,
+        currentPrice,
+        params.entryRules,
+        params.technicalReason,
+        params.technicalConfidence
+      );
+      chartCtx.onChainScore = onChain.combinedScore;
+      chartCtx.onChainMessage = onChainMessage;
+      chartCtx.calendarMessage = calendarMessage;
+
+      const claudeResult = await scorePreTradeSignal(chartCtx);
+      claudePassed =
+        claudeResult.skipped || (claudeResult.approved && claudeResult.score >= cfg.minClaudeScore);
+
+      claudeCheck = {
+        passed: claudePassed,
+        score: claudeResult.score,
+        message: claudeResult.message,
+        recommendation: claudeResult.recommendation,
+        analysis: claudeResult.analysis,
+        skipped: claudeResult.skipped,
+      };
+    } catch (err) {
+      const failOpen = process.env.SIGNAL_CLAUDE_FAIL_OPEN !== "false";
+      claudePassed = failOpen;
+      claudeCheck = {
+        passed: failOpen,
+        score: 0,
+        message: `Claude check error: ${err instanceof Error ? err.message : "unknown"}`,
+        skipped: true,
+      };
+    }
+  } else if (!cfg.requireClaudeScore) {
+    claudeCheck = {
+      passed: true,
+      score: 0,
+      message: "Claude pre-trade scoring disabled",
+      skipped: true,
+    };
+  } else if (cfg.requireClaudeScore) {
+    claudeCheck = {
+      passed: true,
+      score: 0,
+      message: "Claude not run — on-chain or calendar gate failed first",
+      skipped: true,
+    };
+  }
+
   const checks: SignalConfirmationChecks = {
     onChain: {
       passed: onChainPassed,
@@ -163,12 +272,14 @@ export async function confirmSignalBeforeExecution(params: {
       eventName: calendar.eventName,
       hoursUntil: calendar.hoursUntil,
     },
+    claude: claudeCheck,
   };
 
-  const approved = onChainPassed && calendarPassed;
+  const approved = onChainPassed && calendarPassed && claudePassed;
   const blockReasons: string[] = [];
   if (!onChainPassed) blockReasons.push(onChainMessage);
   if (!calendarPassed) blockReasons.push(calendarMessage);
+  if (!claudePassed && cfg.requireClaudeScore) blockReasons.push(claudeCheck.message);
 
   const result: SignalConfirmationResult = {
     approved,
@@ -191,7 +302,7 @@ export async function confirmSignalBeforeExecution(params: {
     );
   } else {
     console.log(
-      `[SIGNAL-CONFIRM] ✓ Approved ${params.side} ${params.symbol} (on-chain ${onChain.combinedScore})`
+      `[SIGNAL-CONFIRM] ✓ Approved ${params.side} ${params.symbol} (on-chain ${onChain.combinedScore}, claude ${claudeCheck.score})`
     );
   }
 

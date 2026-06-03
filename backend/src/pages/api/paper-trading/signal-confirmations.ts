@@ -29,6 +29,8 @@ export default asyncHandler(async (req: NextApiRequest, res: NextApiResponse) =>
       gate_enabled: process.env.SIGNAL_REQUIRE_CONFIRMATIONS !== "false",
       min_onchain_score: parseInt(process.env.SIGNAL_MIN_ONCHAIN_SCORE || "50", 10),
       calendar_block_hours: parseInt(process.env.SIGNAL_CALENDAR_BLOCK_HOURS || "4", 10),
+      require_claude_score: process.env.SIGNAL_REQUIRE_CLAUDE_SCORE !== "false",
+      min_claude_score: parseInt(process.env.SIGNAL_MIN_CLAUDE_SCORE || "65", 10),
     },
     200,
     req
