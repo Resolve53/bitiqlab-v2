@@ -2,6 +2,7 @@ import { ReactNode, useState } from "react";
 import ConnectionBanner from "@/components/ConnectionBanner";
 import Link from "next/link";
 import { useRouter } from "next/router";
+import { useAuth } from "@/context/AuthContext";
 
 const MAIN_NAV = [
   { label: "Dashboard", href: "/dashboard", icon: "◆" },
@@ -57,6 +58,7 @@ export function PageHeader({
 
 export default function AppShell({ children }: { children: ReactNode }) {
   const router = useRouter();
+  const { user, logout } = useAuth();
   const [open, setOpen] = useState(true);
   const pathname = router.pathname;
   const inStrategies = pathname.startsWith("/strategies");
@@ -164,14 +166,30 @@ export default function AppShell({ children }: { children: ReactNode }) {
           )}
         </nav>
 
-        {open && (
-          <div className="border-t border-slate-800/80 p-3">
+        <div className="border-t border-slate-800/80 p-3 space-y-2">
+          {open && user && (
+            <p className="px-2 text-xs text-slate-400 truncate" title={user.email}>
+              Signed in as <span className="text-cyan-300 font-medium">{user.username || user.email}</span>
+            </p>
+          )}
+          <button
+            type="button"
+            onClick={() => logout()}
+            className={`w-full rounded-lg px-3 py-2 text-sm font-medium transition ${
+              open
+                ? "bg-slate-800 text-slate-200 hover:bg-slate-700"
+                : "text-slate-400 hover:text-white"
+            }`}
+          >
+            {open ? "Sign out" : "⎋"}
+          </button>
+          {open && (
             <div className="rounded-lg bg-amber-500/10 border border-amber-500/25 px-3 py-2 text-xs text-amber-200/90">
               TradingView MCP is optional. Prices use Binance; reconnect TV when
               your subscription is active.
             </div>
-          </div>
-        )}
+          )}
+        </div>
       </aside>
 
       <div
