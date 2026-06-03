@@ -20,7 +20,7 @@ import {
 interface AuthContextValue {
   user: StoredUser | null;
   loading: boolean;
-  login: (username: string, password: string) => Promise<void>;
+  login: (email: string, password: string) => Promise<void>;
   logout: () => Promise<void>;
   refreshUser: () => Promise<void>;
 }
@@ -74,14 +74,14 @@ export function AuthProvider({ children }: { children: ReactNode }) {
   }, [loading, router.pathname, router, user]);
 
   const login = useCallback(
-    async (username: string, password: string) => {
+    async (email: string, password: string) => {
       const data = await apiFetch<{
         access_token: string;
         refresh_token: string;
         user: StoredUser;
       }>("/api/auth/login", {
         method: "POST",
-        body: JSON.stringify({ username: username.trim(), password }),
+        body: JSON.stringify({ email: email.trim(), password }),
       });
 
       setSession(data.access_token, data.refresh_token, data.user);

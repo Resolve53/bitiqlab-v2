@@ -1,16 +1,37 @@
 import type { NextApiRequest, NextApiResponse } from "next";
 import { z } from "zod";
-import { isAuthConfigured, getSupabaseAnon, resolveEmailForUsername } from "@/lib/supabase-auth";
-import { asyncHandler, sendError, sendSuccess, } from "@/lib/utils";
+import {
+  isAuthConfigured,
+  getSupabaseAnon,
+  resolveEmailForUsername,
+} from "@/lib/supabase-auth";
+import { asyncHandler, sendError, sendSuccess } from "@/lib/utils";
 
-const bodySchema = z.object({
-  username: z.string().min(2).max(64),
-  password: z.string().min(6).max(128),
-});
+const bodySchema = z
+  .object({
+    email: z.string().min(3).max(255).optional(),
+    username: z.string().min(2).max(255).optional(),
+    password: z.string().min(6).max(128),
+  })
+  .refine((b) => Boolean(b.email?.trim() || b.username?.trim()), {
+    message: "Email is required",
+  });
 
 function sessionCookie(accessToken: string, maxAgeSec: number): string {
   const secure = process.env.NODE_ENV === "production" ? "; Secure" : "";
   return `bitiq_access_token=${encodeURIComponent(accessToken)}; Path=/; HttpOnly; SameSite=Lax; Max-Age=${maxAgeSec}${secure}`;
+}
+
+async function emailForLogin(
+  email?: string,
+  username?: string
+): Promise<string | null> {
+  const direct = email?.trim() || username?.trim() || "";
+  if (!direct) return null;
+  if (direct.includes("@")) {
+    return direct.toLowerCase();
+  }
+  return resolveEmailForUsername(direct);
 }
 
 export default asyncHandler(async (req: NextApiRequest, res: NextApiResponse) => {
@@ -29,18 +50,18 @@ export default asyncHandler(async (req: NextApiRequest, res: NextApiResponse) =>
 
   const parsed = bodySchema.safeParse(req.body);
   if (!parsed.success) {
-    return sendError(res, "Invalid username or password format", 400, req);
+    return sendError(res, "Enter your email and password", 400, req);
   }
 
-  const { username, password } = parsed.data;
-  const email = await resolveEmailForUsername(username);
-  if (!email) {
-    return sendError(res, "Invalid username or password", 401, req);
+  const { email, username, password } = parsed.data;
+  const loginEmail = await emailForLogin(email, username);
+  if (!loginEmail) {
+    return sendError(res, "Invalid email or password", 401, req);
   }
 
   const supabase = getSupabaseAnon();
   const { data, error } = await supabase.auth.signInWithPassword({
-    email,
+    email: loginEmail,
     password,
   });
 
@@ -49,7 +70,7 @@ export default asyncHandler(async (req: NextApiRequest, res: NextApiResponse) =>
     if (msg.includes("email not confirmed") || msg.includes("confirm")) {
       return sendError(
         res,
-        "Email not confirmed. In Supabase: Authentication → Users → open your user → confirm email, or disable Confirm email under Email provider settings.",
+        "Email not confirmed. In Supabase → Authentication → Users, confirm the user or disable Confirm email.",
         401,
         req
       );
@@ -57,13 +78,13 @@ export default asyncHandler(async (req: NextApiRequest, res: NextApiResponse) =>
     if (msg.includes("invalid login") || msg.includes("invalid credentials")) {
       return sendError(
         res,
-        "Password does not match this account. Reset it in Supabase → Authentication → Users → your user → set a new password.",
+        "Wrong password. Reset it in Supabase → Authentication → Users → your user.",
         401,
         req
       );
     }
     console.warn("[auth/login] signIn failed:", error?.message);
-    return sendError(res, "Invalid username or password", 401, req);
+    return sendError(res, "Invalid email or password", 401, req);
   }
 
   const { session, user } = data;
@@ -79,7 +100,9 @@ export default asyncHandler(async (req: NextApiRequest, res: NextApiResponse) =>
       user: {
         id: user.id,
         email: user.email,
-        username: user.user_metadata?.username ?? username,
+        username:
+          (user.user_metadata?.username as string | undefined) ||
+          user.email?.split("@")[0],
       },
     },
     200,
