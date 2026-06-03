@@ -1,8 +1,10 @@
 import { useState } from "react";
 import { PageHeader } from "@/components/AppShell";
+import { useAuth } from "@/context/AuthContext";
 
 export default function Settings() {
-  const [email] = useState("user@bitiq.ai");
+  const { user } = useAuth();
+  const email = user?.email || "—";
   const [apiKey, setApiKey] = useState("••••••••••••••••");
   const [showApiKey, setShowApiKey] = useState(false);
 

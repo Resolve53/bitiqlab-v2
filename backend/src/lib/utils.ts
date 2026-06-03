@@ -3,6 +3,12 @@
  */
 
 import { NextApiResponse } from "next";
+import {
+  attachUser,
+  authenticateRequest,
+  isAuthRequired,
+  isPublicApiPath,
+} from "./auth";
 
 export interface ApiResponse<T = any> {
   success: boolean;

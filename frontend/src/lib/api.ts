@@ -5,6 +5,8 @@
  * proxy to Railway (see next.config.js). No CORS or localhost issues.
  */
 
+import { getAccessToken } from "./auth-storage";
+
 const DEFAULT_API_URL = "http://localhost:3001";
 
 const PRODUCTION_BACKEND =
@@ -85,10 +87,13 @@ export async function apiFetch<T>(
 ): Promise<T> {
   let res: Response;
   try {
+    const token = getAccessToken();
     res = await fetch(apiPath(path), {
       ...init,
+      credentials: "include",
       headers: {
         "Content-Type": "application/json",
+        ...(token ? { Authorization: `Bearer ${token}` } : {}),
         ...init?.headers,
       },
     });
