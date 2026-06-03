@@ -1,13 +1,11 @@
 /**
- * POST /api/paper-trading/execute-signal - Execute a trading signal
- * Places a market order based on strategy signals
+ * POST /api/paper-trading/execute-signal
  */
 
 import type { NextApiRequest, NextApiResponse } from "next";
 import { getDB } from "@/lib/db";
 import { sendSuccess, sendError, asyncHandler } from "@/lib/utils";
-import { getTradingClient } from "@/lib/binance-trading";
-import { confirmSignalBeforeExecution } from "@/lib/signal-confirmation-service";
+import { getSessionTradingContext } from "@/lib/session-trading-client";
 
 interface ExecuteSignalRequest {
   session_id: string;
@@ -15,6 +13,7 @@ interface ExecuteSignalRequest {
   symbol: string;
   reason?: string;
   risk_percentage?: number;
+  market_type?: "spot" | "futures";
 }
 
 export default asyncHandler(async (req: NextApiRequest, res: NextApiResponse) => {
@@ -29,16 +28,11 @@ export default asyncHandler(async (req: NextApiRequest, res: NextApiResponse) =>
     symbol,
     reason,
     risk_percentage = 2,
+    market_type: requestMarketType,
   }: ExecuteSignalRequest = req.body;
 
-  // Validate required fields
   if (!session_id || !signal || !symbol) {
-    return sendError(
-      res,
-      "Missing required fields: session_id, signal, symbol",
-      400,
-      req
-    );
+    return sendError(res, "Missing required fields: session_id, signal, symbol", 400, req);
   }
 
   if (!["BUY", "SELL"].includes(signal)) {
@@ -47,127 +41,50 @@ export default asyncHandler(async (req: NextApiRequest, res: NextApiResponse) =>
 
   try {
     const db = getDB();
-    const client = getTradingClient(true); // Use testnet
+    const { client, marketType, leverage } = await getSessionTradingContext(session_id, {
+      requestMarketType,
+    });
 
-    // Get trading session
     const session = await db.getTradingSession(session_id);
     if (!session) {
       return sendError(res, "Trading session not found", 404, req);
     }
 
-    // Get current price
-    let currentPrice = 0;
-    try {
-      currentPrice = await client.getPrice(symbol);
-    } catch (priceError) {
-      console.error("[EXECUTE-SIGNAL] Price fetch error:", priceError);
-      // If we can't get price from Binance, skip the trade
-      return sendError(
-        res,
-        "Failed to fetch current price - cannot execute trade",
-        400,
-        req
-      );
-    }
-
-    // Calculate position size based on risk percentage
+    const currentPrice = await client.getPrice(symbol);
     const riskAmount = session.initial_balance * (risk_percentage / 100);
-    let quantity = 0;
+    let quantity = signal === "BUY" ? riskAmount / currentPrice : 0;
 
-    if (signal === "BUY") {
-      // For BUY: position size = risk amount / price
-      quantity = riskAmount / currentPrice;
-    } else {
-      // For SELL: we need to have the position first
-      // Check if we have an open position by looking at recent orders
-      const openOrders = await client.getOpenOrders(symbol);
-      if (openOrders.length === 0) {
-        return sendError(
-          res,
-          "Cannot SELL without an open position. No BUY orders found.",
-          400,
-          req
-        );
+    if (signal === "SELL") {
+      const trades = await db.listPaperTrades(session_id);
+      let lastBuyQuantity = 0;
+      for (const trade of trades) {
+        if (trade.side === "BUY" && trade.symbol === symbol) lastBuyQuantity = trade.quantity;
+        if (trade.side === "SELL" && trade.symbol === symbol) lastBuyQuantity = 0;
       }
-
-      // Use the quantity from the most recent BUY order
-      const buyOrders = openOrders.filter((o) => o.side === "BUY");
-      if (buyOrders.length === 0) {
-        return sendError(res, "No open BUY position to SELL", 400, req);
+      quantity = await client.resolveSellQuantity(symbol, lastBuyQuantity);
+      if (quantity <= 0) {
+        return sendError(res, "Cannot SELL without an open position", 400, req);
       }
-
-      quantity = parseFloat(buyOrders[buyOrders.length - 1].origQty);
     }
 
-    // Round quantity to 4 decimal places (Binance requirement)
-    quantity = Math.round(quantity * 10000) / 10000;
-
+    quantity = await client.formatQuantity(symbol, quantity);
     if (quantity <= 0) {
       return sendError(res, "Invalid order quantity calculated", 400, req);
     }
 
-
-    let strategy = null;
-    try {
-      strategy = await db.getStrategy(session.strategy_id);
-    } catch (_) {
-      /* optional */
-    }
-
-    const confirmation = await confirmSignalBeforeExecution({
-      symbol,
-      side: signal,
-      strategyId: session.strategy_id,
-      sessionId: session_id,
-      technicalReason: reason,
-      currentPrice,
-      timeframe: strategy?.timeframe || "1h",
-      entryRules: strategy?.entry_rules,
+    const order = await client.marketOrder(symbol, signal, quantity, {
+      leverage: marketType === "futures" ? leverage : undefined,
     });
 
-    if (!confirmation.approved) {
-      return sendError(
-        res,
-        `Signal blocked by confirmation gate: ${confirmation.blockReason}`,
-        403,
-        req
-      );
-    }
-
-    // Place market order on Binance testnet
-    const order = await client.marketOrder(symbol, signal, quantity);
-
-    // Log the trade in database
     await db.createPaperTrade({
       session_id,
       strategy_id: session.strategy_id,
       symbol,
       side: signal,
       entry_price: currentPrice,
-      quantity: quantity,
+      quantity,
       status: order.status,
       reason_entry: reason || "Strategy signal triggered",
-    });
-
-    // Update session with latest P&L
-    const trades = await db.listPaperTrades(session_id);
-    let totalProfit = 0;
-    let buyPrice = 0;
-    let boughtQuantity = 0;
-
-    for (const trade of trades) {
-      if (trade.side === "BUY") {
-        buyPrice = trade.entry_price;
-        boughtQuantity = trade.quantity;
-      } else if (trade.side === "SELL" && boughtQuantity > 0) {
-        const profit = (trade.exit_price - buyPrice) * boughtQuantity;
-        totalProfit += profit;
-      }
-    }
-
-    await db.updateTradingSession(session_id, {
-      current_balance: session.initial_balance + totalProfit,
-      total_pnl: totalProfit,
     });
 
     return sendSuccess(
@@ -179,7 +96,8 @@ export default asyncHandler(async (req: NextApiRequest, res: NextApiResponse) =>
         quantity,
         price: currentPrice,
         status: order.status,
-        message: `${signal} order placed successfully`,
+        market_type: marketType,
+        message: `${signal} ${marketType} order placed successfully`,
       },
       201,
       req

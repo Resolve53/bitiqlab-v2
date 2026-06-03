@@ -25,6 +25,7 @@ import type { NextApiRequest, NextApiResponse } from "next";
 import { sendSuccess, sendError, asyncHandler } from "@/lib/utils";
 import { getDB } from "@/lib/db";
 import { createMonitoringJob } from "@/lib/coin-monitor";
+import { resolveTradingMarket } from "@/lib/trading-market-resolver";
 
 interface StartMonitoringRequest {
   session_id: string;
@@ -90,6 +91,20 @@ export default asyncHandler(async (req: NextApiRequest, res: NextApiResponse) =>
     );
 
     // Create monitoring job
+    let multiCoinTradingType: string | undefined;
+    try {
+      const multi = await db.getMultiCoinConfig(session_id);
+      multiCoinTradingType = multi?.trading_type;
+    } catch {
+      // optional
+    }
+
+    const marketType = resolveTradingMarket({
+      strategyMarketType: strategy.market_type,
+      multiCoinTradingType,
+    });
+    const strategyLeverage = (strategy as { leverage?: number }).leverage;
+
     const job = createMonitoringJob({
       session_id,
       strategy_id,
@@ -100,6 +115,11 @@ export default asyncHandler(async (req: NextApiRequest, res: NextApiResponse) =>
       exit_rules: strategy.exit_rules,
       auto_trade,
       poll_interval_ms,
+      market_type: marketType,
+      leverage:
+        marketType === "futures" && typeof strategyLeverage === "number"
+          ? strategyLeverage
+          : 1,
     });
 
     // Start the job

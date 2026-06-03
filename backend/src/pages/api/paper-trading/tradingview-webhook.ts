@@ -1,13 +1,11 @@
 /**
  * POST /api/paper-trading/tradingview-webhook
- * Receive signals from TradingView Pine Script and execute trades
  */
 
 import type { NextApiRequest, NextApiResponse } from "next";
 import { getDB } from "@/lib/db";
 import { sendSuccess, sendError, asyncHandler } from "@/lib/utils";
-import { getTradingClient } from "@/lib/binance-trading";
-import { confirmSignalBeforeExecution } from "@/lib/signal-confirmation-service";
+import { getSessionTradingContext } from "@/lib/session-trading-client";
 
 interface TradingViewWebhookPayload {
   session_id: string;
@@ -15,7 +13,7 @@ interface TradingViewWebhookPayload {
   symbol: string;
   reason?: string;
   price?: number;
-  time?: string;
+  market_type?: "spot" | "futures";
 }
 
 export default asyncHandler(async (req: NextApiRequest, res: NextApiResponse) => {
@@ -24,184 +22,79 @@ export default asyncHandler(async (req: NextApiRequest, res: NextApiResponse) =>
     return sendError(res, "Method not allowed", 405, req);
   }
 
-  // Validate webhook signature (optional but recommended for security)
   const webhookSecret = process.env.TRADINGVIEW_WEBHOOK_SECRET;
   if (webhookSecret) {
     const signature = req.headers["x-tradingview-signature"];
     if (!signature || signature !== webhookSecret) {
-      return sendError(
-        res,
-        "Unauthorized: Invalid webhook signature",
-        401,
-        req
-      );
+      return sendError(res, "Unauthorized: Invalid webhook signature", 401, req);
     }
   }
 
   const payload: TradingViewWebhookPayload = req.body;
-
-  // Validate payload
   if (!payload.session_id || !payload.signal || !payload.symbol) {
-    return sendError(
-      res,
-      "Invalid webhook payload. Required: session_id, signal, symbol",
-      400,
-      req
-    );
-  }
-
-  if (!["BUY", "SELL"].includes(payload.signal)) {
-    return sendError(res, "Signal must be BUY or SELL", 400, req);
+    return sendError(res, "Invalid webhook payload", 400, req);
   }
 
   try {
-    console.log(`[TradingView Webhook] Received ${payload.signal} signal for ${payload.symbol}`);
-
     const db = getDB();
-    const client = getTradingClient(true); // Use testnet
-
-    // Get trading session
+    const { client, marketType, leverage } = await getSessionTradingContext(
+      payload.session_id,
+      { requestMarketType: payload.market_type }
+    );
     const session = await db.getTradingSession(payload.session_id);
-    if (!session) {
-      console.error(`[TradingView Webhook] Session not found: ${payload.session_id}`);
-      return sendError(res, "Trading session not found", 404, req);
-    }
+    if (!session) return sendError(res, "Trading session not found", 404, req);
 
-    // Get current account balance
-    const usdtBalance = await client.getBalance("USDT");
-    if (usdtBalance === 0) {
-      console.error("[TradingView Webhook] Insufficient USDT balance");
-      return sendError(
-        res,
-        "Insufficient USDT balance in testnet account",
-        400,
-        req
-      );
-    }
-
-    // Get current price
     const currentPrice = payload.price || (await client.getPrice(payload.symbol));
-
-    // Calculate position size based on risk percentage
-    const riskAmount = session.initial_balance * 0.02; // 2% risk
-    let quantity = 0;
-
-    if (payload.signal === "BUY") {
-      quantity = riskAmount / currentPrice;
-    } else {
-      // For SELL: check if we have an open position
-      const openOrders = await client.getOpenOrders(payload.symbol);
-      const buyOrders = openOrders.filter((o) => o.side === "BUY");
-
-      if (buyOrders.length === 0) {
-        console.warn("[TradingView Webhook] No open BUY position to SELL");
-        return sendError(
-          res,
-          "Cannot SELL without an open position",
-          400,
-          req
-        );
-      }
-
-      quantity = parseFloat(buyOrders[buyOrders.length - 1].origQty);
-    }
-
-    // Round quantity to 4 decimal places
-    quantity = Math.round(quantity * 10000) / 10000;
+    const riskAmount = session.initial_balance * 0.02;
+    let quantity =
+      payload.signal === "BUY"
+        ? riskAmount / currentPrice
+        : await client.resolveSellQuantity(
+            payload.symbol,
+            (
+              await db.listPaperTrades(payload.session_id)
+            )
+              .filter((t) => t.side === "BUY" && t.symbol === payload.symbol)
+              .pop()?.quantity || 0
+          );
 
     if (quantity <= 0) {
-      return sendError(res, "Invalid order quantity calculated", 400, req);
+      return sendError(res, "Invalid quantity", 400, req);
     }
 
-    let strategy = null;
-    try {
-      strategy = await db.getStrategy(session.strategy_id);
-    } catch (_) {
-      /* optional */
-    }
+    quantity = await client.formatQuantity(payload.symbol, quantity);
+    const order = await client.marketOrder(
+      payload.symbol,
+      payload.signal,
+      quantity,
+      { leverage: marketType === "futures" ? leverage : undefined }
+    );
 
-    const confirmation = await confirmSignalBeforeExecution({
-      symbol: payload.symbol,
-      side: payload.signal,
-      strategyId: session.strategy_id,
-      sessionId: payload.session_id,
-      technicalReason: payload.reason,
-      currentPrice,
-      timeframe: strategy?.timeframe || "1h",
-      entryRules: strategy?.entry_rules,
-    });
-
-    if (!confirmation.approved) {
-      console.warn(
-        `[TradingView Webhook] Signal blocked: ${confirmation.blockReason}`
-      );
-      return sendError(
-        res,
-        `Signal blocked by confirmation gate: ${confirmation.blockReason}`,
-        403,
-        req
-      );
-    }
-
-    // Place market order on Binance testnet
-    console.log(`[TradingView Webhook] Placing ${payload.signal} order: ${quantity} ${payload.symbol}`);
-    const order = await client.marketOrder(payload.symbol, payload.signal, quantity);
-
-    // Log the trade in database
     await db.createPaperTrade({
       session_id: payload.session_id,
       strategy_id: session.strategy_id,
       symbol: payload.symbol,
       side: payload.signal,
       entry_price: currentPrice,
-      quantity: quantity,
+      quantity,
       status: order.status,
       reason_entry: payload.reason || "TradingView signal",
     });
-
-    // Update session P&L
-    const trades = await db.listPaperTrades(payload.session_id);
-    let totalProfit = 0;
-    let buyPrice = 0;
-    let boughtQuantity = 0;
-
-    for (const trade of trades) {
-      if (trade.side === "BUY") {
-        buyPrice = trade.entry_price;
-        boughtQuantity = trade.quantity;
-      } else if (trade.side === "SELL" && boughtQuantity > 0) {
-        const profit = (trade.entry_price - buyPrice) * boughtQuantity; // Current price as exit
-        totalProfit += profit;
-      }
-    }
-
-    await db.updateTradingSession(payload.session_id, {
-      current_balance: session.initial_balance + totalProfit,
-      total_pnl: totalProfit,
-    });
-
-    console.log(`[TradingView Webhook] ✓ Order executed: ${order.orderId}`);
 
     return sendSuccess(
       res,
       {
         order_id: order.orderId,
-        signal: payload.signal,
-        symbol: payload.symbol,
-        quantity,
-        price: currentPrice,
-        status: order.status,
-        session_id: payload.session_id,
-        message: `${payload.signal} order executed from TradingView signal`,
+        market_type: marketType,
+        message: `${payload.signal} ${marketType} order executed`,
       },
       200,
       req
     );
   } catch (error) {
-    console.error("[TradingView Webhook] Error:", error);
     return sendError(
       res,
-      error instanceof Error ? error.message : "Failed to execute webhook signal",
+      error instanceof Error ? error.message : "Webhook failed",
       500,
       req
     );

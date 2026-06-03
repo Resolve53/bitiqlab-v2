@@ -6,7 +6,7 @@
 import type { NextApiRequest, NextApiResponse } from "next";
 import { getDB } from "@/lib/db";
 import { sendSuccess, sendError, asyncHandler } from "@/lib/utils";
-import { getTradingClient } from "@/lib/binance-trading";
+import { getSessionTradingContext } from "@/lib/session-trading-client";
 import { getEvaluator } from "@/lib/strategy-evaluator";
 
 interface ScanRequest {
@@ -29,7 +29,8 @@ export default asyncHandler(async (req: NextApiRequest, res: NextApiResponse) =>
     console.log(`[MULTI-COIN-SCAN] Starting scan for session: ${session_id}`);
 
     const db = getDB();
-    const tradingClient = getTradingClient(true);
+    const { client: tradingClient, marketType, leverage } =
+      await getSessionTradingContext(session_id);
     const evaluator = getEvaluator();
 
     // Get session
@@ -46,7 +47,11 @@ export default asyncHandler(async (req: NextApiRequest, res: NextApiResponse) =>
       }
 
       // Get multi-coin config
-      config = session.metadata?.multi_coin_config;
+      const storedConfig = await db.getMultiCoinConfig(session_id);
+      config =
+        storedConfig ||
+        (session as { metadata?: { multi_coin_config?: typeof config } })
+          .metadata?.multi_coin_config;
       if (!config) {
         return sendError(res, "Multi-coin config not found", 400, req);
       }
@@ -128,12 +133,11 @@ export default asyncHandler(async (req: NextApiRequest, res: NextApiResponse) =>
 
           if (openPositions < config.max_concurrent_positions) {
             try {
-              const quantity = config.position_size_per_coin / currentPrice;
-              const order = await tradingClient.marketOrder(
-                coin,
-                "BUY",
-                quantity
-              );
+              const rawQty = config.position_size_per_coin / currentPrice;
+              const quantity = await tradingClient.formatQuantity(coin, rawQty);
+              const order = await tradingClient.marketOrder(coin, "BUY", quantity, {
+                leverage: marketType === "futures" ? leverage : undefined,
+              });
 
               scanResults.trades_executed++;
               console.log(
