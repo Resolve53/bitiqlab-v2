@@ -5,18 +5,23 @@ CREATE TABLE IF NOT EXISTS public.profiles (
   id UUID PRIMARY KEY REFERENCES auth.users(id) ON DELETE CASCADE,
   username TEXT NOT NULL,
   display_name TEXT,
-  created_at TIMESTAMPTZ NOT NULL DEFAULT NOW(),
-  CONSTRAINT profiles_username_lower_unique UNIQUE (lower(username))
+  created_at TIMESTAMPTZ NOT NULL DEFAULT NOW()
 );
+
+-- Case-insensitive unique usernames (expression UNIQUE must be an index, not a table CONSTRAINT)
+CREATE UNIQUE INDEX IF NOT EXISTS profiles_username_lower_unique
+  ON public.profiles (lower(username));
 
 CREATE INDEX IF NOT EXISTS idx_profiles_username_lower ON public.profiles (lower(username));
 
 ALTER TABLE public.profiles ENABLE ROW LEVEL SECURITY;
 
+DROP POLICY IF EXISTS "Users can read own profile" ON public.profiles;
 CREATE POLICY "Users can read own profile"
   ON public.profiles FOR SELECT
   USING (auth.uid() = id);
 
+DROP POLICY IF EXISTS "Users can update own profile" ON public.profiles;
 CREATE POLICY "Users can update own profile"
   ON public.profiles FOR UPDATE
   USING (auth.uid() = id);
