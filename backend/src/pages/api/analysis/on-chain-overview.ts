@@ -10,11 +10,12 @@ import { scanWhalesAcrossCoins } from "@/lib/whale-monitor";
 import {
   fetchCmcGlobalMetrics,
   fetchCmcQuotesLatest,
-  fetchCmcDerivativesLatest,
-  fetchCmcCryptoTechnicalAnalysis,
-  fetchCmcMarketCapTechnicalAnalysis,
   isCoinMarketCapConfigured,
 } from "@/lib/coinmarketcap-client";
+import {
+  fetchDerivativesOverview,
+  fetchTechnicalAnalysisOverview,
+} from "@/lib/on-chain-market-fallbacks";
 import { asyncHandler } from "@/lib/utils";
 
 const DEFAULT_SYMBOLS = [
@@ -53,35 +54,25 @@ export default asyncHandler(async (req: NextApiRequest, res: NextApiResponse) =>
   const cmcOn = isCoinMarketCapConfigured();
 
   try {
-    const [
-      fearGreed,
-      metrics,
-      whales,
-      globalMetrics,
-      cmcQuotes,
-      derivatives,
-      marketTa,
-      cryptoTa,
-    ] = await Promise.all([
-      getFearGreedIndex(),
-      scanOnChainSignals(symbols),
-      scanWhalesAcrossCoins(symbols),
-      cmcOn
-        ? safeCmc("global metrics", fetchCmcGlobalMetrics)
-        : Promise.resolve(null),
-      cmcOn
-        ? safeCmc("quotes", () => fetchCmcQuotesLatest(symbols))
-        : Promise.resolve([]),
-      cmcOn
-        ? safeCmc("derivatives", fetchCmcDerivativesLatest)
-        : Promise.resolve(null),
-      cmcOn
-        ? safeCmc("market TA", fetchCmcMarketCapTechnicalAnalysis)
-        : Promise.resolve(null),
-      cmcOn
-        ? safeCmc("crypto TA", () => fetchCmcCryptoTechnicalAnalysis(symbols))
-        : Promise.resolve([]),
-    ]);
+    const globalMetrics = cmcOn
+      ? await safeCmc("global metrics", fetchCmcGlobalMetrics)
+      : null;
+
+    const [fearGreed, metrics, whales, cmcQuotes, derivatives, technicalAnalysis] =
+      await Promise.all([
+        getFearGreedIndex(),
+        scanOnChainSignals(symbols),
+        scanWhalesAcrossCoins(symbols),
+        cmcOn
+          ? safeCmc("quotes", () => fetchCmcQuotesLatest(symbols))
+          : Promise.resolve([]),
+        cmcOn
+          ? fetchDerivativesOverview(symbols, globalMetrics)
+          : Promise.resolve(null),
+        cmcOn
+          ? fetchTechnicalAnalysisOverview(symbols)
+          : Promise.resolve({ market: null, symbols: [], notice: undefined }),
+      ]);
 
     const avgOnChainScore =
       metrics.length > 0
@@ -95,6 +86,9 @@ export default asyncHandler(async (req: NextApiRequest, res: NextApiResponse) =>
     const quotesBySymbol = Object.fromEntries(
       (cmcQuotes || []).map((q) => [q.symbol, q])
     );
+
+    const taSymbols = technicalAnalysis.symbols || [];
+    const taBySymbol = Object.fromEntries(taSymbols.map((t) => [t.symbol, t]));
 
     res.status(200).json({
       success: true,
@@ -121,16 +115,19 @@ export default asyncHandler(async (req: NextApiRequest, res: NextApiResponse) =>
           : null,
         derivatives,
         technicalAnalysis: {
-          market: marketTa,
-          symbols: cryptoTa || [],
+          market: technicalAnalysis.market,
+          symbols: technicalAnalysis.symbols,
+          notice: technicalAnalysis.notice,
+        },
+        dataNotices: {
+          derivatives: derivatives?.notice,
+          technical: technicalAnalysis.notice,
         },
         cmcQuotes: cmcQuotes || [],
         metrics: metrics.map((m) => {
           const base = m.symbol.replace(/USDT$/i, "");
           const quote = quotesBySymbol[base];
-          const ta = (cryptoTa || []).find(
-            (t) => t.symbol === base || t.symbol === m.symbol.replace(/USDT$/i, "")
-          );
+          const ta = taBySymbol[base];
           return {
             ...m,
             cmcQuote: quote
