@@ -1,4 +1,3 @@
-import { apiUrl, getApiUrl } from "@/lib/api";
 /**
  * Strategy Analysis Page
  * Detailed analysis of a single strategy with metrics, charts, and backtest history
@@ -58,7 +57,8 @@ export default function StrategyAnalysisPage() {
     const fetchAnalysis = async () => {
       try {
         setLoading(true);
-                const response = await fetch(`strategies/${id}/analysis`);
+        const apiUrl = process.env.NEXT_PUBLIC_API_URL || "http://localhost:3000";
+        const response = await fetch(`${apiUrl}/api/strategies/${id}/analysis`);
 
         if (!response.ok) {
           throw new Error("Failed to fetch analysis");
@@ -76,7 +76,52 @@ export default function StrategyAnalysisPage() {
     };
 
     fetchAnalysis();
+
+    const fetchPromotion = async () => {
+      try {
+        const apiUrl = process.env.NEXT_PUBLIC_API_URL || "http://localhost:3000";
+        const res = await fetch(
+          `${apiUrl}/api/bitiq/promotion-status?strategy_id=${id}`
+        );
+        if (res.ok) {
+          const json = await res.json();
+          setPromotionStatus(json.data);
+        }
+      } catch {
+        // optional
+      }
+    };
+
+    fetchPromotion();
   }, [id]);
+
+  const handlePromoteToBitiq = async (force = false) => {
+    if (!id || typeof id !== "string") return;
+    setPromoting(true);
+    setPromoteMessage(null);
+    try {
+      const apiUrl = process.env.NEXT_PUBLIC_API_URL || "http://localhost:3000";
+      const res = await fetch(`${apiUrl}/api/strategies/${id}/promote-to-bitiq`, {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ force, notes: "Promoted from strategy analysis" }),
+      });
+      const json = await res.json();
+      if (!res.ok) {
+        const blockers = json.data?.readiness?.blockers?.join(", ");
+        throw new Error(blockers || json.error || "Promotion failed");
+      }
+      setPromoteMessage(json.data?.message || "Promoted to Bitiq");
+      setPromotionStatus({
+        deployed_to_bitiq: true,
+        readiness: json.data?.readiness,
+      });
+    } catch (err) {
+      setPromoteMessage(err instanceof Error ? err.message : "Promotion failed");
+    } finally {
+      setPromoting(false);
+    }
+  };
 
   if (loading) {
     return (
