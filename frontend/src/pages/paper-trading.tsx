@@ -5,6 +5,7 @@ import { PageHeader } from "@/components/AppShell";
 import { apiFetch } from "@/lib/api";
 import { formatPnl } from "@/lib/trading-constants";
 import SessionRecovery from "@/components/SessionRecovery";
+import { sessionStorageManager } from "@/lib/sessionStorage";
 
 interface TradeRow {
   id: string;
@@ -61,7 +62,7 @@ export default function PaperTradingPage() {
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState<string | null>(null);
   const [deletingId, setDeletingId] = useState<string | null>(null);
-
+  const [sessionListVersion, setSessionListVersion] = useState(0);
 
   async function handleDeleteSession(sessionId: string) {
     if (
@@ -76,6 +77,8 @@ export default function PaperTradingPage() {
       await apiFetch(`/api/paper-trading/${sessionId}/delete`, {
         method: "DELETE",
       });
+      sessionStorageManager.removeSession(sessionId);
+      setSessionListVersion((v) => v + 1);
       await load();
     } catch (e) {
       setError(e instanceof Error ? e.message : "Failed to delete session");
@@ -130,7 +133,9 @@ export default function PaperTradingPage() {
       />
 
       <SessionRecovery
+        refreshKey={sessionListVersion}
         onSessionSelect={(id) => router.push(`/paper-trading/${id}/dashboard`)}
+        onSessionsChanged={() => void load()}
       />
 
       {error && (
