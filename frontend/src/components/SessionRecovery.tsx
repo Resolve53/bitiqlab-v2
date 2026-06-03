@@ -1,7 +1,6 @@
 import { useEffect, useState } from "react";
-import { apiUrl, getApiUrl } from "@/lib/api";
 import { useRouter } from "next/router";
-import axios from "axios";
+import { apiFetch } from "@/lib/api";
 import {
   sessionStorageManager,
   type SessionSettings,
@@ -57,11 +56,11 @@ export default function SessionRecovery({ onSessionSelect }: SessionRecoveryProp
     setLoading(true);
     try {
       // Verify session still exists on backend
-            const response = await axios.get(
-        `paper-trading/${session_id}/status`
+      const status = await apiFetch<unknown>(
+        `/api/paper-trading/${session_id}/status`
       );
 
-      if (response.data.data) {
+      if (status) {
         if (onSessionSelect) {
           onSessionSelect(session_id);
         } else {
