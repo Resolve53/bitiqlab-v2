@@ -1,89 +1,87 @@
 import type { NextApiRequest, NextApiResponse } from 'next';
-import { DatabaseService } from '@/lib/db';
-import { asyncHandler } from '@/lib/utils';
+import { getDB } from '@/lib/db';
+import { asyncHandler, sendSuccess, sendError } from '@/lib/utils';
+import {
+  evaluatePromotionReadiness,
+  promoteStrategyToBitiq,
+} from '@/lib/bitiq-promotion-service';
 
 export default asyncHandler(async (req: NextApiRequest, res: NextApiResponse) => {
   if (req.method !== 'POST') {
-    return res.status(405).json({ error: 'Method not allowed' });
+    res.setHeader('Allow', ['POST']);
+    return sendError(res, 'Method not allowed', 405, req);
   }
 
-  const { strategyId, decision, reason } = req.body;
+  const { strategyId, decision, reason, session_id, deploy_to_bitiq } = req.body;
 
   if (!strategyId || !decision || !['promote', 'archive'].includes(decision)) {
-    return res.status(400).json({
-      error: 'Missing or invalid fields: strategyId, decision (promote|archive)',
-    });
+    return sendError(
+      res,
+      'Missing or invalid fields: strategyId, decision (promote|archive)',
+      400,
+      req
+    );
   }
 
   try {
-    const db = new DatabaseService(
-      process.env.SUPABASE_URL!,
-      process.env.SUPABASE_SERVICE_ROLE_KEY!
-    );
-
-    // Get strategy details
+    const db = getDB();
     const strategy = await db.getStrategy(strategyId);
 
-    if (!strategy) {
-      return res.status(404).json({ error: 'Strategy not found' });
-    }
-
-    // Check promotion criteria
-    const criteria = {
-      minPaperTradingDays: 14,
-      minTrades: 30,
-      minSharpeRatio: 0.5,
-      maxDrawdown: 0.2,
-      minAverageTradeScore: 70,
-      minWinRate: 0.55,
-    };
-
-    const meetsMinDays = true; // Would check session creation date
-    const totalTrades = (strategy.winning_trades || 0) + (strategy.losing_trades || 0);
-    const winRate = totalTrades > 0 ? (strategy.winning_trades || 0) / totalTrades : 0;
-    const meetsTrades = totalTrades >= criteria.minTrades;
-    const meetsSharpe = (strategy.current_sharpe || 0) >= criteria.minSharpeRatio;
-    const meetsDrawdown = true; // Would check max_drawdown if available
-    const meetsWinRate = winRate >= criteria.minWinRate;
-
-    const allCriteriaMet = meetsMinDays && meetsTrades && meetsSharpe && meetsDrawdown && meetsWinRate;
+    const readiness = await evaluatePromotionReadiness(strategyId, session_id);
 
     const result = {
       strategyId,
       decision,
       timestamp: new Date(),
       reason: reason || 'No reason provided',
-      meetsPromotionCriteria: allCriteriaMet,
-      criteria: {
-        minPaperTradingDays: { required: criteria.minPaperTradingDays, met: meetsMinDays },
-        minTrades: { required: criteria.minTrades, actual: totalTrades, met: meetsTrades },
-        minSharpeRatio: { required: criteria.minSharpeRatio, actual: strategy.current_sharpe, met: meetsSharpe },
-        maxDrawdown: { required: criteria.maxDrawdown, actual: 'N/A', met: meetsDrawdown },
-        minWinRate: { required: criteria.minWinRate, actual: winRate.toFixed(2), met: meetsWinRate },
-      },
+      meetsPromotionCriteria: readiness.ready,
+      readiness,
     };
 
-    // Update strategy status
-    const newStatus = decision === 'promote' ? 'approved' : 'failed';
-    await db.updateStrategy(strategyId, {
-      status: newStatus,
-    });
+    if (decision === 'archive') {
+      await db.updateStrategy(strategyId, { status: 'failed' });
+      return sendSuccess(
+        res,
+        {
+          ...result,
+          message: `Strategy archived. Reason: ${reason || 'none'}`,
+        },
+        200,
+        req
+      );
+    }
 
-    // Log decision to audit trail
-    // (In production, would create audit log entry)
+    await db.updateStrategy(strategyId, { status: 'approved' });
 
-    res.status(200).json({
-      success: true,
-      data: result,
-      message: decision === 'promote'
-        ? `Strategy promoted to live trading. All criteria met: ${allCriteriaMet}`
-        : `Strategy archived. Reason: ${reason}`,
-    });
+    let bitiqResult = null;
+    if (deploy_to_bitiq !== false) {
+      bitiqResult = await promoteStrategyToBitiq({
+        strategyId,
+        sessionId: session_id,
+        notes: reason,
+        force: !readiness.ready,
+      });
+    }
+
+    return sendSuccess(
+      res,
+      {
+        ...result,
+        bitiq: bitiqResult,
+        message: bitiqResult?.success
+          ? bitiqResult.message
+          : `Strategy approved. Bitiq: ${bitiqResult?.error || 'not deployed'}`,
+      },
+      200,
+      req
+    );
   } catch (error) {
     console.error('Error making strategy decision:', error);
-    res.status(500).json({
-      error: 'Failed to make strategy decision',
-      details: error instanceof Error ? error.message : 'Unknown error',
-    });
+    return sendError(
+      res,
+      error instanceof Error ? error.message : 'Failed to make strategy decision',
+      500,
+      req
+    );
   }
 });

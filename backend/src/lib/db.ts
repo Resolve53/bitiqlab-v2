@@ -471,42 +471,6 @@ export class DatabaseService {
   }
 
   /**
-   * Trade signal log (entries blocked or confirmed)
-   */
-  async createTradeSignal(signal: {
-    strategy_id: string;
-    symbol: string;
-    signal_type: string;
-    signal_strength?: number;
-    confidence_score?: number;
-    reasoning?: string;
-    on_chain_data?: unknown;
-    macro_context?: string;
-    technical_indicators?: unknown;
-  }) {
-    const { data, error } = await this.client
-      .from("trade_signals")
-      .insert([
-        {
-          strategy_id: signal.strategy_id,
-          symbol: signal.symbol,
-          signal_type: signal.signal_type,
-          signal_strength: signal.signal_strength ?? null,
-          confidence_score: signal.confidence_score ?? null,
-          reasoning: signal.reasoning ?? null,
-          on_chain_data: signal.on_chain_data ?? null,
-          macro_context: signal.macro_context ?? null,
-          technical_indicators: signal.technical_indicators ?? null,
-        },
-      ])
-      .select()
-      .single();
-
-    if (error) throw new Error(`Failed to create trade signal: ${error.message}`);
-    return data;
-  }
-
-  /**
    * Trade Scoring Operations
    */
   async saveTradeScore(tradeScore: {
@@ -550,6 +514,100 @@ export class DatabaseService {
       console.warn(`Failed to get trade score: ${error.message}`);
     }
     return data || null;
+  }
+
+  /**
+   * Bitiq promotion pipeline
+   */
+
+  async createTradeSignal(signal: {
+    strategy_id: string;
+    symbol: string;
+    signal_type: string;
+    signal_strength?: number;
+    confidence_score?: number;
+    reasoning?: string;
+    chart_pattern?: unknown;
+    technical_indicators?: unknown;
+    on_chain_data?: unknown;
+    macro_context?: string;
+  }) {
+    const { data, error } = await this.client
+      .from("trade_signals")
+      .insert([signal])
+      .select()
+      .single();
+
+    if (error) {
+      throw new Error(`Failed to create trade signal: ${error.message}`);
+    }
+    return data;
+  }
+
+  async createBitiqPromotion(record: {
+    strategy_id: string;
+    trading_session_id?: string;
+    status: string;
+    readiness?: unknown;
+    promotion_notes?: string;
+    promoted_by?: string;
+    bitiq_strategy_id?: string;
+    webhook_response?: unknown;
+  }) {
+    const { data, error } = await this.client
+      .from("bitiq_promotions")
+      .insert([
+        {
+          ...record,
+          readiness: record.readiness ?? null,
+          webhook_response: record.webhook_response ?? null,
+        },
+      ])
+      .select()
+      .single();
+
+    if (error) {
+      throw new Error(`Failed to create Bitiq promotion: ${error.message}`);
+    }
+    return data;
+  }
+
+  async updateBitiqPromotion(
+    id: string,
+    updates: {
+      status?: string;
+      bitiq_strategy_id?: string;
+      webhook_response?: unknown;
+      promotion_notes?: string;
+    }
+  ) {
+    const { data, error } = await this.client
+      .from("bitiq_promotions")
+      .update({
+        ...updates,
+        updated_at: new Date(),
+      })
+      .eq("id", id)
+      .select()
+      .single();
+
+    if (error) {
+      throw new Error(`Failed to update Bitiq promotion: ${error.message}`);
+    }
+    return data;
+  }
+
+  async listBitiqPromotions(strategyId: string) {
+    const { data, error } = await this.client
+      .from("bitiq_promotions")
+      .select("*")
+      .eq("strategy_id", strategyId)
+      .order("created_at", { ascending: false });
+
+    if (error) {
+      throw new Error(`Failed to list Bitiq promotions: ${error.message}`);
+    }
+    return data || [];
   }
 }
 
