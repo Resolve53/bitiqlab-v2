@@ -44,12 +44,21 @@ interface AnalysisData {
   }>;
 }
 
+interface PromotionStatusData {
+  deployed_to_bitiq: boolean;
+  readiness?: { ready: boolean; blockers: string[] };
+}
+
 export default function StrategyAnalysisPage() {
   const router = useRouter();
   const { id } = router.query;
   const [analysis, setAnalysis] = useState<AnalysisData | null>(null);
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState<string | null>(null);
+  const [promotionStatus, setPromotionStatus] =
+    useState<PromotionStatusData | null>(null);
+  const [promoting, setPromoting] = useState(false);
+  const [promoteMessage, setPromoteMessage] = useState<string | null>(null);
 
   useEffect(() => {
     if (!id) return;
@@ -75,8 +84,6 @@ export default function StrategyAnalysisPage() {
       }
     };
 
-    fetchAnalysis();
-
     const fetchPromotion = async () => {
       try {
         const apiUrl = process.env.NEXT_PUBLIC_API_URL || "http://localhost:3000";
@@ -92,6 +99,7 @@ export default function StrategyAnalysisPage() {
       }
     };
 
+    fetchAnalysis();
     fetchPromotion();
   }, [id]);
 
@@ -169,7 +177,6 @@ export default function StrategyAnalysisPage() {
 
   return (
     <div className="min-h-screen bg-gradient-to-b from-slate-950 via-slate-900 to-slate-950">
-      {/* Header */}
       <header className="border-b border-slate-800 bg-slate-950/50 backdrop-blur sticky top-0 z-40">
         <div className="max-w-7xl mx-auto px-4 sm:px-6 lg:px-8 py-6">
           <button
@@ -188,21 +195,48 @@ export default function StrategyAnalysisPage() {
                 <span>💰 {analysis.market_type}</span>
               </div>
             </div>
+            <div className="flex flex-col items-end gap-2">
+              {promotionStatus?.deployed_to_bitiq ? (
+                <span className="px-3 py-1 rounded-full bg-emerald-900/50 text-emerald-300 text-sm border border-emerald-700">
+                  Live on Bitiq
+                </span>
+              ) : (
+                <button
+                  type="button"
+                  disabled={promoting}
+                  onClick={() => handlePromoteToBitiq(false)}
+                  className="px-4 py-2 rounded-lg bg-emerald-600 hover:bg-emerald-500 text-white font-semibold disabled:opacity-50"
+                >
+                  {promoting ? "Promoting…" : "Promote to Bitiq"}
+                </button>
+              )}
+              {!promotionStatus?.deployed_to_bitiq &&
+                promotionStatus?.readiness &&
+                !promotionStatus.readiness.ready && (
+                  <button
+                    type="button"
+                    disabled={promoting}
+                    onClick={() => handlePromoteToBitiq(true)}
+                    className="text-xs text-amber-400 hover:text-amber-300"
+                  >
+                    Force promote (override gates)
+                  </button>
+                )}
+              {promoteMessage && (
+                <p className="text-xs text-slate-400 max-w-xs text-right">
+                  {promoteMessage}
+                </p>
+              )}
+            </div>
           </div>
         </div>
       </header>
 
-      {/* Main Content */}
       <main className="max-w-7xl mx-auto px-4 sm:px-6 lg:px-8 py-8 space-y-8">
-        {/* Equity Curve */}
         <section>
-          <EquityCurveChart
-            data={analysis.equity_curve}
-            loading={false}
-          />
+          <EquityCurveChart data={analysis.equity_curve} loading={false} />
         </section>
 
-        {/* Performance Metrics */}
         <section>
           <PerformanceMetricsCard
             metrics={analysis.current_metrics}
@@ -210,7 +244,6 @@ export default function StrategyAnalysisPage() {
           />
         </section>
 
-        {/* Backtest History */}
         <section>
           <BacktestHistoryTable
             backtests={analysis.recent_backtests}
@@ -218,7 +251,6 @@ export default function StrategyAnalysisPage() {
           />
         </section>
 
-        {/* Additional Info */}
         <section className="bg-slate-800/50 border border-slate-700 rounded-lg p-6">
           <h3 className="text-lg font-bold text-white mb-4">📌 About This Strategy</h3>
           <div className="grid grid-cols-1 md:grid-cols-2 gap-6 text-sm text-slate-300">
