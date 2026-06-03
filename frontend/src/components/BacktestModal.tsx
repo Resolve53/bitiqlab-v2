@@ -1,5 +1,5 @@
 import { useState } from "react";
-import { apiUrl, getApiUrl } from "@/lib/api";
+import { apiPath } from "@/lib/api";
 
 interface BacktestModalProps {
   strategyId: string;
@@ -29,7 +29,7 @@ export default function BacktestModal({
 
     try {
       
-      const response = await fetch(`backtest/run`, {
+      const response = await fetch(apiPath("/api/backtest/run"), {
         method: "POST",
         headers: {
           "Content-Type": "application/json",

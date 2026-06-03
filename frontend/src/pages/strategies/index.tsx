@@ -1,7 +1,8 @@
 import { useEffect, useState } from "react";
-import { apiUrl, getApiUrl } from "@/lib/api";
-import axios from "axios";
+import Link from "next/link";
 import { useRouter } from "next/router";
+import { PageHeader } from "@/components/AppShell";
+import { apiFetch } from "@/lib/api";
 import BacktestModal from "@/components/BacktestModal";
 import PaperTradingModal from "@/components/PaperTradingModal";
 import MonitoringSettingsModal from "@/components/MonitoringSettingsModal";
@@ -40,10 +41,8 @@ export default function StrategiesPage() {
   const fetchStrategies = async () => {
     try {
       setLoading(true);
-      const response = await axios.get(
-        `TEMPstrategies`
-      );
-      setStrategies(response.data.data.strategies);
+      const data = await apiFetch<{ strategies: Strategy[] }>("/api/strategies");
+      setStrategies(data.strategies || []);
       setError(null);
     } catch (err) {
       setError(err instanceof Error ? err.message : "Failed to fetch strategies");
@@ -54,8 +53,9 @@ export default function StrategiesPage() {
 
   const handleStatusChange = async (strategyId: string, newStatus: string) => {
     try {
-            await axios.patch(`strategies/${strategyId}`, {
-        status: newStatus,
+      await apiFetch(`/api/strategies/${strategyId}`, {
+        method: "PATCH",
+        body: JSON.stringify({ status: newStatus }),
       });
       // Update local state
       setStrategies(
@@ -70,7 +70,7 @@ export default function StrategiesPage() {
 
   const handleDeleteStrategy = async (strategyId: string) => {
     try {
-            await axios.delete(`strategies/${strategyId}`);
+      await apiFetch(`/api/strategies/${strategyId}`, { method: "DELETE" });
       // Remove from local state - keep strategies with status 'failed' hidden
       setStrategies(strategies.filter((s) => s.id !== strategyId));
     } catch (err) {
@@ -79,51 +79,20 @@ export default function StrategiesPage() {
   };
 
   return (
-    <div className="min-h-screen bg-gradient-to-b from-slate-950 via-slate-900 to-slate-950">
-      {/* Header */}
-      <header className="border-b border-slate-800 bg-slate-950/50 backdrop-blur sticky top-0 z-40">
-        <div className="max-w-7xl mx-auto px-4 sm:px-6 lg:px-8 py-6 flex justify-between items-center">
-          <div>
-            <h1 className="text-4xl font-bold text-white">Strategies</h1>
-            <p className="mt-2 text-slate-400">Manage and monitor trading strategies</p>
-          </div>
-          <div className="flex gap-3 flex-wrap">
-            <a
-              href="/trading"
-              className="bg-emerald-600 hover:bg-emerald-500 text-white font-bold py-2 px-4 rounded-lg transition"
-            >
-              📈 View Trading
-            </a>
-            <a
-              href="/strategies/compare"
-              className="bg-purple-600 hover:bg-purple-500 text-white font-bold py-2 px-4 rounded-lg transition"
-            >
-              🔄 Compare
-            </a>
-            <a
-              href="/strategies/claude-generate"
-              className="bg-blue-600 hover:bg-blue-500 text-white font-bold py-2 px-4 rounded-lg transition"
-            >
-              ✨ Claude AI
-            </a>
-            <a
-              href="/strategies/debug-pinescript"
-              className="bg-yellow-600 hover:bg-yellow-500 text-white font-bold py-2 px-4 rounded-lg transition"
-            >
-              🐛 Debug Script
-            </a>
-            <a
-              href="/strategies/new"
-              className="bg-slate-700 hover:bg-slate-600 text-white font-bold py-2 px-4 rounded-lg transition"
-            >
-              + Manual
-            </a>
-          </div>
-        </div>
-      </header>
-
-      {/* Main Content */}
-      <main className="max-w-7xl mx-auto px-4 sm:px-6 lg:px-8 py-8">
+    <>
+      <PageHeader
+        title="Strategies"
+        subtitle="Manage backtests, paper trading, and per-strategy trade logs."
+        actions={
+          <Link
+            href="/strategies/claude-generate"
+            className="rounded-lg bg-cyan-600 px-4 py-2 text-sm font-medium text-white hover:bg-cyan-500"
+          >
+            New strategy (AI)
+          </Link>
+        }
+      />
+      <div>
         {error && (
           <div className="mb-4 p-4 bg-red-900/30 border border-red-700/50 rounded-lg">
             <p className="text-red-300">Error: {error}</p>
@@ -158,7 +127,7 @@ export default function StrategiesPage() {
             ))}
           </div>
         )}
-      </main>
+      </div>
 
       {selectedStrategyForBacktest && (
         <BacktestModal
@@ -200,7 +169,7 @@ export default function StrategiesPage() {
           }}
         />
       )}
-    </div>
+    </>
   );
 }
 
@@ -241,13 +210,13 @@ function StrategyCard({ strategy, onRunBacktest, onStartPaperTrading, onStatusCh
   const handleViewLiveTrading = async () => {
     try {
       setLoadingSession(true);
-            const response = await axios.get(
-        `paper-trading/sessions?strategy_id=${strategy.id}&limit=1`
+      const data = await apiFetch<{ sessions: Array<{ id: string }> }>(
+        `/api/paper-trading/sessions?strategy_id=${strategy.id}&limit=1`
       );
 
-      if (response.data.data?.sessions && response.data.data.sessions.length > 0) {
-        const session = response.data.data.sessions[0];
-        router.push(`/paper-trading/${session.session_id}/dashboard`);
+      if (data.sessions?.length) {
+        const session = data.sessions[0];
+        router.push(`/paper-trading/${session.id}/dashboard`);
       } else {
         alert("No active trading session found. Start a paper trading session first.");
       }
@@ -261,13 +230,13 @@ function StrategyCard({ strategy, onRunBacktest, onStartPaperTrading, onStatusCh
 
   const handleViewMonitoringSettings = async () => {
     try {
-            const response = await axios.get(
-        `paper-trading/sessions?strategy_id=${strategy.id}&limit=1`
+      const data = await apiFetch<{ sessions: Array<{ id: string }> }>(
+        `/api/paper-trading/sessions?strategy_id=${strategy.id}&limit=1`
       );
 
-      if (response.data.data?.sessions && response.data.data.sessions.length > 0) {
-        const session = response.data.data.sessions[0];
-        setSessionId(session.session_id);
+      if (data.sessions?.length) {
+        const session = data.sessions[0];
+        setSessionId(session.id);
         setShowMonitoringSettings(true);
       } else {
         alert("No active trading session found. Start a paper trading session first.");
@@ -335,10 +304,10 @@ function StrategyCard({ strategy, onRunBacktest, onStartPaperTrading, onStatusCh
             {showStatusMenu && (
               <div className="absolute top-full right-0 mt-2 bg-slate-700 border border-slate-600 rounded-lg shadow-lg z-10">
                 <button
-                  onClick={() => handleStatusChange("live")}
+                  onClick={() => handleStatusChange("approved")}
                   className="block w-full text-left px-4 py-2 text-sm text-white hover:bg-slate-600 first:rounded-t-lg transition"
                 >
-                  🟢 Live
+                  🟢 Approved
                 </button>
                 <button
                   onClick={() => handleStatusChange("draft")}
@@ -353,7 +322,7 @@ function StrategyCard({ strategy, onRunBacktest, onStartPaperTrading, onStatusCh
                   🔵 Testing
                 </button>
                 <button
-                  onClick={() => handleStatusChange("removed")}
+                  onClick={() => onDelete && onDelete(strategy.id)}
                   className="block w-full text-left px-4 py-2 text-sm text-red-400 hover:bg-slate-600 last:rounded-b-lg transition"
                 >
                   🗑️ Remove
@@ -379,12 +348,18 @@ function StrategyCard({ strategy, onRunBacktest, onStartPaperTrading, onStatusCh
             ⚙️ Settings
           </button>
 
-          <a
+          <Link
+            href={`/strategies/${strategy.id}/trades`}
+            className="bg-slate-700 hover:bg-slate-600 text-white px-3 py-1 rounded text-sm font-medium whitespace-nowrap transition text-center"
+          >
+            Trade log
+          </Link>
+          <Link
             href={`/strategies/${strategy.id}/analysis`}
             className="bg-emerald-600 hover:bg-emerald-500 text-white px-3 py-1 rounded text-sm font-medium whitespace-nowrap transition text-center"
           >
-            📊 Analysis
-          </a>
+            Analysis
+          </Link>
 
           <button
             onClick={onRunBacktest}
