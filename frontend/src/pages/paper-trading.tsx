@@ -1,204 +1,309 @@
+import { useEffect, useState } from "react";
+import Link from "next/link";
 import { useRouter } from "next/router";
-import { useState, useEffect } from "react";
+import { PageHeader } from "@/components/AppShell";
+import { apiFetch } from "@/lib/api";
+import { formatPnl } from "@/lib/trading-constants";
 import SessionRecovery from "@/components/SessionRecovery";
 
-interface Trade {
+interface TradeRow {
   id: string;
+  session_id?: string;
+  strategy_id?: string;
   symbol: string;
-  side: "BUY" | "SELL";
+  side: string;
   quantity: number;
-  entryPrice: number;
-  currentPrice: number;
+  entry_price: number;
+  exit_price?: number | null;
+  current_price: number;
   pnl: number;
-  pnlPercent: number;
-  status: "OPEN" | "CLOSED";
-  timestamp: string;
+  pnl_percent: number;
+  status: string;
+  entry_time?: string;
+  exit_time?: string;
 }
 
-export default function PaperTrading() {
+interface Overview {
+  totals: {
+    active_positions: number;
+    open_pnl: number;
+    closed_trades: number;
+    closed_pnl: number;
+    total_pnl: number;
+    active_sessions: number;
+    total_sessions: number;
+  };
+  open_trades: TradeRow[];
+  closed_trades: TradeRow[];
+  sessions: Array<{
+    session_id: string;
+    strategy_id: string;
+    session_name?: string;
+    initial_balance: number;
+    current_balance?: number;
+    total_pnl?: number;
+    status?: string;
+  }>;
+}
+
+function formatTime(iso?: string) {
+  if (!iso) return "—";
+  try {
+    return new Date(iso).toLocaleString();
+  } catch {
+    return iso;
+  }
+}
+
+export default function PaperTradingPage() {
   const router = useRouter();
-  const [activeTrades, setActiveTrades] = useState<Trade[]>([
-    {
-      id: "1",
-      symbol: "BTCUSDT",
-      side: "BUY",
-      quantity: 0.5,
-      entryPrice: 42500,
-      currentPrice: 43200,
-      pnl: 350,
-      pnlPercent: 1.64,
-      status: "OPEN",
-      timestamp: "2024-04-16 08:30",
-    },
-    {
-      id: "2",
-      symbol: "ETHUSDT",
-      side: "BUY",
-      quantity: 2.0,
-      entryPrice: 2200,
-      currentPrice: 2180,
-      pnl: -40,
-      pnlPercent: -0.91,
-      status: "OPEN",
-      timestamp: "2024-04-16 09:15",
-    },
-  ]);
+  const [data, setData] = useState<Overview | null>(null);
+  const [loading, setLoading] = useState(true);
+  const [error, setError] = useState<string | null>(null);
 
-  const [closedTrades] = useState<Trade[]>([
-    {
-      id: "3",
-      symbol: "BNBUSDT",
-      side: "BUY",
-      quantity: 5.0,
-      entryPrice: 600,
-      currentPrice: 615,
-      pnl: 75,
-      pnlPercent: 2.5,
-      status: "CLOSED",
-      timestamp: "2024-04-15 14:20",
-    },
-    {
-      id: "4",
-      symbol: "BNBUSDT",
-      side: "SELL",
-      quantity: 5.0,
-      entryPrice: 615,
-      currentPrice: 605,
-      pnl: 50,
-      pnlPercent: 0.81,
-      status: "CLOSED",
-      timestamp: "2024-04-16 02:45",
-    },
-  ]);
+  async function load() {
+    try {
+      setError(null);
+      const overview = await apiFetch<Overview>("/api/paper-trading/overview");
+      setData(overview);
+    } catch (e) {
+      setError(e instanceof Error ? e.message : "Failed to load paper trading data");
+      setData(null);
+    } finally {
+      setLoading(false);
+    }
+  }
 
-  const totalPnL = activeTrades.reduce((sum, trade) => sum + trade.pnl, 0);
-  const totalPnLPercent = activeTrades.length > 0 ? (totalPnL / (activeTrades.reduce((sum, trade) => sum + (trade.entryPrice * trade.quantity), 0)) * 100) : 0;
-
-  // Simulate real-time price updates
   useEffect(() => {
-    const interval = setInterval(() => {
-      setActiveTrades((trades) =>
-        trades.map((trade) => {
-          const priceChange = (Math.random() - 0.5) * 50;
-          const newPrice = trade.currentPrice + priceChange;
-          const newPnl = (newPrice - trade.entryPrice) * trade.quantity;
-          const newPnlPercent = ((newPrice - trade.entryPrice) / trade.entryPrice) * 100;
-
-          return {
-            ...trade,
-            currentPrice: newPrice,
-            pnl: newPnl,
-            pnlPercent: newPnlPercent,
-          };
-        })
-      );
-    }, 3000); // Update every 3 seconds
-
-    return () => clearInterval(interval);
+    load();
+    const t = setInterval(load, 15000);
+    return () => clearInterval(t);
   }, []);
 
+  const totals = data?.totals;
+  const openTrades = data?.open_trades ?? [];
+  const closedTrades = data?.closed_trades ?? [];
+  const totalPnl = totals?.total_pnl ?? 0;
+  const notional =
+    openTrades.reduce(
+      (s, t) => s + t.entry_price * t.quantity,
+      0
+    ) || 1;
+  const totalPnlPct = (totalPnl / notional) * 100;
+
   return (
-    <div className="min-h-screen bg-gradient-to-b from-slate-950 via-slate-900 to-slate-950">
-      <header className="border-b border-slate-800 bg-slate-950/50 backdrop-blur">
-        <div className="max-w-7xl mx-auto px-4 sm:px-6 lg:px-8 py-8">
-          <button
-            onClick={() => router.back()}
-            className="text-emerald-400 hover:text-emerald-300 mb-4 font-semibold transition-colors"
+    <>
+      <PageHeader
+        title="Paper Trading"
+        subtitle="Live Binance testnet trades from your database — not simulated demo numbers."
+        actions={
+          <Link
+            href="/strategies"
+            className="rounded-lg bg-cyan-600 px-4 py-2 text-sm font-medium text-white hover:bg-cyan-500"
           >
-            ← Back
-          </button>
-          <h1 className="text-4xl font-bold text-white">Paper Trading</h1>
-          <p className="mt-2 text-slate-400">Execute and monitor AI-generated strategies on Binance testnet</p>
+            Start from strategies
+          </Link>
+        }
+      />
+
+      <SessionRecovery
+        onSessionSelect={(id) => router.push(`/paper-trading/${id}/dashboard`)}
+      />
+
+      {error && (
+        <div className="mb-6 rounded-lg border border-red-500/30 bg-red-500/10 px-4 py-3 text-sm text-red-200">
+          {error}
         </div>
-      </header>
+      )}
 
-      <main className="max-w-7xl mx-auto px-4 sm:px-6 lg:px-8 py-8 space-y-8">
-        {/* Session Recovery */}
-        <SessionRecovery />
+      {loading && !data && (
+        <p className="text-slate-400 py-12 text-center">Loading real trade data…</p>
+      )}
 
-        {/* Summary Cards */}
-        <div className="grid grid-cols-1 md:grid-cols-3 gap-4">
-          <div className="bg-slate-800/50 border border-slate-700 rounded-lg p-6">
-            <p className="text-slate-400 text-sm mb-2">Active Positions</p>
-            <p className="text-3xl font-bold text-white">{activeTrades.length}</p>
+      {data && (
+        <div className="space-y-8">
+          <div className="grid grid-cols-1 gap-4 sm:grid-cols-2 lg:grid-cols-4">
+            <StatCard
+              label="Open positions"
+              value={String(totals?.active_positions ?? 0)}
+            />
+            <StatCard
+              label="Open P&amp;L"
+              value={formatPnl(totals?.open_pnl)}
+              accent={
+                (totals?.open_pnl ?? 0) >= 0 ? "positive" : "negative"
+              }
+            />
+            <StatCard
+              label="Closed trades"
+              value={String(totals?.closed_trades ?? 0)}
+            />
+            <StatCard
+              label="Total P&amp;L"
+              value={formatPnl(totalPnl)}
+              sub={
+                openTrades.length > 0
+                  ? `${totalPnlPct >= 0 ? "+" : ""}${totalPnlPct.toFixed(2)}% on open notional`
+                  : undefined
+              }
+              accent={totalPnl >= 0 ? "positive" : "negative"}
+            />
           </div>
-          <div className="bg-slate-800/50 border border-slate-700 rounded-lg p-6">
-            <p className="text-slate-400 text-sm mb-2">Total P&L</p>
-            <p className={`text-3xl font-bold ${totalPnL >= 0 ? "text-emerald-400" : "text-red-400"}`}>
-              ${totalPnL.toFixed(2)}
+
+          {totals && totals.total_sessions > 0 && (
+            <p className="text-xs text-slate-500">
+              {totals.active_sessions} active session
+              {totals.active_sessions !== 1 ? "s" : ""} · {totals.total_sessions}{" "}
+              total · monitoring uses top-20 coins when started from Strategies
             </p>
-            <p className={`text-sm mt-1 ${totalPnLPercent >= 0 ? "text-emerald-400" : "text-red-400"}`}>
-              {totalPnLPercent >= 0 ? "+" : ""}{totalPnLPercent.toFixed(2)}%
-            </p>
-          </div>
-          <div className="bg-slate-800/50 border border-slate-700 rounded-lg p-6">
-            <p className="text-slate-400 text-sm mb-2">Closed Trades</p>
-            <p className="text-3xl font-bold text-white">{closedTrades.length}</p>
-          </div>
-        </div>
+          )}
 
-        {/* Active Trades */}
-        <div>
-          <h2 className="text-2xl font-bold text-white mb-4">Active Trades 📈</h2>
-          <div className="space-y-3">
-            {activeTrades.map((trade) => (
-              <div key={trade.id} className="bg-slate-800/50 border border-slate-700 rounded-lg p-4 hover:border-emerald-500/50 transition">
-                <div className="flex justify-between items-start">
-                  <div className="flex-1">
-                    <div className="flex items-center gap-3 mb-2">
-                      <span className="font-bold text-white text-lg">{trade.symbol}</span>
-                      <span className={`px-3 py-1 rounded text-sm font-semibold ${trade.side === "BUY" ? "bg-emerald-500/20 text-emerald-400" : "bg-red-500/20 text-red-400"}`}>
-                        {trade.side}
-                      </span>
-                    </div>
-                    <p className="text-slate-400 text-sm">
-                      {trade.quantity} @ ${trade.entryPrice.toFixed(2)} → ${trade.currentPrice.toFixed(2)}
-                    </p>
-                  </div>
-                  <div className="text-right">
-                    <p className={`text-lg font-bold ${trade.pnl >= 0 ? "text-emerald-400" : "text-red-400"}`}>
-                      {trade.pnl >= 0 ? "+" : ""}${trade.pnl.toFixed(2)}
-                    </p>
-                    <p className={`text-sm ${trade.pnlPercent >= 0 ? "text-emerald-400" : "text-red-400"}`}>
-                      {trade.pnlPercent >= 0 ? "+" : ""}{trade.pnlPercent.toFixed(2)}%
-                    </p>
-                  </div>
-                </div>
-              </div>
-            ))}
-          </div>
-        </div>
+          <TradeSection
+            title="Open positions"
+            empty="No open paper trades yet. Start paper trading on a strategy to see live positions here."
+            trades={openTrades}
+            showPrices
+          />
 
-        {/* Closed Trades */}
-        <div>
-          <h2 className="text-2xl font-bold text-white mb-4">Closed Trades ✓</h2>
-          <div className="space-y-3">
-            {closedTrades.map((trade) => (
-              <div key={trade.id} className="bg-slate-800/20 border border-slate-700/50 rounded-lg p-4 opacity-75">
-                <div className="flex justify-between items-start">
-                  <div className="flex-1">
-                    <div className="flex items-center gap-3 mb-2">
-                      <span className="font-bold text-white text-lg">{trade.symbol}</span>
-                      <span className={`px-3 py-1 rounded text-sm font-semibold ${trade.side === "BUY" ? "bg-emerald-500/20 text-emerald-400" : "bg-red-500/20 text-red-400"}`}>
-                        {trade.side}
-                      </span>
-                    </div>
-                    <p className="text-slate-400 text-sm">{trade.timestamp}</p>
-                  </div>
-                  <div className="text-right">
-                    <p className={`text-lg font-bold ${trade.pnl >= 0 ? "text-emerald-400" : "text-red-400"}`}>
-                      {trade.pnl >= 0 ? "+" : ""}${trade.pnl.toFixed(2)}
-                    </p>
-                    <p className={`text-sm ${trade.pnlPercent >= 0 ? "text-emerald-400" : "text-red-400"}`}>
-                      {trade.pnlPercent >= 0 ? "+" : ""}{trade.pnlPercent.toFixed(2)}%
-                    </p>
-                  </div>
-                </div>
+          <TradeSection
+            title="Closed trades"
+            empty="No closed trades yet."
+            trades={closedTrades}
+            showPrices={false}
+          />
+
+          {data.sessions.length > 0 && (
+            <section>
+              <h2 className="text-lg font-semibold text-white mb-3">
+                Recent sessions
+              </h2>
+              <div className="space-y-2">
+                {data.sessions.map((s) => (
+                  <Link
+                    key={s.session_id}
+                    href={`/paper-trading/${s.session_id}/dashboard`}
+                    className="flex flex-wrap items-center justify-between gap-2 rounded-lg border border-slate-800 bg-slate-900/50 px-4 py-3 hover:border-cyan-500/40"
+                  >
+                    <span className="text-sm text-white">
+                      {s.session_name || s.session_id.slice(0, 8)}
+                    </span>
+                    <span className="text-xs text-slate-400">
+                      ${Number(s.initial_balance).toLocaleString()} demo ·{" "}
+                      {s.status || "active"}
+                    </span>
+                  </Link>
+                ))}
               </div>
-            ))}
-          </div>
+            </section>
+          )}
         </div>
-      </main>
+      )}
+    </>
+  );
+}
+
+function StatCard({
+  label,
+  value,
+  sub,
+  accent,
+}: {
+  label: string;
+  value: string;
+  sub?: string;
+  accent?: "positive" | "negative";
+}) {
+  const color =
+    accent === "positive"
+      ? "text-emerald-400"
+      : accent === "negative"
+        ? "text-red-400"
+        : "text-white";
+  return (
+    <div className="rounded-xl border border-slate-800 bg-slate-900/60 px-5 py-4">
+      <p className="text-xs uppercase tracking-wide text-slate-500">{label}</p>
+      <p className={`mt-1 text-2xl font-semibold ${color}`}>{value}</p>
+      {sub && <p className="mt-1 text-xs text-slate-500">{sub}</p>}
     </div>
+  );
+}
+
+function TradeSection({
+  title,
+  empty,
+  trades,
+  showPrices,
+}: {
+  title: string;
+  empty: string;
+  trades: TradeRow[];
+  showPrices: boolean;
+}) {
+  return (
+    <section>
+      <h2 className="text-lg font-semibold text-white mb-3">{title}</h2>
+      {trades.length === 0 ? (
+        <p className="rounded-lg border border-dashed border-slate-700 px-4 py-8 text-center text-sm text-slate-500">
+          {empty}
+        </p>
+      ) : (
+        <div className="space-y-2">
+          {trades.map((trade) => (
+            <div
+              key={trade.id}
+              className="rounded-lg border border-slate-800 bg-slate-900/50 px-4 py-3"
+            >
+              <div className="flex flex-wrap items-start justify-between gap-3">
+                <div>
+                  <div className="flex items-center gap-2">
+                    <span className="font-semibold text-white">
+                      {trade.symbol}
+                    </span>
+                    <span
+                      className={`rounded px-2 py-0.5 text-xs font-medium ${
+                        trade.side === "BUY"
+                          ? "bg-emerald-500/20 text-emerald-300"
+                          : "bg-red-500/20 text-red-300"
+                      }`}
+                    >
+                      {trade.side}
+                    </span>
+                  </div>
+                  {showPrices ? (
+                    <p className="mt-1 text-sm text-slate-400">
+                      {trade.quantity} @ ${trade.entry_price.toFixed(2)} → $
+                      {trade.current_price.toFixed(2)}
+                    </p>
+                  ) : (
+                    <p className="mt-1 text-sm text-slate-400">
+                      {formatTime(trade.exit_time || trade.entry_time)}
+                    </p>
+                  )}
+                </div>
+                <div className="text-right">
+                  <p
+                    className={`font-semibold ${
+                      trade.pnl >= 0 ? "text-emerald-400" : "text-red-400"
+                    }`}
+                  >
+                    {formatPnl(trade.pnl)}
+                  </p>
+                  <p
+                    className={`text-xs ${
+                      trade.pnl_percent >= 0
+                        ? "text-emerald-400/80"
+                        : "text-red-400/80"
+                    }`}
+                  >
+                    {trade.pnl_percent >= 0 ? "+" : ""}
+                    {trade.pnl_percent.toFixed(2)}%
+                  </p>
+                </div>
+              </div>
+            </div>
+          ))}
+        </div>
+      )}
+    </section>
   );
 }
