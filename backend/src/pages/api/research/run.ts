@@ -15,6 +15,7 @@ import {
 import { isExecutableStrategyRules } from "@/lib/claude-strategy-schema";
 import {
   runControlledResearch,
+  Phase3PersistenceError,
   type ResearchPersistence,
 } from "@/research-engine";
 import { runValidation } from "@/validation-engine";
@@ -76,7 +77,12 @@ export default asyncHandler(async (req: NextApiRequest, res: NextApiResponse) =>
       },
       createResearchRun: async (row) => {
         const created = await db.createResearchRun(row);
-        return { id: String(created.id ?? row.id) };
+        if (!created?.id) {
+          throw new Phase3PersistenceError(
+            "createResearchRun returned no persisted id"
+          );
+        }
+        return { id: String(created.id) };
       },
       updateResearchRun: async (id, updates) => {
         await db.updateResearchRun(id, updates);
@@ -200,6 +206,9 @@ export default asyncHandler(async (req: NextApiRequest, res: NextApiResponse) =>
     );
   } catch (error) {
     console.error("Research error:", error);
+    if (error instanceof Phase3PersistenceError) {
+      return sendError(res, error.message, 503, req);
+    }
     if (
       error instanceof StrategyValidationError ||
       error instanceof MarketDataError

@@ -6,6 +6,10 @@
 
 import { createClient, SupabaseClient } from "@supabase/supabase-js";
 import { Strategy, CreateStrategyRequest } from "../core";
+import {
+  Phase3PersistenceError,
+  throwIfMissingPhase3Relation,
+} from "@/research-engine/persistence-errors";
 
 /**
  * Database Service
@@ -362,6 +366,7 @@ export class DatabaseService {
 
   /**
    * Phase 3 — immutable strategy versions (append-only).
+   * Fail closed if migrations 010/011 are not applied — never fabricate records.
    */
   async createStrategyVersion(row: {
     strategy_id: string;
@@ -379,22 +384,23 @@ export class DatabaseService {
       .single();
 
     if (error) {
+      throwIfMissingPhase3Relation("strategy_versions", error.message);
       if (/duplicate|unique/i.test(error.message)) {
-        // Already snapshotted this version — idempotent
+        // Already snapshotted this version — idempotent only when table exists
         const existing = await this.getStrategyVersion(
           row.strategy_id,
           row.version
         );
-        if (existing) return existing;
+        if (existing?.id) return existing;
       }
-      if (/strategy_versions|relation|does not exist/i.test(error.message)) {
-        console.warn(
-          "strategy_versions table missing; version not persisted:",
-          error.message
-        );
-        return { id: null, ...row, created_at: new Date().toISOString() };
-      }
-      throw new Error(`Failed to create strategy version: ${error.message}`);
+      throw new Phase3PersistenceError(
+        `Failed to create strategy version: ${error.message}`
+      );
+    }
+    if (!data?.id) {
+      throw new Phase3PersistenceError(
+        "createStrategyVersion returned no persisted id"
+      );
     }
     return data;
   }
@@ -407,10 +413,10 @@ export class DatabaseService {
       .eq("version", version)
       .maybeSingle();
     if (error) {
-      if (/strategy_versions|relation|does not exist/i.test(error.message)) {
-        return null;
-      }
-      throw new Error(`Failed to get strategy version: ${error.message}`);
+      throwIfMissingPhase3Relation("strategy_versions", error.message);
+      throw new Phase3PersistenceError(
+        `Failed to get strategy version: ${error.message}`
+      );
     }
     return data;
   }
@@ -422,16 +428,15 @@ export class DatabaseService {
       .select()
       .single();
     if (error) {
-      if (
-        /strategy_research_runs|relation|does not exist/i.test(error.message)
-      ) {
-        console.warn(
-          "strategy_research_runs table missing; run not persisted:",
-          error.message
-        );
-        return { id: row.id ?? null, ...row };
-      }
-      throw new Error(`Failed to create research run: ${error.message}`);
+      throwIfMissingPhase3Relation("strategy_research_runs", error.message);
+      throw new Phase3PersistenceError(
+        `Failed to create research run: ${error.message}`
+      );
+    }
+    if (!data?.id) {
+      throw new Phase3PersistenceError(
+        "createResearchRun returned no persisted id"
+      );
     }
     return data;
   }
@@ -444,16 +449,15 @@ export class DatabaseService {
       .select()
       .single();
     if (error) {
-      if (
-        /strategy_research_runs|relation|does not exist/i.test(error.message)
-      ) {
-        console.warn(
-          "strategy_research_runs table missing; run update skipped:",
-          error.message
-        );
-        return { id, ...updates };
-      }
-      throw new Error(`Failed to update research run: ${error.message}`);
+      throwIfMissingPhase3Relation("strategy_research_runs", error.message);
+      throw new Phase3PersistenceError(
+        `Failed to update research run: ${error.message}`
+      );
+    }
+    if (!data?.id) {
+      throw new Phase3PersistenceError(
+        "updateResearchRun returned no persisted id"
+      );
     }
     return data;
   }
@@ -465,24 +469,26 @@ export class DatabaseService {
       .select()
       .single();
     if (error) {
-      if (
-        /strategy_research_experiments|relation|does not exist/i.test(
-          error.message
-        )
-      ) {
-        console.warn(
-          "strategy_research_experiments table missing; experiment not persisted:",
-          error.message
-        );
-        return { id: null, ...row };
-      }
-      throw new Error(
+      throwIfMissingPhase3Relation(
+        "strategy_research_experiments",
+        error.message
+      );
+      throw new Phase3PersistenceError(
         `Failed to append research experiment: ${error.message}`
+      );
+    }
+    if (!data?.id) {
+      throw new Phase3PersistenceError(
+        "appendResearchExperiment returned no persisted id"
       );
     }
     return data;
   }
 
+  /**
+   * List research runs. Missing Phase 3 tables fail closed (clear error),
+   * never silently pretend there are zero runs after a successful research UX.
+   */
   async listResearchRuns(strategyId: string) {
     const { data, error } = await this.client
       .from("strategy_research_runs")
@@ -490,14 +496,12 @@ export class DatabaseService {
       .eq("strategy_id", strategyId)
       .order("started_at", { ascending: false });
     if (error) {
-      if (
-        /strategy_research_runs|relation|does not exist/i.test(error.message)
-      ) {
-        return [];
-      }
-      throw new Error(`Failed to list research runs: ${error.message}`);
+      throwIfMissingPhase3Relation("strategy_research_runs", error.message);
+      throw new Phase3PersistenceError(
+        `Failed to list research runs: ${error.message}`
+      );
     }
-    return data;
+    return data ?? [];
   }
 
   /**

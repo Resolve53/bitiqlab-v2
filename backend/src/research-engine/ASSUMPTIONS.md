@@ -32,10 +32,19 @@ Reject unless all pass:
 9. Cost ×1.5 on VALIDATION has positive expectancy
 10. Win-rate / Sharpe are **not** primary KEEP criteria
 
-## Activation boundary
+## Persistence (fail closed)
 
-KEEP = best candidate inside the research experiment.
-KEEP does **not** overwrite `strategies.entry_rules`, start paper trading, approve, or promote to Bitiq.
+Phase 3 research **requires** migrations `010_strategy_versions.sql` and
+`011_strategy_research_experiments.sql`.
+
+If required tables are missing, create/update/append operations throw
+`Phase3PersistenceError` and the research run fails. No synthetic IDs or
+fake successful records are returned.
+
+If a run was created and a later experiment/version write fails, the run is
+marked `status=failed` with the original error in `outcome_reasons`, then the
+error is rethrown (API returns non-success).
+
 
 ## Versioning
 

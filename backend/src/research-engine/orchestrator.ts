@@ -47,6 +47,7 @@ import {
 import { applyMutation, assertParentUnchanged } from "./mutation-applier";
 import { ALLOWED_MUTATION_TYPES } from "./mutation-schema";
 import { createClaudeMutationProposer } from "./mutation-proposer";
+import { Phase3PersistenceError } from "./persistence-errors";
 import { evaluateSelection } from "./selection-gate";
 import type {
   DatasetProvenance,
@@ -313,6 +314,7 @@ export async function runControlledResearch(params: {
     ? null
     : params.persistence ?? null;
 
+  let runPersisted = false;
   if (persistence) {
     await persistence.ensureBaselineVersion({
       strategyId: strategy.id,
@@ -320,7 +322,7 @@ export async function runControlledResearch(params: {
       snapshot: parentSnapshot,
       snapshotHash: parentHash,
     });
-    await persistence.createResearchRun({
+    const created = await persistence.createResearchRun({
       id: researchRunId,
       strategy_id: strategy.id,
       starting_version: startingVersion,
@@ -331,8 +333,15 @@ export async function runControlledResearch(params: {
       evaluator_version: RESEARCH_ENGINE_VERSION,
       started_at: startedAt,
     });
+    if (!created?.id) {
+      throw new Phase3PersistenceError(
+        "createResearchRun returned no persisted id"
+      );
+    }
+    runPersisted = true;
   }
 
+  try {
   const propose: MutationProposer =
     request.proposeMutation ||
     createClaudeMutationProposer({
@@ -801,6 +810,26 @@ export async function runControlledResearch(params: {
       note: "Research results do not automatically activate or paper-trade a strategy.",
     },
   };
+  } catch (err) {
+    if (persistence && runPersisted) {
+      const original = err instanceof Error ? err.message : String(err);
+      try {
+        await persistence.updateResearchRun(researchRunId, {
+          status: "failed",
+          outcome: "persistence_or_runtime_failed",
+          outcome_reasons: [original],
+          completed_at: new Date().toISOString(),
+        });
+      } catch (markErr) {
+        const mark =
+          markErr instanceof Error ? markErr.message : String(markErr);
+        throw new Phase3PersistenceError(
+          `Research failed (${original}); additionally failed to mark run as failed (${mark})`
+        );
+      }
+    }
+    throw err;
+  }
 }
 
 function experimentToRow(exp: ExperimentRecord): Record<string, unknown> {

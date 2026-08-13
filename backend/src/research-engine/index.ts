@@ -35,4 +35,10 @@ export {
   assertTrainDiagnosticsOnly,
   assertSelectionMetricsHaveNoTest,
 } from "./isolation";
+export {
+  Phase3PersistenceError,
+  PHASE3_PERSISTENCE_UNAVAILABLE,
+  isMissingPhase3RelationError,
+  throwIfMissingPhase3Relation,
+} from "./persistence-errors";
 export type * from "./types";
