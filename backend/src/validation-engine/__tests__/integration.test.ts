@@ -61,6 +61,13 @@ describe("validation integration (Truth Engine)", () => {
     expect(report.walkForward.windowCount).toBeGreaterThan(0);
     expect(report.costStress.cases.length).toBe(5);
     expect(report.regimes.definitions.trend).toBeTruthy();
+    expect(report.regimes.methodology).toMatch(/Descriptive only/);
+    for (const b of [...report.regimes.trend, ...report.regimes.volatility]) {
+      expect(b).toHaveProperty("netPnl");
+      expect(b).toHaveProperty("tradePathDrawdownApprox");
+      expect(b).not.toHaveProperty("totalReturn");
+      expect(b).not.toHaveProperty("maxDrawdown");
+    }
     expect(report.gate.status).toMatch(/pass|conditional|fail/);
     expect(report.gate.checks).toBeTypeOf("object");
     expect(Object.keys(report.gate.checks).length).toBeGreaterThan(5);

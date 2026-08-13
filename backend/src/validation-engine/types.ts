@@ -102,6 +102,14 @@ export interface CostStressResult {
 export type TrendRegime = "trending_up" | "trending_down" | "sideways";
 export type VolRegime = "high_volatility" | "low_volatility";
 
+/**
+ * Per-regime trade-bucket stats.
+ * Descriptive only: completed trades grouped by entry-bar regime.
+ * Not a separate regime-only Truth Engine backtest.
+ * `netPnl` is absolute P&L (not return %).
+ * `tradePathDrawdownApprox` is reconstructed from the trade-subset P&L path
+ * (not full equity-curve max drawdown).
+ */
 export interface RegimeBucketResult {
   regime: string;
   bars: number;
@@ -109,8 +117,13 @@ export interface RegimeBucketResult {
   winRate: number | null;
   expectancy: number | null;
   profitFactor: number | null;
-  totalReturn: number | null;
-  maxDrawdown: number | null;
+  /** Absolute net P&L of trades entering in this regime (not return %). */
+  netPnl: number | null;
+  /**
+   * Approximate peak-to-trough of cumulative trade P&L within this subset.
+   * Not comparable to Truth Engine maxDrawdown.
+   */
+  tradePathDrawdownApprox: number | null;
 }
 
 export interface RegimeAnalysisResult {
@@ -118,6 +131,8 @@ export interface RegimeAnalysisResult {
     trend: string;
     volatility: string;
   };
+  /** Clarifies that regime stats are trade-grouping, not regime-only backtests. */
+  methodology: string;
   trend: RegimeBucketResult[];
   volatility: RegimeBucketResult[];
   worksIn: string[];

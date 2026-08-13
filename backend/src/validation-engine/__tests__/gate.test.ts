@@ -223,6 +223,96 @@ describe("promotion gate", () => {
     expect(gate.status).toBe("conditional");
     expect(gate.reasons.some((r) => r.includes("sample_"))).toBe(true);
   });
+
+  it("sensitivity variants present + pass → hard pass on check", () => {
+    const sampleIntegrity = evaluateSampleIntegrity({
+      totalTrades: 140,
+      validationTrades: 40,
+      testTrades: 40,
+      walkForwardWindows: 5,
+      config,
+    });
+    const gate = evaluateGate({
+      chronological: goodChrono(),
+      walkForward: goodWf(),
+      sensitivity: goodSens(),
+      costStress: goodCost(),
+      sampleIntegrity,
+      crossAsset: cross,
+      config,
+    });
+    expect(gate.checks.parameter_sensitivity.severity).toBe("hard");
+    expect(gate.checks.parameter_sensitivity.passed).toBe(true);
+    expect(gate.status).toBe("pass");
+  });
+
+  it("sensitivity variants present + fail → hard fail", () => {
+    const sampleIntegrity = evaluateSampleIntegrity({
+      totalTrades: 140,
+      validationTrades: 40,
+      testTrades: 40,
+      walkForwardWindows: 5,
+      config,
+    });
+    const gate = evaluateGate({
+      chronological: goodChrono(),
+      walkForward: goodWf(),
+      sensitivity: {
+        variants: goodSens().variants,
+        positiveExpectancyPct: 0.1,
+        originalUnchanged: true,
+      },
+      costStress: goodCost(),
+      sampleIntegrity,
+      crossAsset: cross,
+      config,
+    });
+    expect(gate.checks.parameter_sensitivity.severity).toBe("hard");
+    expect(gate.checks.parameter_sensitivity.passed).toBe(false);
+    expect(gate.status).toBe("fail");
+    expect(
+      gate.reasons.some((r) => r.includes("parameter_sensitivity"))
+    ).toBe(true);
+  });
+
+  it("zero sensitivity variants → conditional/informational, not hard pass", () => {
+    const sampleIntegrity = evaluateSampleIntegrity({
+      totalTrades: 140,
+      validationTrades: 40,
+      testTrades: 40,
+      walkForwardWindows: 5,
+      config,
+    });
+    const gate = evaluateGate({
+      chronological: goodChrono(),
+      walkForward: goodWf(),
+      sensitivity: {
+        variants: [],
+        positiveExpectancyPct: 1,
+        originalUnchanged: true,
+      },
+      costStress: goodCost(),
+      sampleIntegrity,
+      crossAsset: cross,
+      config,
+    });
+    const check = gate.checks.parameter_sensitivity;
+    expect(check.severity).toBe("soft");
+    expect(check.passed).toBe(false);
+    expect(check.detail).toMatch(
+      /No stressable numeric parameters found; parameter robustness not evaluated/
+    );
+    expect(gate.status).toBe("conditional");
+    // Must not count as hard-pass credit in the score
+    const hardChecks = Object.values(gate.checks).filter(
+      (c) => c.severity === "hard"
+    );
+    expect(hardChecks.every((c) => c.id !== "parameter_sensitivity")).toBe(
+      true
+    );
+    expect(hardChecks.every((c) => c.passed)).toBe(true);
+    expect(gate.score).toBe(1);
+  });
 });
 
 describe("degradation ratios", () => {

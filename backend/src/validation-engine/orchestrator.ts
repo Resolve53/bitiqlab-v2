@@ -109,7 +109,12 @@ function tradeStatsFromTrades(
   trades: BacktestRunResult["trades"]
 ): Pick<
   RegimeBucketResult,
-  "trades" | "winRate" | "expectancy" | "profitFactor" | "totalReturn" | "maxDrawdown"
+  | "trades"
+  | "winRate"
+  | "expectancy"
+  | "profitFactor"
+  | "netPnl"
+  | "tradePathDrawdownApprox"
 > {
   if (trades.length === 0) {
     return {
@@ -117,8 +122,8 @@ function tradeStatsFromTrades(
       winRate: null,
       expectancy: null,
       profitFactor: null,
-      totalReturn: null,
-      maxDrawdown: null,
+      netPnl: null,
+      tradePathDrawdownApprox: null,
     };
   }
   const wins = trades.filter((t) => t.netPnl > 0);
@@ -128,23 +133,23 @@ function tradeStatsFromTrades(
   const net = trades.reduce((s, t) => s + t.netPnl, 0);
   const pf =
     grossLoss > 0 ? grossProfit / grossLoss : grossProfit > 0 ? null : null;
-  // Approximate drawdown from trade equity path starting at 0 cumulative
+  // Approximate path drawdown from cumulative trade P&L (not TE equity curve)
   let equity = 0;
   let peak = 0;
-  let maxDd = 0;
+  let pathDd = 0;
   for (const t of trades) {
     equity += t.netPnl;
     peak = Math.max(peak, equity);
     const dd = peak > 0 ? (peak - equity) / peak : 0;
-    maxDd = Math.max(maxDd, dd);
+    pathDd = Math.max(pathDd, dd);
   }
   return {
     trades: trades.length,
     winRate: wins.length / trades.length,
     expectancy: net / trades.length,
     profitFactor: pf,
-    totalReturn: net, // absolute net on this trade subset (not %)
-    maxDrawdown: maxDd,
+    netPnl: net,
+    tradePathDrawdownApprox: pathDd,
   };
 }
 
@@ -211,6 +216,8 @@ function buildRegimeReport(
 
   return {
     definitions: REGIME_DEFINITIONS,
+    methodology:
+      "Descriptive only: completed trades are grouped by the regime label of their entry bar. Not a separate regime-only backtest. netPnl is absolute P&L; tradePathDrawdownApprox is from the trade-subset P&L path, not Truth Engine equity max drawdown.",
     trend,
     volatility,
     worksIn,

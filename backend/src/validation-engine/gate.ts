@@ -147,19 +147,30 @@ export function evaluateGate(params: {
     value: wf.profitableWindowPct,
   });
 
-  // Parameter sensitivity
-  add({
-    id: "parameter_sensitivity",
-    passed:
-      sens.variants.length === 0 ||
-      sens.positiveExpectancyPct >= config.minSensitivityPositiveExpectancyPct,
-    severity: "hard",
-    detail:
-      sens.variants.length === 0
-        ? "No numeric parameters found to stress (informational pass)"
-        : `Positive-expectancy variants ${sens.positiveExpectancyPct} (need ≥ ${config.minSensitivityPositiveExpectancyPct})`,
-    value: sens.positiveExpectancyPct,
-  });
+  // Parameter sensitivity — zero variants is informational/soft, not a hard pass
+  if (sens.variants.length === 0) {
+    add({
+      id: "parameter_sensitivity",
+      passed: false,
+      severity: "soft",
+      detail:
+        "No stressable numeric parameters found; parameter robustness not evaluated",
+      value: { variantCount: 0, positiveExpectancyPct: null },
+    });
+  } else {
+    add({
+      id: "parameter_sensitivity",
+      passed:
+        sens.positiveExpectancyPct >=
+        config.minSensitivityPositiveExpectancyPct,
+      severity: "hard",
+      detail: `Positive-expectancy variants ${sens.positiveExpectancyPct} (need ≥ ${config.minSensitivityPositiveExpectancyPct})`,
+      value: {
+        variantCount: sens.variants.length,
+        positiveExpectancyPct: sens.positiveExpectancyPct,
+      },
+    });
+  }
 
   // Cost stress at 1.5x
   const stress15 = costStress.cases.filter(

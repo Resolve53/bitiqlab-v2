@@ -199,12 +199,28 @@ export default function ValidationModal({
               <h3 className="text-sm font-semibold text-slate-300 mb-2">
                 Regimes
               </h3>
+              <p className="text-xs text-slate-500 mb-2">
+                {results.regimes?.methodology ||
+                  "Descriptive trade grouping by entry regime (not regime-only backtests)."}
+              </p>
               <p className="text-sm text-emerald-400">
                 Works in: {(results.regimes?.worksIn || []).join(", ") || "—"}
               </p>
               <p className="text-sm text-red-400 mt-1">
                 Fails in: {(results.regimes?.failsIn || []).join(", ") || "—"}
               </p>
+              <ul className="mt-2 space-y-1 text-xs text-slate-400">
+                {[
+                  ...(results.regimes?.trend || []),
+                  ...(results.regimes?.volatility || []),
+                ].map((b: any) => (
+                  <li key={b.regime}>
+                    {b.regime}: {b.trades ?? 0} trades · netPnl{" "}
+                    {num(b.netPnl)} · pathDD≈{" "}
+                    {pct(b.tradePathDrawdownApprox)}
+                  </li>
+                ))}
+              </ul>
             </section>
 
             {results.sampleIntegrity?.flags?.length > 0 && (

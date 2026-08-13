@@ -34,6 +34,16 @@
 - Deterministic SMA trend + ATR/close vs causal median volatility.
 - Classification at bar `i` uses only information ≤ `i` (no future bars).
 - Trade regime assignment uses the entry bar's regime label.
+- Regime stats are **descriptive trade-grouping**, not separate regime-only backtests.
+- Per-bucket `netPnl` is absolute P&L (not return %).
+- Per-bucket `tradePathDrawdownApprox` is reconstructed from the trade-subset P&L path; it is not Truth Engine equity max drawdown.
+
+## Parameter sensitivity gate
+
+- Variants present: hard check on positive-expectancy majority.
+- Zero stressable numeric parameters: soft/informational failure
+  (`parameter robustness not evaluated`) → contributes to **conditional**,
+  never counted as a hard pass / robustness proof.
 
 ## Cross-asset
 
