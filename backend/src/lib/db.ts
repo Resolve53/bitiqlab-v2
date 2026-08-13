@@ -10,6 +10,10 @@ import {
   Phase3PersistenceError,
   throwIfMissingPhase3Relation,
 } from "@/research-engine/persistence-errors";
+import {
+  Phase4PersistenceError,
+  throwIfMissingPhase4Schema,
+} from "@/paper-forward/persistence-errors";
 
 /**
  * Database Service
@@ -416,6 +420,161 @@ export class DatabaseService {
       throwIfMissingPhase3Relation("strategy_versions", error.message);
       throw new Phase3PersistenceError(
         `Failed to get strategy version: ${error.message}`
+      );
+    }
+    return data;
+  }
+
+  async getStrategyVersionById(id: string) {
+    const { data, error } = await this.client
+      .from("strategy_versions")
+      .select("*")
+      .eq("id", id)
+      .maybeSingle();
+    if (error) {
+      throwIfMissingPhase3Relation("strategy_versions", error.message);
+      throw new Phase3PersistenceError(
+        `Failed to get strategy version by id: ${error.message}`
+      );
+    }
+    return data;
+  }
+
+  async listStrategyVersions(strategyId: string) {
+    const { data, error } = await this.client
+      .from("strategy_versions")
+      .select("*")
+      .eq("strategy_id", strategyId)
+      .order("version", { ascending: false });
+    if (error) {
+      throwIfMissingPhase3Relation("strategy_versions", error.message);
+      throw new Phase3PersistenceError(
+        `Failed to list strategy versions: ${error.message}`
+      );
+    }
+    return data ?? [];
+  }
+
+  async getStrategyValidationById(id: string) {
+    const { data, error } = await this.client
+      .from("strategy_validations")
+      .select("*")
+      .eq("id", id)
+      .maybeSingle();
+    if (error) {
+      throwIfMissingPhase4Schema("strategy_validations", error.message);
+      if (/strategy_validations|relation|does not exist/i.test(error.message)) {
+        throw new Phase4PersistenceError(
+          `Required table "strategy_validations" is missing (${error.message})`
+        );
+      }
+      throw new Phase4PersistenceError(
+        `Failed to get strategy validation: ${error.message}`
+      );
+    }
+    return data;
+  }
+
+  async getResearchRunById(id: string) {
+    const { data, error } = await this.client
+      .from("strategy_research_runs")
+      .select("*")
+      .eq("id", id)
+      .maybeSingle();
+    if (error) {
+      throwIfMissingPhase3Relation("strategy_research_runs", error.message);
+      throw new Phase3PersistenceError(
+        `Failed to get research run: ${error.message}`
+      );
+    }
+    return data;
+  }
+
+  /**
+   * Phase 4A — immutable paper-forward session. Fail closed if migration 012 missing.
+   */
+  async createPaperForwardSession(row: Record<string, unknown>) {
+    const { data, error } = await this.client
+      .from("trading_sessions")
+      .insert([row])
+      .select()
+      .single();
+    if (error) {
+      throwIfMissingPhase4Schema("trading_sessions Phase 4A columns", error.message);
+      throw new Phase4PersistenceError(
+        `Failed to create paper-forward session: ${error.message}`
+      );
+    }
+    if (!data?.id) {
+      throw new Phase4PersistenceError(
+        "createPaperForwardSession returned no persisted id"
+      );
+    }
+    if (!data.lifecycle_status || !data.strategy_version_id || !data.snapshot_hash) {
+      throw new Phase4PersistenceError(
+        "Persisted session missing Phase 4A provenance columns — apply migration 012"
+      );
+    }
+    return data;
+  }
+
+  async getPaperForwardSession(id: string) {
+    const { data, error } = await this.client
+      .from("trading_sessions")
+      .select("*")
+      .eq("id", id)
+      .single();
+    if (error) {
+      throwIfMissingPhase4Schema("trading_sessions", error.message);
+      throw new Phase4PersistenceError(
+        `Failed to get paper-forward session: ${error.message}`
+      );
+    }
+    return data;
+  }
+
+  /**
+   * Lifecycle updates only — never allow provenance field mutation via this method.
+   */
+  async updatePaperForwardLifecycle(
+    id: string,
+    updates: Record<string, unknown>
+  ) {
+    const forbidden = [
+      "strategy_id",
+      "strategy_version_id",
+      "strategy_version",
+      "snapshot_hash",
+      "strategy_snapshot",
+      "research_run_id",
+      "validation_id",
+      "symbol",
+      "timeframe",
+      "engine_version",
+    ];
+    for (const key of forbidden) {
+      if (key in updates) {
+        throw new Phase4PersistenceError(
+          `Refusing to mutate immutable paper session field: ${key}`
+        );
+      }
+    }
+
+    const { data, error } = await this.client
+      .from("trading_sessions")
+      .update(updates)
+      .eq("id", id)
+      .select()
+      .single();
+    if (error) {
+      throwIfMissingPhase4Schema("trading_sessions lifecycle update", error.message);
+      throw new Phase4PersistenceError(
+        `Failed to update paper-forward lifecycle: ${error.message}`
+      );
+    }
+    if (!data?.id) {
+      throw new Phase4PersistenceError(
+        "updatePaperForwardLifecycle returned no persisted id"
       );
     }
     return data;

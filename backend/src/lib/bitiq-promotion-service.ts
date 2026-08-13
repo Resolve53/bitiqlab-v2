@@ -6,6 +6,10 @@ import axios from "axios";
 import crypto from "crypto";
 import { getDB } from "./db";
 import type { Strategy } from "../core";
+import {
+  PROMOTION_AUTO_DISABLED,
+  PROMOTION_FORCE_DISABLED,
+} from "./trading-safety";
 
 export type BitiqPromotionStatus =
   | "pending"
@@ -299,16 +303,32 @@ async function sendBitiqWebhook(payload: object): Promise<{
   }
 }
 
+/**
+ * Phase 4A: Bitiq promotion is fail-closed.
+ * Force bypass and automatic deployment are disabled.
+ * Readiness is still evaluated for status endpoints.
+ */
 export async function promoteStrategyToBitiq(
   options: PromoteToBitiqOptions
 ): Promise<PromoteToBitiqResult> {
-  const db = getDB();
   const readiness = await evaluatePromotionReadiness(
     options.strategyId,
     options.sessionId
   );
 
-  if (!readiness.ready && !options.force) {
+  if (options.force) {
+    return {
+      success: false,
+      strategyId: options.strategyId,
+      deployedToBitiq: false,
+      webhookSent: false,
+      readiness,
+      message: PROMOTION_FORCE_DISABLED,
+      error: PROMOTION_FORCE_DISABLED,
+    };
+  }
+
+  if (!readiness.ready) {
     return {
       success: false,
       strategyId: options.strategyId,
@@ -320,88 +340,16 @@ export async function promoteStrategyToBitiq(
     };
   }
 
-  const strategy = await db.getStrategy(options.strategyId);
-  let session: Record<string, unknown> | undefined;
-
-  if (options.sessionId) {
-    try {
-      session = await db.getTradingSession(options.sessionId);
-    } catch {
-      // optional
-    }
-  }
-
-  const promotion = await db.createBitiqPromotion({
-    strategy_id: options.strategyId,
-    trading_session_id: options.sessionId,
-    status: "pending",
-    readiness,
-    promotion_notes: options.notes,
-    promoted_by: options.promotedBy,
-  });
-
-  const payload = buildWebhookPayload(strategy, readiness, options, session);
-  const webhook = await sendBitiqWebhook(payload);
-
-  const failOpen = process.env.BITIQ_PROMOTION_FAIL_OPEN === "true";
-  const webhookRequired = Boolean(process.env.BITIQ_WEBHOOK_URL);
-
-  if (webhookRequired && !webhook.sent && !failOpen) {
-    await db.updateBitiqPromotion(promotion.id, {
-      status: "failed",
-      webhook_response: { error: webhook.error },
-    });
-
-    return {
-      success: false,
-      strategyId: options.strategyId,
-      promotionId: promotion.id,
-      deployedToBitiq: false,
-      webhookSent: false,
-      readiness,
-      message: "Bitiq webhook delivery failed",
-      error: webhook.error,
-    };
-  }
-
-  const promotionStatus: BitiqPromotionStatus = webhook.sent ? "sent" : "acknowledged";
-  await db.updateBitiqPromotion(promotion.id, {
-    status: promotionStatus,
-    bitiq_strategy_id: webhook.bitiqStrategyId,
-    webhook_response: webhook.response || { local_only: !webhook.sent },
-  });
-
-  const deployedAt = new Date();
-  await db.updateStrategy(options.strategyId, {
-    status: "approved",
-    deployed_to_bitiq: true,
-    deployed_at: deployedAt,
-  });
-
-  await db.createStrategyAuditLog({
-    strategy_id: options.strategyId,
-    action: "BITIQ_PROMOTED",
-    old_values: { deployed_to_bitiq: strategy.deployed_to_bitiq },
-    new_values: {
-      deployed_to_bitiq: true,
-      deployed_at: deployedAt.toISOString(),
-      bitiq_strategy_id: webhook.bitiqStrategyId,
-      promotion_id: promotion.id,
-    },
-    changed_by: options.promotedBy || "system",
-  });
-
+  // Even when readiness passes, Phase 4A does not auto-promote to Bitiq.
+  // Fail-open webhook behavior is intentionally unreachable.
   return {
-    success: true,
+    success: false,
     strategyId: options.strategyId,
-    promotionId: promotion.id,
-    deployedToBitiq: true,
-    webhookSent: webhook.sent,
-    bitiqStrategyId: webhook.bitiqStrategyId,
+    deployedToBitiq: false,
+    webhookSent: false,
     readiness,
-    message: webhook.sent
-      ? "Strategy promoted and Bitiq webhook delivered"
-      : "Strategy marked deployed locally (webhook not configured or fail-open)",
+    message: PROMOTION_AUTO_DISABLED,
+    error: PROMOTION_AUTO_DISABLED,
   };
 }
 

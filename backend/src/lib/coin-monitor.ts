@@ -8,6 +8,7 @@ import { getEvaluator, StrategySignal } from "./strategy-evaluator";
 import { getTradingClient } from "./binance-trading";
 import { getDB } from "./db";
 import type { TradingMarketType } from "./trading-market-resolver";
+import { LEGACY_PAPER_EXECUTION_DISABLED } from "./trading-safety";
 
 export interface MonitoringConfig {
   session_id: string;
@@ -82,6 +83,14 @@ class MonitoringJob {
   }
 
   async start(): Promise<void> {
+    // Phase 4A quarantine — never start heuristic/order loop.
+    this.status.status = "error";
+    this.status.error = LEGACY_PAPER_EXECUTION_DISABLED;
+    throw new Error(LEGACY_PAPER_EXECUTION_DISABLED);
+  }
+
+  /** @deprecated Phase 4A — quarantined */
+  async startLegacyUnreachable(): Promise<void> {
     if (this.isRunning) {
       console.warn(`[COIN-MONITOR] Job ${this.status.job_id} already running`);
       return;
@@ -344,9 +353,9 @@ class MonitoringJob {
 const jobs = new Map<string, MonitoringJob>();
 
 export function createMonitoringJob(config: MonitoringConfig): MonitoringJob {
-  const job = new MonitoringJob(config);
-  jobs.set(job.getJobId(), job);
-  return job;
+  // Phase 4A: never create executable monitoring jobs.
+  void config;
+  throw new Error(LEGACY_PAPER_EXECUTION_DISABLED);
 }
 
 export function getMonitoringJob(jobId: string): MonitoringJob | undefined {

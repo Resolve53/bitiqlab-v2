@@ -115,7 +115,7 @@ export default function StrategiesPage() {
     <>
       <PageHeader
         title="Strategies"
-        subtitle="Paper trading uses $5,000 demo capital per session and monitors the top 20 USDT pairs on Binance testnet."
+        subtitle="Paper trading starts from an immutable validated strategy version (Phase 4A). No exchange orders until Phase 4B."
         actions={
           <div className="flex gap-2 flex-wrap">
             <button

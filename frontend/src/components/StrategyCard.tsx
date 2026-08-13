@@ -201,7 +201,7 @@ export default function StrategyCard({
             </button>
             {showStatusMenu && (
               <div className="absolute right-0 top-full z-20 mt-1 w-full min-w-[10rem] rounded-lg border border-slate-700 bg-slate-900 py-1 shadow-xl">
-                {(["approved", "draft", "testing"] as const).map((s) => (
+                {(["draft", "testing", "failed"] as const).map((s) => (
                   <button
                     key={s}
                     type="button"
@@ -214,6 +214,9 @@ export default function StrategyCard({
                     {s}
                   </button>
                 ))}
+                <p className="px-3 py-2 text-[10px] text-slate-500">
+                  Status &quot;approved&quot; via UI is disabled (Phase 4A).
+                </p>
                 <button
                   type="button"
                   onClick={() => {
