@@ -203,10 +203,11 @@ export class StrategyGenerator {
     };
   }
 
-  /** Kept for API compatibility; not used by Phase 1 Truth Engine path. */
+  /** Kept for API compatibility; not used by Phase 1 or Phase 3. */
   async suggestImprovements(strategy: unknown, backtestResult: unknown) {
     return {
-      suggestions: "Use regenerate with explicit structured entries.",
+      suggestions:
+        "Phase 3 uses @/research-engine controlled mutations — do not use suggestImprovements.",
       strategy,
       backtestResult,
       timestamp: new Date(),
@@ -214,13 +215,14 @@ export class StrategyGenerator {
   }
 }
 
+/** @deprecated Quarantined — Phase 3 uses @/research-engine instead. */
 export class AutoresearchOptimizer {
   async optimize(strategy: unknown, _backtestData: unknown) {
     return {
       success: false,
       optimizedStrategy: strategy,
       improvements:
-        "Autoresearch ML optimizer is not part of Phase 1 Truth Engine generation.",
+        "AutoresearchOptimizer is quarantined. Use POST /api/research/run (Phase 3 Controlled Autoresearch).",
     };
   }
 }

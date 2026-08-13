@@ -361,6 +361,146 @@ export class DatabaseService {
   }
 
   /**
+   * Phase 3 — immutable strategy versions (append-only).
+   */
+  async createStrategyVersion(row: {
+    strategy_id: string;
+    version: number;
+    parent_version?: number | null;
+    source: string;
+    strategy_snapshot: unknown;
+    snapshot_hash: string;
+    notes?: string;
+  }) {
+    const { data, error } = await this.client
+      .from("strategy_versions")
+      .insert([row])
+      .select()
+      .single();
+
+    if (error) {
+      if (/duplicate|unique/i.test(error.message)) {
+        // Already snapshotted this version — idempotent
+        const existing = await this.getStrategyVersion(
+          row.strategy_id,
+          row.version
+        );
+        if (existing) return existing;
+      }
+      if (/strategy_versions|relation|does not exist/i.test(error.message)) {
+        console.warn(
+          "strategy_versions table missing; version not persisted:",
+          error.message
+        );
+        return { id: null, ...row, created_at: new Date().toISOString() };
+      }
+      throw new Error(`Failed to create strategy version: ${error.message}`);
+    }
+    return data;
+  }
+
+  async getStrategyVersion(strategyId: string, version: number) {
+    const { data, error } = await this.client
+      .from("strategy_versions")
+      .select("*")
+      .eq("strategy_id", strategyId)
+      .eq("version", version)
+      .maybeSingle();
+    if (error) {
+      if (/strategy_versions|relation|does not exist/i.test(error.message)) {
+        return null;
+      }
+      throw new Error(`Failed to get strategy version: ${error.message}`);
+    }
+    return data;
+  }
+
+  async createResearchRun(row: Record<string, unknown>) {
+    const { data, error } = await this.client
+      .from("strategy_research_runs")
+      .insert([row])
+      .select()
+      .single();
+    if (error) {
+      if (
+        /strategy_research_runs|relation|does not exist/i.test(error.message)
+      ) {
+        console.warn(
+          "strategy_research_runs table missing; run not persisted:",
+          error.message
+        );
+        return { id: row.id ?? null, ...row };
+      }
+      throw new Error(`Failed to create research run: ${error.message}`);
+    }
+    return data;
+  }
+
+  async updateResearchRun(id: string, updates: Record<string, unknown>) {
+    const { data, error } = await this.client
+      .from("strategy_research_runs")
+      .update(updates)
+      .eq("id", id)
+      .select()
+      .single();
+    if (error) {
+      if (
+        /strategy_research_runs|relation|does not exist/i.test(error.message)
+      ) {
+        console.warn(
+          "strategy_research_runs table missing; run update skipped:",
+          error.message
+        );
+        return { id, ...updates };
+      }
+      throw new Error(`Failed to update research run: ${error.message}`);
+    }
+    return data;
+  }
+
+  async appendResearchExperiment(row: Record<string, unknown>) {
+    const { data, error } = await this.client
+      .from("strategy_research_experiments")
+      .insert([row])
+      .select()
+      .single();
+    if (error) {
+      if (
+        /strategy_research_experiments|relation|does not exist/i.test(
+          error.message
+        )
+      ) {
+        console.warn(
+          "strategy_research_experiments table missing; experiment not persisted:",
+          error.message
+        );
+        return { id: null, ...row };
+      }
+      throw new Error(
+        `Failed to append research experiment: ${error.message}`
+      );
+    }
+    return data;
+  }
+
+  async listResearchRuns(strategyId: string) {
+    const { data, error } = await this.client
+      .from("strategy_research_runs")
+      .select("*")
+      .eq("strategy_id", strategyId)
+      .order("started_at", { ascending: false });
+    if (error) {
+      if (
+        /strategy_research_runs|relation|does not exist/i.test(error.message)
+      ) {
+        return [];
+      }
+      throw new Error(`Failed to list research runs: ${error.message}`);
+    }
+    return data;
+  }
+
+  /**
    * Paper Trade Operations
    */
   async createPaperTrade(trade: {

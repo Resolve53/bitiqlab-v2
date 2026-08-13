@@ -40,6 +40,7 @@ interface StrategyCardProps {
   liveStats?: StrategyLiveStats;
   onRunBacktest: () => void;
   onRunValidation?: () => void;
+  onRunResearch?: () => void;
   onStartPaperTrading: () => void;
   onStatusChange?: (strategyId: string, newStatus: string) => void;
   onDelete?: (strategyId: string) => void;
@@ -62,6 +63,7 @@ export default function StrategyCard({
   liveStats,
   onRunBacktest,
   onRunValidation,
+  onRunResearch,
   onStartPaperTrading,
   onStatusChange,
   onDelete,
@@ -276,6 +278,20 @@ export default function StrategyCard({
           >
             {isExecutable ? "Run validation" : "Validation unavailable"}
           </ActionBtn>
+          <ActionBtn
+            onClick={() => {
+              if (!isExecutable) {
+                alert(
+                  "This strategy is not Truth Engine executable. Regenerate with Claude AI before research."
+                );
+                return;
+              }
+              onRunResearch?.();
+            }}
+            variant="teal"
+          >
+            {isExecutable ? "Run research" : "Research unavailable"}
+          </ActionBtn>
           <ActionBtn onClick={onStartPaperTrading} variant="primary">
             Start paper
           </ActionBtn>
@@ -310,13 +326,14 @@ function ActionBtn({
   children: React.ReactNode;
   onClick: () => void;
   disabled?: boolean;
-  variant: "cyan" | "slate" | "blue" | "amber" | "primary";
+  variant: "cyan" | "slate" | "blue" | "amber" | "teal" | "primary";
 }) {
   const styles = {
     cyan: "bg-cyan-600/90 hover:bg-cyan-500 text-white",
     slate: "border border-slate-700 bg-slate-800/80 text-slate-200 hover:bg-slate-800",
     blue: "bg-blue-600/90 hover:bg-blue-500 text-white",
     amber: "bg-amber-600/90 hover:bg-amber-500 text-white",
+    teal: "bg-teal-600/90 hover:bg-teal-500 text-white",
     primary: "bg-violet-600 hover:bg-violet-500 text-white font-semibold",
   };
   return (
