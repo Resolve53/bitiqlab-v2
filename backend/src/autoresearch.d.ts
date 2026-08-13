@@ -1,5 +1,6 @@
 /**
- * Type declarations for autoresearch wrapper
+ * Type declarations for autoresearch wrapper (legacy .d.ts)
+ * Production implementation: src/autoresearch/wrapper.ts
  */
 
 export interface TrainingConfig {
@@ -39,6 +40,7 @@ export interface GenerateConfig {
   leverage?: number;
 }
 
+/** Truth Engine–compatible generated strategy (structured entries). */
 export interface GeneratedStrategy {
   name: string;
   description: string;
@@ -46,13 +48,17 @@ export interface GeneratedStrategy {
   timeframe: string;
   market_type: "spot" | "futures";
   leverage: number;
-  entry_rules: Record<string, any>;
-  exit_rules: Record<string, any>;
-  position_sizing: Record<string, any>;
+  entries: Array<{
+    direction: "long" | "short";
+    condition: Record<string, unknown>;
+  }>;
+  exit_condition?: Record<string, unknown> | null;
+  stop_loss_percent: number;
+  take_profit_percent?: number;
+  risk_per_trade_pct: number;
   status: string;
   created_at: Date;
   version: number;
-  backtest_count: number;
 }
 
 export function trainModel(config?: TrainingConfig): Promise<TrainingResult>;
@@ -62,8 +68,13 @@ export function checkEnvironment(): Promise<EnvironmentStatus>;
 export function getMetadata(): Promise<Metadata>;
 
 export class StrategyGenerator {
-  constructor(apiKey: string);
+  constructor(apiKey: string, options?: { client?: unknown; model?: string });
   generate(config: GenerateConfig): Promise<GeneratedStrategy>;
+  generateCorrected(
+    config: GenerateConfig,
+    previous: unknown,
+    validationError: string
+  ): Promise<GeneratedStrategy>;
   suggestImprovements(strategy: any, backtestResult: any): Promise<any>;
 }
 
@@ -72,11 +83,6 @@ export class AutoresearchOptimizer {
 }
 
 export default {
-  trainModel,
-  prepareData,
-  runAnalysis,
-  checkEnvironment,
-  getMetadata,
   StrategyGenerator,
   AutoresearchOptimizer,
 };

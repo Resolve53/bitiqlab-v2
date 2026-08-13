@@ -1,6 +1,12 @@
 /**
  * Wrapper layer for integrating Python autoresearch with Bitiq Lab API
  * Uses subprocess to call Python training and analysis functions
+ *
+ * QUARANTINED (Phase 1 integration fix):
+ * Production strategy generation MUST use backend/src/autoresearch/wrapper.ts
+ * (imported via @/autoresearch/wrapper). Do not call StrategyGenerator here
+ * from Next.js API routes — this duplicate returns prose-schema strategies
+ * and is not Truth Engine compatible.
  */
 
 import { spawn } from 'child_process';
@@ -207,8 +213,8 @@ export async function getMetadata() {
 }
 
 /**
- * StrategyGenerator class for generating trading strategies using Claude API
- * Integrates with Anthropic Claude for LLM-powered strategy generation
+ * StrategyGenerator class — QUARANTINED duplicate.
+ * Production path: backend/src/autoresearch/wrapper.ts
  */
 export class StrategyGenerator {
   constructor(apiKey) {
@@ -216,132 +222,20 @@ export class StrategyGenerator {
   }
 
   /**
-   * Generate a trading strategy from a prompt
-   * @param {Object} config - Generation configuration
-   * @returns {Promise<Object>} Generated strategy
+   * @deprecated Use @/autoresearch/wrapper (TypeScript) StrategyGenerator.
    */
-  async generate(config) {
-    // This implementation uses Claude API directly
-    // The autoresearch package provides ML-based optimization, but strategy generation
-    // is handled by Claude for speed and flexibility
-    try {
-      const { Anthropic } = await import('@anthropic-ai/sdk');
-      const client = new Anthropic({ apiKey: this.apiKey });
-
-      const prompt = `Generate a trading strategy based on this specification:
-Symbol: ${config.symbol}
-Timeframe: ${config.timeframe}
-Market Type: ${config.market_type}
-Leverage: ${config.leverage || 1}
-
-User Request: ${config.prompt}
-
-Return a JSON object with this structure:
-{
-  "name": "strategy name",
-  "description": "strategy description",
-  "symbol": "${config.symbol}",
-  "timeframe": "${config.timeframe}",
-  "market_type": "${config.market_type}",
-  "leverage": ${config.leverage || 1},
-  "entry_rules": {
-    "conditions": "entry condition string (e.g., 'RSI < 30 AND close < MA(20)')"
-  },
-  "exit_rules": {
-    "conditions": "exit condition string",
-    "stop_loss_percent": -2,
-    "take_profit_percent": 5
-  },
-  "position_sizing": {
-    "max_position_size": 0.05,
-    "risk_per_trade": 0.02
-  }
-}`;
-
-      const message = await client.messages.create({
-        model: 'claude-opus-4-1',
-        max_tokens: 1024,
-        messages: [
-          {
-            role: 'user',
-            content: prompt,
-          },
-        ],
-      });
-
-      // Parse the response
-      const content = message.content[0];
-      if (content.type !== 'text') {
-        throw new Error('Unexpected response format from Claude');
-      }
-
-      // Extract JSON from response
-      const jsonMatch = content.text.match(/\{[\s\S]*\}/);
-      if (!jsonMatch) {
-        throw new Error('No valid JSON found in Claude response');
-      }
-
-      const strategy = JSON.parse(jsonMatch[0]);
-      strategy.status = 'draft';
-      strategy.created_at = new Date();
-      strategy.version = 1;
-
-      return strategy;
-    } catch (error) {
-      console.error('Strategy generation error:', error);
-      throw error;
-    }
+  async generate(_config) {
+    throw new Error(
+      "backend/autoresearch/wrapper.js StrategyGenerator is quarantined. " +
+        "Use backend/src/autoresearch/wrapper.ts via @/autoresearch/wrapper."
+    );
   }
 
-  /**
-   * Suggest strategy improvements based on backtest results
-   * @param {Object} strategy - Current strategy
-   * @param {Object} backtestResult - Backtest results
-   * @returns {Promise<Object>} Suggested improvements
-   */
-  async suggestImprovements(strategy, backtestResult) {
-    try {
-      const { Anthropic } = await import('@anthropic-ai/sdk');
-      const client = new Anthropic({ apiKey: this.apiKey });
-
-      const prompt = `Analyze this trading strategy's backtest results and suggest improvements:
-
-Strategy:
-${JSON.stringify(strategy, null, 2)}
-
-Backtest Results:
-- Sharpe Ratio: ${backtestResult.sharpe_ratio}
-- Win Rate: ${backtestResult.win_rate * 100}%
-- Profit Factor: ${backtestResult.profit_factor}
-- Max Drawdown: ${backtestResult.max_drawdown * 100}%
-- Total Trades: ${backtestResult.total_trades}
-
-Provide specific suggestions to improve the strategy.`;
-
-      const message = await client.messages.create({
-        model: 'claude-opus-4-1',
-        max_tokens: 1024,
-        messages: [
-          {
-            role: 'user',
-            content: prompt,
-          },
-        ],
-      });
-
-      const content = message.content[0];
-      if (content.type !== 'text') {
-        throw new Error('Unexpected response format from Claude');
-      }
-
-      return {
-        suggestions: content.text,
-        timestamp: new Date(),
-      };
-    } catch (error) {
-      console.error('Error getting strategy suggestions:', error);
-      throw error;
-    }
+  async suggestImprovements(_strategy, _backtestResult) {
+    throw new Error(
+      "backend/autoresearch/wrapper.js StrategyGenerator is quarantined. " +
+        "Use backend/src/autoresearch/wrapper.ts via @/autoresearch/wrapper."
+    );
   }
 }
 

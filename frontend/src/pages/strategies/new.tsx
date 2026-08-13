@@ -1,5 +1,5 @@
 import { useRouter } from "next/router";
-import { apiUrl, getApiUrl } from "@/lib/api";
+import { apiPath } from "@/lib/api";
 import { useState } from "react";
 
 export default function NewStrategy() {
@@ -8,7 +8,7 @@ export default function NewStrategy() {
   const [error, setError] = useState<string | null>(null);
   const [formData, setFormData] = useState({
     name: "",
-    symbol: "",
+    symbol: "BTCUSDT",
     timeframe: "1h",
     description: "",
   });
@@ -29,15 +29,13 @@ export default function NewStrategy() {
     setLoading(true);
 
     try {
-      // Validate required fields
       if (!formData.name || !formData.symbol || !formData.timeframe) {
         setError("Please fill in all required fields");
         setLoading(false);
         return;
       }
 
-      
-      const response = await fetch(`strategies`, {
+      const response = await fetch(apiPath("/api/strategies"), {
         method: "POST",
         headers: {
           "Content-Type": "application/json",
@@ -48,6 +46,8 @@ export default function NewStrategy() {
           timeframe: formData.timeframe,
           description: formData.description,
           market_type: "spot",
+          // Explicit draft — no executable rules yet
+          force_draft: true,
           entry_rules: {},
           exit_rules: {},
           created_by: "user",
@@ -59,9 +59,6 @@ export default function NewStrategy() {
         throw new Error(errorData.error || "Failed to create strategy");
       }
 
-      const result = await response.json();
-
-      // Redirect to the strategies list page
       router.push("/strategies");
     } catch (err) {
       setError(err instanceof Error ? err.message : "Failed to create strategy");
@@ -79,8 +76,10 @@ export default function NewStrategy() {
           >
             ← Back
           </button>
-          <h1 className="text-4xl font-bold text-white">Create New Strategy</h1>
-          <p className="mt-2 text-slate-400">Set up a custom trading strategy</p>
+          <h1 className="text-4xl font-bold text-white">Create Draft Strategy</h1>
+          <p className="mt-2 text-slate-400">
+            Saves a non-executable draft placeholder. For Truth Engine backtests, use AI Generate.
+          </p>
         </div>
       </header>
 
@@ -91,6 +90,15 @@ export default function NewStrategy() {
               <p className="text-red-300">{error}</p>
             </div>
           )}
+
+          <div className="mb-6 p-4 bg-amber-900/20 border border-amber-700 rounded-lg text-sm text-amber-200">
+            This form creates a <strong>Draft / non-executable</strong> strategy (empty rules).
+            It is <strong>not</strong> ready for Truth Engine backtesting. Prefer{" "}
+            <a href="/strategies/claude-generate" className="underline text-emerald-300">
+              Generate with Claude
+            </a>{" "}
+            for executable strategies.
+          </div>
 
           <form onSubmit={handleCreate} className="space-y-6">
             <div>
@@ -112,15 +120,17 @@ export default function NewStrategy() {
               <label className="block text-sm font-semibold text-white mb-2">
                 Symbol *
               </label>
-              <input
-                type="text"
+              <select
                 name="symbol"
                 value={formData.symbol}
                 onChange={handleChange}
-                className="w-full bg-slate-700/50 border border-slate-600 text-white rounded-lg px-4 py-2 placeholder-slate-500 focus:outline-none focus:ring-2 focus:ring-emerald-500 focus:border-transparent transition"
-                placeholder="e.g., BTCUSDT"
+                className="w-full bg-slate-700/50 border border-slate-600 text-white rounded-lg px-4 py-2 focus:outline-none focus:ring-2 focus:ring-emerald-500 focus:border-transparent transition"
                 required
-              />
+              >
+                <option value="BTCUSDT">BTCUSDT</option>
+                <option value="ETHUSDT">ETHUSDT</option>
+                <option value="SOLUSDT">SOLUSDT</option>
+              </select>
             </div>
 
             <div>
@@ -134,10 +144,9 @@ export default function NewStrategy() {
                 className="w-full bg-slate-700/50 border border-slate-600 text-white rounded-lg px-4 py-2 focus:outline-none focus:ring-2 focus:ring-emerald-500 focus:border-transparent transition"
                 required
               >
+                <option value="15m">15 Minutes</option>
                 <option value="1h">1 Hour</option>
                 <option value="4h">4 Hours</option>
-                <option value="1d">1 Day</option>
-                <option value="1w">1 Week</option>
               </select>
             </div>
 
@@ -160,7 +169,7 @@ export default function NewStrategy() {
               disabled={loading}
               className="w-full bg-emerald-500 hover:bg-emerald-600 disabled:bg-slate-700 disabled:cursor-not-allowed text-white font-semibold py-3 rounded-lg transition-colors"
             >
-              {loading ? "Creating..." : "Create Strategy"}
+              {loading ? "Creating..." : "Save Draft (non-executable)"}
             </button>
           </form>
         </div>

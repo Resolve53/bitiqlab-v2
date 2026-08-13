@@ -26,6 +26,8 @@ interface Strategy {
   total_return: number;
   created_at: string;
   updated_at: string;
+  executable?: boolean;
+  executability?: string;
 }
 
 interface SummaryRow {

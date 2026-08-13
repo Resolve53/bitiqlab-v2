@@ -81,6 +81,8 @@ export interface CreateStrategyRequest {
   entry_rules?: EntryRules;
   exit_rules?: ExitRules;
   created_by?: string;
+  /** Optional AI / executability metadata stored in ai_enhancement JSONB */
+  ai_enhancement?: AIEnhancement;
 }
 
 /**
