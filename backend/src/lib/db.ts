@@ -307,6 +307,60 @@ export class DatabaseService {
   }
 
   /**
+   * Phase 2 validation reports (append-only; never overwrite).
+   */
+  async createStrategyValidation(row: {
+    strategy_id: string;
+    strategy_version?: number;
+    strategy_snapshot: unknown;
+    status: string;
+    gate: unknown;
+    report: unknown;
+    dataset_provenance?: unknown;
+    symbol?: string;
+    timeframe?: string;
+  }) {
+    const { data, error } = await this.client
+      .from("strategy_validations")
+      .insert([row])
+      .select()
+      .single();
+
+    if (error) {
+      // Migration 009 may not be applied yet — still return report to client.
+      if (/strategy_validations|relation|does not exist/i.test(error.message)) {
+        console.warn(
+          "strategy_validations table missing; validation report not persisted:",
+          error.message
+        );
+        return { id: null, ...row, created_at: new Date().toISOString() };
+      }
+      throw new Error(
+        `Failed to create strategy validation: ${error.message}`
+      );
+    }
+    return data;
+  }
+
+  async listStrategyValidations(strategyId: string) {
+    const { data, error } = await this.client
+      .from("strategy_validations")
+      .select("*")
+      .eq("strategy_id", strategyId)
+      .order("created_at", { ascending: false });
+
+    if (error) {
+      if (/strategy_validations|relation|does not exist/i.test(error.message)) {
+        return [];
+      }
+      throw new Error(
+        `Failed to list strategy validations: ${error.message}`
+      );
+    }
+    return data;
+  }
+
+  /**
    * Paper Trade Operations
    */
   async createPaperTrade(trade: {
