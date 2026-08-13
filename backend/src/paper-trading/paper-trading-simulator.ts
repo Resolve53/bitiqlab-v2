@@ -78,6 +78,19 @@ export class PaperTradingSimulator {
    * Process incoming signal
    */
   async processSignal(signal: StrategySignal, currentPrice: number): Promise<void> {
+    const { LEGACY_PAPER_EXECUTION_DISABLED } = await import(
+      "@/lib/trading-safety"
+    );
+    void signal;
+    void currentPrice;
+    throw new Error(LEGACY_PAPER_EXECUTION_DISABLED);
+  }
+
+  /** @deprecated Phase 4A quarantined — unreachable legacy body kept for reference only via rename */
+  async processSignalLegacyUnreachable(
+    signal: StrategySignal,
+    currentPrice: number
+  ): Promise<void> {
     if (signal.type === "entry") {
       this.handleEntrySignal(signal, currentPrice);
     } else if (signal.type === "exit") {

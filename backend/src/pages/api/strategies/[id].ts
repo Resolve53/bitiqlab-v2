@@ -7,6 +7,7 @@
 import type { NextApiRequest, NextApiResponse } from "next";
 import { getDB } from "@/lib/db";
 import { sendSuccess, sendError, asyncHandler, handleCORSPreflight } from "@/lib/utils";
+import { STATUS_APPROVED_VIA_PATCH_DISABLED } from "@/lib/trading-safety";
 
 export default asyncHandler(async (req: NextApiRequest, res: NextApiResponse) => {
   // Handle CORS preflight
@@ -36,6 +37,10 @@ export default asyncHandler(async (req: NextApiRequest, res: NextApiResponse) =>
             400,
             req
           );
+        }
+        // Phase 4A: UI status-only → approved is not a promotion mechanism.
+        if (req.body.status === "approved" && strategy.status !== "approved") {
+          return sendError(res, STATUS_APPROVED_VIA_PATCH_DISABLED, 403, req);
         }
       }
 

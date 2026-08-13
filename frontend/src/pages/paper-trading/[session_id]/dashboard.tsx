@@ -65,7 +65,7 @@ export default function PaperTradingDashboard() {
   const [stats, setStats] = useState<SessionStats | null>(null);
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState<string | null>(null);
-  const [autoTrade, setAutoTrade] = useState(true);
+  const [autoTrade] = useState(false);
   const [monitoring, setMonitoring] = useState(false);
   const [registering, setRegistering] = useState(false);
   const [registered, setRegistered] = useState(false);
@@ -74,28 +74,45 @@ export default function PaperTradingDashboard() {
   const [multiCoinConfig, setMultiCoinConfig] = useState<any>(null);
   const [monitoredCoins, setMonitoredCoins] = useState<string[]>([]);
   const [showTradeHistory, setShowTradeHistory] = useState(false);
+  const [phase4Notice, setPhase4Notice] = useState<string | null>(null);
+  const [lifecycleStatus, setLifecycleStatus] = useState<string | null>(null);
 
   useEffect(() => {
     if (!session_id || typeof session_id !== "string") return;
 
     fetchStats();
+    fetchPhase4Session();
     const interval = setInterval(fetchStats, 5000); // Refresh every 5 seconds
 
     return () => clearInterval(interval);
   }, [session_id]);
 
-  // Continuous monitoring loop
+  // Phase 4A: legacy auto_trade /monitor loop is disabled.
   useEffect(() => {
-    if (!monitoring || !session_id) return;
-
-    const monitoringInterval = setInterval(() => {
-      handleStartMonitoring();
-    }, 5000); // Call monitor endpoint every 5 seconds
-
-    return () => clearInterval(monitoringInterval);
-  }, [monitoring, session_id]);
+    setMonitoring(false);
+  }, [session_id]);
 
   const prevTradeCountRef = useRef(0);
+
+  const fetchPhase4Session = async () => {
+    if (!session_id || typeof session_id !== "string") return;
+    try {
+      const response = await axios.get(
+        apiPath(`/api/paper-forward/sessions/${session_id}`)
+      );
+      const session = response.data?.data?.session;
+      const notice = response.data?.data?.notice;
+      if (session?.lifecycle_status) {
+        setLifecycleStatus(session.lifecycle_status);
+      }
+      if (notice) setPhase4Notice(notice);
+    } catch {
+      // Legacy session without Phase 4A columns — still show safety banner.
+      setPhase4Notice(
+        "Paper Forward Engine pending / not executing trades yet (Phase 4A). Legacy auto-trade is disabled."
+      );
+    }
+  };
 
   const fetchStats = async () => {
     try {
@@ -105,14 +122,10 @@ export default function PaperTradingDashboard() {
       const stats = response.data.data;
       setStats(stats);
 
-      // Load monitored coins from multi-coin config if available
+      // Load monitored coins from multi-coin config if available (display only)
       if (stats.coins_being_monitored && stats.coins_being_monitored.length > 0) {
         setMonitoredCoins(stats.coins_being_monitored);
         setMultiCoinConfig(stats.multi_coin_config);
-        // Auto-enable monitoring if config exists
-        if (stats.multi_coin_config) {
-          setMonitoring(true);
-        }
       }
 
       setError(null);
@@ -125,8 +138,8 @@ export default function PaperTradingDashboard() {
           symbol: stats.trades[0]?.symbol || "BTCUSDT",
           timeframe: "1h",
           initial_balance: stats.initial_balance,
-          auto_trade: autoTrade,
-          monitoring_enabled: monitoring,
+          auto_trade: false,
+          monitoring_enabled: false,
           monitored_coins: monitoredCoins,
           created_at: Date.now(),
           last_updated: Date.now(),
@@ -159,20 +172,10 @@ export default function PaperTradingDashboard() {
   };
 
   const handleStartMonitoring = async () => {
-    try {
-      const response = await axios.post(apiPath("/api/paper-trading/monitor"), {
-        session_id,
-        auto_trade: autoTrade,
-      });
-      console.log("[Monitor] Cycle completed:", response.data);
-      // Refresh stats after monitoring cycle
-      await fetchStats();
-    } catch (err) {
-      const errorMsg = err instanceof Error ? err.message : "Failed to monitor session";
-      console.error("[Monitor] Error:", errorMsg);
-      setError(errorMsg);
-      // Don't disable monitoring on error - let it retry next cycle
-    }
+    setError(
+      "Legacy paper execution is disabled. Phase 4 live-forward engine is not enabled yet."
+    );
+    setMonitoring(false);
   };
 
   const handleStopMonitoring = async () => {
@@ -222,13 +225,20 @@ export default function PaperTradingDashboard() {
       {/* Header */}
       <header className="border-b border-slate-800 bg-slate-950/50 backdrop-blur sticky top-0 z-40">
         <div className="max-w-7xl mx-auto px-4 sm:px-6 lg:px-8 py-6">
+          <div className="mb-4 rounded-lg border border-amber-500/40 bg-amber-500/10 px-4 py-3 text-sm text-amber-100">
+            {phase4Notice ||
+              "Paper Forward Engine pending / not executing trades yet (Phase 4A)."}
+            {lifecycleStatus ? (
+              <span className="ml-2 font-semibold">Lifecycle: {lifecycleStatus}</span>
+            ) : null}
+          </div>
           <div className="flex justify-between items-start">
             <div>
               <h1 className="text-4xl font-bold text-white">
                 {stats.strategy_name} - Paper Trading
               </h1>
               <p className="mt-2 text-slate-400">
-                Real-time simulation with Binance testnet
+                Phase 4A safety session — no exchange orders until Phase 4B
               </p>
             </div>
             <div className="flex gap-3">
@@ -238,21 +248,17 @@ export default function PaperTradingDashboard() {
               >
                 📊 {showTradeHistory ? "Hide" : "Show"} History
               </button>
-              {!monitoring ? (
-                <button
-                  onClick={() => setShowMultiCoinWizard(true)}
-                  className="bg-emerald-600 hover:bg-emerald-500 text-white font-bold py-2 px-4 rounded-lg transition flex items-center gap-2"
-                >
-                  🚀 Advanced Monitor
-                </button>
-              ) : (
-                <button
-                  onClick={handleStopMonitoring}
-                  className="bg-red-600 hover:bg-red-500 text-white font-bold py-2 px-4 rounded-lg transition"
-                >
-                  ⏹️ Stop Monitoring
-                </button>
-              )}
+              <button
+                onClick={() =>
+                  setError(
+                    "Legacy multi-coin monitor is disabled in Phase 4A."
+                  )
+                }
+                className="bg-slate-700 text-slate-300 font-bold py-2 px-4 rounded-lg cursor-not-allowed"
+                title="Disabled in Phase 4A"
+              >
+                Advanced Monitor (disabled)
+              </button>
               <button
                 onClick={() => router.push("/strategies")}
                 className="bg-slate-700 hover:bg-slate-600 text-white font-bold py-2 px-4 rounded-lg transition"
@@ -316,7 +322,7 @@ export default function PaperTradingDashboard() {
           </div>
         </div>
 
-        {/* Auto-Trade Settings */}
+        {/* Auto-Trade Settings — Phase 4A quarantined */}
         <div className="bg-slate-800/50 border border-slate-700 rounded-lg p-6 mb-8">
           <h2 className="text-xl font-bold text-white mb-4">Trading Settings</h2>
           <div className="space-y-4">
@@ -324,52 +330,27 @@ export default function PaperTradingDashboard() {
               <input
                 type="checkbox"
                 id="autoTrade"
-                checked={autoTrade}
-                onChange={(e) => setAutoTrade(e.target.checked)}
-                className="w-5 h-5 rounded"
-                disabled={monitoring}
+                checked={false}
+                disabled
+                className="w-5 h-5 rounded opacity-50"
               />
-              <label htmlFor="autoTrade" className="text-white">
-                Auto-execute trades when signals are generated
+              <label htmlFor="autoTrade" className="text-slate-400">
+                Auto-execute trades — disabled (Phase 4A)
               </label>
-              {monitoring && (
-                <span className="ml-4 text-emerald-400 text-sm font-semibold">
-                  ● Monitoring Active
-                </span>
-              )}
             </div>
 
             <div className="pt-4 border-t border-slate-700">
               <p className="text-slate-400 text-sm mb-3">
-                {registered
-                  ? "✓ Strategy registered with TradingView - Monitor live chart signals"
-                  : "Connect to TradingView to automatically monitor live chart signals and execute trades"
-                }
+                TradingView webhook order execution is disabled in Phase 4A.
               </p>
               <div className="flex gap-3 items-center">
                 <button
                   onClick={handleRegisterTradingView}
-                  disabled={registering || registered}
-                  className={`px-4 py-2 rounded-lg font-semibold transition ${
-                    registered
-                      ? "bg-emerald-900/30 text-emerald-400 cursor-default"
-                      : registering
-                      ? "bg-slate-600 text-slate-400 cursor-wait"
-                      : "bg-blue-600 hover:bg-blue-500 text-white cursor-pointer"
-                  }`}
+                  disabled
+                  className="px-4 py-2 rounded-lg font-semibold bg-slate-700 text-slate-400 cursor-not-allowed"
                 >
-                  {registered ? "✓ Registered with TradingView" : registering ? "Registering..." : "Register with TradingView"}
+                  Register with TradingView (disabled)
                 </button>
-                {registered && registrationData?.tradingview_url && (
-                  <a
-                    href={registrationData.tradingview_url}
-                    target="_blank"
-                    rel="noopener noreferrer"
-                    className="px-4 py-2 bg-purple-600 hover:bg-purple-500 text-white rounded-lg font-semibold transition"
-                  >
-                    Open TradingView →
-                  </a>
-                )}
               </div>
 
               {registered && registrationData?.setup_guide && (

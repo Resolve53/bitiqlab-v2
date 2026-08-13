@@ -183,18 +183,12 @@ export default function StrategyAnalysisPage() {
                   {promoting ? "Promoting…" : "Promote to Bitiq"}
                 </button>
               )}
-              {!promotionStatus?.deployed_to_bitiq &&
-                promotionStatus?.readiness &&
-                !promotionStatus.readiness.ready && (
-                  <button
-                    type="button"
-                    disabled={promoting}
-                    onClick={() => handlePromoteToBitiq(true)}
-                    className="text-xs text-amber-400 hover:text-amber-300"
-                  >
-                    Force promote (override gates)
-                  </button>
-                )}
+              {!promotionStatus?.deployed_to_bitiq && (
+                <p className="text-xs text-slate-500 max-w-xs text-right">
+                  Force promote is disabled (Phase 4A). Automatic Bitiq
+                  promotion is unavailable until paper-forward evidence exists.
+                </p>
+              )}
               {promoteMessage && (
                 <p className="text-xs text-slate-400 max-w-xs text-right">
                   {promoteMessage}
