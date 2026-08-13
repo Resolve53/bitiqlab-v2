@@ -2,6 +2,12 @@
 
 ## Railway Deployment
 
+> Redeploy note (2026-08-13): Phase 3 (`POST /api/research/run`) is on `main`.
+> If the `bitiqlab-v2` backend Railway service failed with
+> `failed to start workflow: context deadline exceeded`, trigger a fresh
+> GitHub → Railway deploy of that service only. No application code change
+> is required for that infrastructure start failure.
+
 This monorepo contains 4 services that need to be deployed to Railway:
 
 ### Services
