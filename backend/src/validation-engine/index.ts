@@ -27,4 +27,5 @@ export {
 export { DEFAULT_COST_STRESS_CASES } from "./cost-stress";
 export { evaluateSampleIntegrity } from "./sample-integrity";
 export { evaluateGate } from "./gate";
+export { summarizeMetrics } from "./types";
 export type * from "./types";

@@ -5,6 +5,7 @@ import { apiFetch } from "@/lib/api";
 import BacktestModal from "@/components/BacktestModal";
 import PaperTradingModal from "@/components/PaperTradingModal";
 import ValidationModal from "@/components/ValidationModal";
+import ResearchModal from "@/components/ResearchModal";
 import StrategyCard, {
   type StrategyLiveStats,
 } from "@/components/StrategyCard";
@@ -48,6 +49,8 @@ export default function StrategiesPage() {
   const [selectedStrategyForBacktest, setSelectedStrategyForBacktest] =
     useState<Strategy | null>(null);
   const [selectedStrategyForValidation, setSelectedStrategyForValidation] =
+    useState<Strategy | null>(null);
+  const [selectedStrategyForResearch, setSelectedStrategyForResearch] =
     useState<Strategy | null>(null);
   const [selectedStrategyForPaperTrading, setSelectedStrategyForPaperTrading] =
     useState<Strategy | null>(null);
@@ -186,6 +189,7 @@ export default function StrategiesPage() {
                 onRunValidation={() =>
                   setSelectedStrategyForValidation(strategy)
                 }
+                onRunResearch={() => setSelectedStrategyForResearch(strategy)}
                 onStartPaperTrading={() =>
                   setSelectedStrategyForPaperTrading(strategy)
                 }
@@ -227,6 +231,14 @@ export default function StrategiesPage() {
           strategyId={selectedStrategyForValidation.id}
           symbol={selectedStrategyForValidation.symbol}
           onClose={() => setSelectedStrategyForValidation(null)}
+        />
+      )}
+
+      {selectedStrategyForResearch && (
+        <ResearchModal
+          strategyId={selectedStrategyForResearch.id}
+          symbol={selectedStrategyForResearch.symbol}
+          onClose={() => setSelectedStrategyForResearch(null)}
         />
       )}
 

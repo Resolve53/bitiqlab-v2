@@ -6,6 +6,10 @@
 
 import { createClient, SupabaseClient } from "@supabase/supabase-js";
 import { Strategy, CreateStrategyRequest } from "../core";
+import {
+  Phase3PersistenceError,
+  throwIfMissingPhase3Relation,
+} from "@/research-engine/persistence-errors";
 
 /**
  * Database Service
@@ -358,6 +362,146 @@ export class DatabaseService {
       );
     }
     return data;
+  }
+
+  /**
+   * Phase 3 — immutable strategy versions (append-only).
+   * Fail closed if migrations 010/011 are not applied — never fabricate records.
+   */
+  async createStrategyVersion(row: {
+    strategy_id: string;
+    version: number;
+    parent_version?: number | null;
+    source: string;
+    strategy_snapshot: unknown;
+    snapshot_hash: string;
+    notes?: string;
+  }) {
+    const { data, error } = await this.client
+      .from("strategy_versions")
+      .insert([row])
+      .select()
+      .single();
+
+    if (error) {
+      throwIfMissingPhase3Relation("strategy_versions", error.message);
+      if (/duplicate|unique/i.test(error.message)) {
+        // Already snapshotted this version — idempotent only when table exists
+        const existing = await this.getStrategyVersion(
+          row.strategy_id,
+          row.version
+        );
+        if (existing?.id) return existing;
+      }
+      throw new Phase3PersistenceError(
+        `Failed to create strategy version: ${error.message}`
+      );
+    }
+    if (!data?.id) {
+      throw new Phase3PersistenceError(
+        "createStrategyVersion returned no persisted id"
+      );
+    }
+    return data;
+  }
+
+  async getStrategyVersion(strategyId: string, version: number) {
+    const { data, error } = await this.client
+      .from("strategy_versions")
+      .select("*")
+      .eq("strategy_id", strategyId)
+      .eq("version", version)
+      .maybeSingle();
+    if (error) {
+      throwIfMissingPhase3Relation("strategy_versions", error.message);
+      throw new Phase3PersistenceError(
+        `Failed to get strategy version: ${error.message}`
+      );
+    }
+    return data;
+  }
+
+  async createResearchRun(row: Record<string, unknown>) {
+    const { data, error } = await this.client
+      .from("strategy_research_runs")
+      .insert([row])
+      .select()
+      .single();
+    if (error) {
+      throwIfMissingPhase3Relation("strategy_research_runs", error.message);
+      throw new Phase3PersistenceError(
+        `Failed to create research run: ${error.message}`
+      );
+    }
+    if (!data?.id) {
+      throw new Phase3PersistenceError(
+        "createResearchRun returned no persisted id"
+      );
+    }
+    return data;
+  }
+
+  async updateResearchRun(id: string, updates: Record<string, unknown>) {
+    const { data, error } = await this.client
+      .from("strategy_research_runs")
+      .update(updates)
+      .eq("id", id)
+      .select()
+      .single();
+    if (error) {
+      throwIfMissingPhase3Relation("strategy_research_runs", error.message);
+      throw new Phase3PersistenceError(
+        `Failed to update research run: ${error.message}`
+      );
+    }
+    if (!data?.id) {
+      throw new Phase3PersistenceError(
+        "updateResearchRun returned no persisted id"
+      );
+    }
+    return data;
+  }
+
+  async appendResearchExperiment(row: Record<string, unknown>) {
+    const { data, error } = await this.client
+      .from("strategy_research_experiments")
+      .insert([row])
+      .select()
+      .single();
+    if (error) {
+      throwIfMissingPhase3Relation(
+        "strategy_research_experiments",
+        error.message
+      );
+      throw new Phase3PersistenceError(
+        `Failed to append research experiment: ${error.message}`
+      );
+    }
+    if (!data?.id) {
+      throw new Phase3PersistenceError(
+        "appendResearchExperiment returned no persisted id"
+      );
+    }
+    return data;
+  }
+
+  /**
+   * List research runs. Missing Phase 3 tables fail closed (clear error),
+   * never silently pretend there are zero runs after a successful research UX.
+   */
+  async listResearchRuns(strategyId: string) {
+    const { data, error } = await this.client
+      .from("strategy_research_runs")
+      .select("*")
+      .eq("strategy_id", strategyId)
+      .order("started_at", { ascending: false });
+    if (error) {
+      throwIfMissingPhase3Relation("strategy_research_runs", error.message);
+      throw new Phase3PersistenceError(
+        `Failed to list research runs: ${error.message}`
+      );
+    }
+    return data ?? [];
   }
 
   /**

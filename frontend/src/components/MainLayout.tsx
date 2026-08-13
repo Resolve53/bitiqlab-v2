@@ -80,7 +80,7 @@ function SidebarContent({
     { label: "On-Chain", href: "/on-chain", icon: "🔗", color: "from-green-500 to-cyan-500" },
     { label: "Calendar", href: "/calendar", icon: "📅", color: "from-indigo-500 to-blue-500" },
     { label: "Backtest", href: "/backtest", icon: "🧪", color: "from-violet-500 to-purple-500" },
-    { label: "Research Agent", href: "/research-agent", icon: "🤖", color: "from-cyan-500 to-teal-500" },
+    { label: "AI Generate", href: "/strategies/claude-generate", icon: "🤖", color: "from-cyan-500 to-teal-500" },
   ];
 
   return (
