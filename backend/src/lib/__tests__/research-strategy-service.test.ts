@@ -56,6 +56,7 @@ describe("generateStrategyFromPrompt — validate before save", () => {
   beforeEach(() => {
     vi.clearAllMocks();
     process.env.ANTHROPIC_API_KEY = "test-key";
+    process.env.STRATEGY_CLAUDE_MODEL = "claude-test-model-for-unit";
     createStrategy.mockImplementation(async (input: Record<string, unknown>) => ({
       id: "saved-1",
       name: input.name,
@@ -83,9 +84,60 @@ describe("generateStrategyFromPrompt — validate before save", () => {
     createStrategyAuditLog.mockResolvedValue({});
   });
 
+  it("rejects missing ANTHROPIC_API_KEY without saving", async () => {
+    delete process.env.ANTHROPIC_API_KEY;
+    await expect(
+      generateStrategyFromPrompt({
+        prompt: "long",
+        symbol: "BTCUSDT",
+        timeframe: "1h",
+        market_type: "spot",
+      })
+    ).rejects.toThrow(/ANTHROPIC_API_KEY/);
+    expect(createStrategy).not.toHaveBeenCalled();
+  });
+
+  it("rejects missing STRATEGY_CLAUDE_MODEL without saving", async () => {
+    delete process.env.STRATEGY_CLAUDE_MODEL;
+    await expect(
+      generateStrategyFromPrompt({
+        prompt: "long",
+        symbol: "BTCUSDT",
+        timeframe: "1h",
+        market_type: "spot",
+      })
+    ).rejects.toThrow(/STRATEGY_CLAUDE_MODEL is required/);
+    expect(createStrategy).not.toHaveBeenCalled();
+  });
+
+  it("accepts explicit injected generator model when env model is unset", async () => {
+    delete process.env.STRATEGY_CLAUDE_MODEL;
+    const client = mockGenSequence([validLongStrategy()]);
+    const generator = new StrategyGenerator("k", {
+      client: client as any,
+      model: "injected-only-model",
+    });
+    const result = await generateStrategyFromPrompt({
+      prompt: "long RSI",
+      symbol: "BTCUSDT",
+      timeframe: "1h",
+      market_type: "spot",
+      generator,
+    });
+    expect(createStrategy).toHaveBeenCalledTimes(1);
+    expect(result.analysis.model).toBe("injected-only-model");
+    const createCalls = client._create.mock.calls as unknown as Array<
+      [Record<string, unknown>]
+    >;
+    expect(createCalls[0][0].model).toBe("injected-only-model");
+  });
+
   it("saves only after Truth Engine validation succeeds", async () => {
     const client = mockGenSequence([validLongStrategy()]);
-    const generator = new StrategyGenerator("k", { client: client as any });
+    const generator = new StrategyGenerator("k", {
+      client: client as any,
+      model: "claude-test-model-for-unit",
+    });
     const result = await generateStrategyFromPrompt({
       prompt: "long RSI",
       symbol: "BTCUSDT",
@@ -128,7 +180,10 @@ describe("generateStrategyFromPrompt — validate before save", () => {
     };
     // Actually coercePercent(0) returns 0 which fails `!stopLossPct || stopLossPct <= 0`
     const client = mockGenSequence([invalidForTe, validLongStrategy()]);
-    const generator = new StrategyGenerator("k", { client: client as any });
+    const generator = new StrategyGenerator("k", {
+      client: client as any,
+      model: "claude-test-model-for-unit",
+    });
     const result = await generateStrategyFromPrompt({
       prompt: "long",
       symbol: "BTCUSDT",
@@ -147,7 +202,10 @@ describe("generateStrategyFromPrompt — validate before save", () => {
       stop_loss_percent: 0,
     };
     const client = mockGenSequence([bad, bad]);
-    const generator = new StrategyGenerator("k", { client: client as any });
+    const generator = new StrategyGenerator("k", {
+      client: client as any,
+      model: "claude-test-model-for-unit",
+    });
     await expect(
       generateStrategyFromPrompt({
         prompt: "long",
@@ -169,6 +227,7 @@ describe("generateStrategyFromPrompt — validate before save", () => {
         market_type: "spot",
         generator: new StrategyGenerator("k", {
           client: mockGenSequence([validLongStrategy()]) as any,
+          model: "claude-test-model-for-unit",
         }),
       })
     ).rejects.toThrow(/Unsupported timeframe/);
@@ -178,7 +237,10 @@ describe("generateStrategyFromPrompt — validate before save", () => {
   it("persistence round-trip preserves executable semantics", async () => {
     const g = validLongStrategy();
     const client = mockGenSequence([g]);
-    const generator = new StrategyGenerator("k", { client: client as any });
+    const generator = new StrategyGenerator("k", {
+      client: client as any,
+      model: "claude-test-model-for-unit",
+    });
     const result = await generateStrategyFromPrompt({
       prompt: "long",
       symbol: "BTCUSDT",

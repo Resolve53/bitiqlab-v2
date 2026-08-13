@@ -69,6 +69,7 @@ export function getMetadata(): Promise<Metadata>;
 
 export class StrategyGenerator {
   constructor(apiKey: string, options?: { client?: unknown; model?: string });
+  readonly model: string;
   generate(config: GenerateConfig): Promise<GeneratedStrategy>;
   generateCorrected(
     config: GenerateConfig,
@@ -77,6 +78,8 @@ export class StrategyGenerator {
   ): Promise<GeneratedStrategy>;
   suggestImprovements(strategy: any, backtestResult: any): Promise<any>;
 }
+
+export function resolveStrategyClaudeModel(explicitModel?: string): string;
 
 export class AutoresearchOptimizer {
   optimize(strategy: any, backtestData: any): Promise<any>;

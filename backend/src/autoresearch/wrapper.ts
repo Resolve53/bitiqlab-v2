@@ -96,9 +96,20 @@ function asExecutableStrategy(raw: unknown): ClaudeExecutableStrategy {
   };
 }
 
+/** Resolve Claude model: injected override → STRATEGY_CLAUDE_MODEL → fail closed. */
+export function resolveStrategyClaudeModel(explicitModel?: string): string {
+  const injected = explicitModel?.trim();
+  if (injected) return injected;
+  const fromEnv = process.env.STRATEGY_CLAUDE_MODEL?.trim();
+  if (fromEnv) return fromEnv;
+  throw new Error(
+    "STRATEGY_CLAUDE_MODEL is required for AI strategy generation. Set it to an active Anthropic API model ID."
+  );
+}
+
 export class StrategyGenerator {
   private client: AnthropicToolsClient;
-  private model: string;
+  private readonly resolvedModel: string;
 
   constructor(
     apiKey: string,
@@ -107,10 +118,12 @@ export class StrategyGenerator {
     this.client =
       options?.client ||
       (new Anthropic({ apiKey }) as unknown as AnthropicToolsClient);
-    this.model =
-      options?.model ||
-      process.env.STRATEGY_CLAUDE_MODEL ||
-      "claude-opus-4-1";
+    this.resolvedModel = resolveStrategyClaudeModel(options?.model);
+  }
+
+  /** Model ID that will be sent to Anthropic (injected or STRATEGY_CLAUDE_MODEL). */
+  get model(): string {
+    return this.resolvedModel;
   }
 
   private async callSubmitTool(params: {
@@ -119,7 +132,7 @@ export class StrategyGenerator {
   }): Promise<ClaudeExecutableStrategy> {
     const tools = [SUBMIT_EXECUTABLE_STRATEGY_TOOL as unknown as Tool];
     const message = await this.client.beta.tools.messages.create({
-      model: this.model,
+      model: this.resolvedModel,
       max_tokens: 4096,
       system: params.system,
       tools,

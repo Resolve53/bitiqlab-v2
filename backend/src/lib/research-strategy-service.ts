@@ -6,7 +6,10 @@
  * Never saves strategies the Truth Engine cannot execute.
  */
 
-import { StrategyGenerator } from "@/autoresearch/wrapper";
+import {
+  StrategyGenerator,
+  resolveStrategyClaudeModel,
+} from "@/autoresearch/wrapper";
 import {
   PHASE1_SYMBOLS,
   PHASE1_TIMEFRAMES,
@@ -65,7 +68,8 @@ function buildAnalysis(
   strategy: ClaudeExecutableStrategy,
   prompt: string,
   symbol: string,
-  timeframe: string
+  timeframe: string,
+  model: string
 ) {
   const sl = strategy.stop_loss_percent;
   const tp = strategy.take_profit_percent ?? "n/a";
@@ -78,7 +82,7 @@ function buildAnalysis(
     expected_performance: `Designed around your idea: "${prompt.slice(0, 120)}${
       prompt.length > 120 ? "…" : ""
     }". Target TP ${tp}% vs SL ${sl}% — Truth Engine validated before save.`,
-    model: process.env.STRATEGY_CLAUDE_MODEL || "claude-opus-4-1",
+    model,
     schema_version: STRATEGY_SCHEMA_VERSION,
     executable: true as const,
   };
@@ -119,6 +123,12 @@ export async function generateStrategyFromPrompt(
     throw new Error(
       "ANTHROPIC_API_KEY is not configured on the backend. Add it to Railway environment variables."
     );
+  }
+
+  // Production path: require STRATEGY_CLAUDE_MODEL before any Claude call / DB write.
+  // Test path: injected generator already resolved model via constructor options.
+  if (!input.generator) {
+    resolveStrategyClaudeModel();
   }
 
   const {
@@ -241,7 +251,13 @@ export async function generateStrategyFromPrompt(
   }
 
   const analysis = {
-    ...buildAnalysis(generated, prompt, symbol, timeframe),
+    ...buildAnalysis(
+      generated,
+      prompt,
+      symbol,
+      timeframe,
+      generator.model
+    ),
     chart_data,
   };
 
