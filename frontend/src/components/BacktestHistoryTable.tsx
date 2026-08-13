@@ -8,9 +8,11 @@ interface BacktestResult {
   timestamp: string;
   duration_days: number;
   total_return: number;
-  sharpe_ratio: number;
+  sharpe_ratio: number | null;
   max_drawdown: number;
   win_rate: number;
+  result_source?: "REAL_BACKTEST" | "SIMULATED_LEGACY";
+  label?: string;
 }
 
 interface BacktestHistoryTableProps {
@@ -45,7 +47,10 @@ export default function BacktestHistoryTable({
 
   // Find best values for highlighting
   const bestReturn = Math.max(...sorted.map((b) => b.total_return));
-  const bestSharpe = Math.max(...sorted.map((b) => b.sharpe_ratio));
+  const sharpeValues = sorted
+    .map((b) => b.sharpe_ratio)
+    .filter((v): v is number => v != null);
+  const bestSharpe = sharpeValues.length ? Math.max(...sharpeValues) : 0;
   const bestWinRate = Math.max(...sorted.map((b) => b.win_rate));
   const lowestDrawdown = Math.min(...sorted.map((b) => b.max_drawdown));
 
@@ -76,6 +81,7 @@ export default function BacktestHistoryTable({
           <thead>
             <tr className="border-b border-slate-700 bg-slate-900/50">
               <th className="px-6 py-3 text-left text-slate-300 font-semibold">Date</th>
+              <th className="px-6 py-3 text-left text-slate-300 font-semibold">Source</th>
               <th className="px-6 py-3 text-left text-slate-300 font-semibold">Duration</th>
               <th className="px-6 py-3 text-right text-slate-300 font-semibold">Total Return</th>
               <th className="px-6 py-3 text-right text-slate-300 font-semibold">Sharpe Ratio</th>
@@ -92,6 +98,17 @@ export default function BacktestHistoryTable({
                 <td className="px-6 py-4 text-slate-300">
                   {formatDate(backtest.timestamp)}
                 </td>
+                <td className="px-6 py-4">
+                  {backtest.result_source === "REAL_BACKTEST" ? (
+                    <span className="text-emerald-400 text-xs font-semibold">
+                      Real Historical Backtest
+                    </span>
+                  ) : (
+                    <span className="text-amber-400 text-xs font-semibold">
+                      {backtest.label || "Legacy / Unverified"}
+                    </span>
+                  )}
+                </td>
                 <td className="px-6 py-4 text-slate-300">
                   {backtest.duration_days} days
                 </td>
@@ -104,12 +121,15 @@ export default function BacktestHistoryTable({
                   {backtest.total_return.toFixed(2)}%
                 </td>
                 <td
-                  className={`px-6 py-4 text-right font-semibold text-slate-300 ${isBest(
-                    backtest.sharpe_ratio,
-                    bestSharpe
-                  )}`}
+                  className={`px-6 py-4 text-right font-semibold text-slate-300 ${
+                    backtest.sharpe_ratio != null
+                      ? isBest(backtest.sharpe_ratio, bestSharpe)
+                      : ""
+                  }`}
                 >
-                  {backtest.sharpe_ratio.toFixed(2)}
+                  {backtest.sharpe_ratio == null
+                    ? "N/A"
+                    : backtest.sharpe_ratio.toFixed(2)}
                 </td>
                 <td
                   className={`px-6 py-4 text-right font-semibold text-red-400 ${isBest(

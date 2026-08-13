@@ -35,10 +35,15 @@ export default function BacktestModal({
           "Content-Type": "application/json",
         },
         body: JSON.stringify({
+          strategyId,
           strategy_id: strategyId,
+          symbol: coins.split(",")[0]?.trim() || symbol,
           window,
-          start_date: startDate,
-          end_date: endDate,
+          startDate: startDate || undefined,
+          endDate: endDate || undefined,
+          start_date: startDate || undefined,
+          end_date: endDate || undefined,
+          initialCapital: 10000,
         }),
       });
 
@@ -62,7 +67,15 @@ export default function BacktestModal({
       <div className="fixed inset-0 bg-black/70 backdrop-blur flex items-center justify-center p-4 z-50">
         <div className="bg-slate-800 border border-slate-700 rounded-lg max-w-2xl w-full max-h-96 overflow-y-auto">
           <div className="sticky top-0 bg-slate-800 border-b border-slate-700 p-6 flex justify-between items-center">
-            <h2 className="text-2xl font-bold text-white">Backtest Results</h2>
+            <div>
+              <h2 className="text-2xl font-bold text-white">Backtest Results</h2>
+              <p className="text-sm text-emerald-400 mt-1">
+                {results.label ||
+                  (results.result_source === "REAL_BACKTEST"
+                    ? "Real Historical Backtest"
+                    : "Legacy / Unverified")}
+              </p>
+            </div>
             <button
               onClick={onClose}
               className="text-slate-400 hover:text-white text-2xl transition"
@@ -75,7 +88,9 @@ export default function BacktestModal({
             <div>
               <p className="text-sm text-slate-400">Sharpe Ratio</p>
               <p className="text-3xl font-bold text-emerald-400">
-                {results.sharpe_ratio?.toFixed(2) || "N/A"}
+                {results.sharpe_ratio == null
+                  ? "N/A"
+                  : Number(results.sharpe_ratio).toFixed(2)}
               </p>
             </div>
 

@@ -1,54 +1,22 @@
 /**
  * GET /api/strategies/[id]/analysis
- * Returns detailed strategy analysis with metrics and equity curve
- *
- * Query Parameters:
- * - id: Strategy UUID
- *
- * Example: GET /api/strategies/uuid/analysis
+ * Returns strategy analysis. Equity curve comes only from REAL_BACKTEST runs.
+ * Synthetic/random equity curves have been removed.
  */
 
 import type { NextApiRequest, NextApiResponse } from "next";
 import { getDB } from "@/lib/db";
 import { sendSuccess, sendError, asyncHandler } from "@/lib/utils";
 
-interface AnalysisResponse {
-  strategy_id: string;
-  name: string;
-  description: string;
-  symbol: string;
-  timeframe: string;
-  market_type: string;
-
-  current_metrics: {
-    sharpe_ratio: number;
-    max_drawdown: number;
-    win_rate: number;
-    profit_factor: number;
-    total_return: number;
-  };
-
-  risk_metrics: {
-    sortino_ratio: number;
-    calmar_ratio: number;
-    recovery_factor: number;
-    var_95: number;
-  };
-
-  recent_backtests: Array<{
-    id: string;
-    timestamp: string;
-    duration_days: number;
-    total_return: number;
-    sharpe_ratio: number;
-    max_drawdown: number;
-    win_rate: number;
-  }>;
-
-  equity_curve: Array<{
-    timestamp: string;
-    value: number;
-  }>;
+function resolveResultSource(bt: any): "REAL_BACKTEST" | "SIMULATED_LEGACY" {
+  if (bt.result_source === "REAL_BACKTEST") return "REAL_BACKTEST";
+  if (bt.monthly_returns?.result_source === "REAL_BACKTEST") {
+    return "REAL_BACKTEST";
+  }
+  if (bt.provenance || bt.monthly_returns?.provenance) {
+    return "REAL_BACKTEST";
+  }
+  return "SIMULATED_LEGACY";
 }
 
 export default asyncHandler(async (req: NextApiRequest, res: NextApiResponse) => {
@@ -65,36 +33,62 @@ export default asyncHandler(async (req: NextApiRequest, res: NextApiResponse) =>
     }
 
     const db = getDB();
-
-    // Fetch strategy
     const strategy = await db.getStrategy(id);
 
     if (!strategy) {
       return sendError(res, "Strategy not found", 404, req);
     }
 
-    // Generate synthetic equity curve based on metrics
-    // In production, this would come from actual backtest results
-    const equityCurve = generateEquityCurve(
-      10000, // Initial capital
-      strategy.total_return || 0,
-      strategy.max_drawdown || 0,
-      30 // Last 30 days
-    );
-
-    // Fetch recent backtests
     const backtests = await db.listBacktests(id);
-    const recentBacktests = backtests?.slice(0, 5) || [];
+    const recentBacktests = (backtests || []).slice(0, 10).map((bt: any) => {
+      const source = resolveResultSource(bt);
+      return {
+        id: bt.id,
+        timestamp: new Date(bt.created_at).toISOString(),
+        duration_days: calculateDays(bt.start_date, bt.end_date),
+        total_return: (bt.total_return || 0) * 100,
+        sharpe_ratio: bt.sharpe_ratio,
+        max_drawdown: (bt.max_drawdown || 0) * 100,
+        win_rate: (bt.win_rate || 0) * 100,
+        result_source: source,
+        label:
+          source === "REAL_BACKTEST"
+            ? "Real Historical Backtest"
+            : "Legacy / Unverified",
+      };
+    });
 
-    // Calculate additional risk metrics
-    const riskMetrics = calculateRiskMetrics(
-      strategy.total_return || 0,
-      strategy.current_sharpe || 0,
-      strategy.max_drawdown || 0,
-      strategy.win_rate || 0
+    const latestReal = (backtests || []).find(
+      (bt: any) => resolveResultSource(bt) === "REAL_BACKTEST"
     );
 
-    const response: AnalysisResponse = {
+    const equityCurve =
+      latestReal?.monthly_returns?.equity_curve?.map((p: any) => ({
+        timestamp: p.timestamp,
+        value: p.equity,
+      })) || [];
+
+    const riskMetrics = {
+      sortino_ratio:
+        latestReal?.monthly_returns?.metrics?.sortinoRatio ?? null,
+      calmar_ratio: null as number | null,
+      recovery_factor: null as number | null,
+      var_95: null as number | null,
+    };
+
+    if (
+      latestReal?.monthly_returns?.metrics?.totalReturn != null &&
+      latestReal?.max_drawdown
+    ) {
+      const tr = latestReal.monthly_returns.metrics.totalReturn;
+      const dd = latestReal.max_drawdown;
+      if (dd > 0 && tr > 0) {
+        riskMetrics.calmar_ratio = tr / dd;
+        riskMetrics.recovery_factor = tr / dd;
+      }
+    }
+
+    const response = {
       strategy_id: strategy.id,
       name: strategy.name,
       description: strategy.description || "",
@@ -103,30 +97,29 @@ export default asyncHandler(async (req: NextApiRequest, res: NextApiResponse) =>
       market_type: strategy.market_type,
 
       current_metrics: {
-        sharpe_ratio: strategy.current_sharpe || 0,
+        sharpe_ratio: strategy.current_sharpe || null,
         max_drawdown: (strategy.max_drawdown || 0) * 100,
         win_rate: (strategy.win_rate || 0) * 100,
-        profit_factor: 1.0,
+        profit_factor:
+          latestReal?.profit_factor ??
+          latestReal?.monthly_returns?.metrics?.profitFactor ??
+          null,
         total_return: (strategy.total_return || 0) * 100,
+        result_source: latestReal
+          ? "REAL_BACKTEST"
+          : recentBacktests[0]?.result_source || "SIMULATED_LEGACY",
       },
 
       risk_metrics: riskMetrics,
-
-      recent_backtests: recentBacktests.map((bt: any) => ({
-        id: bt.id,
-        timestamp: new Date(bt.created_at).toISOString(),
-        duration_days: calculateDays(bt.start_date, bt.end_date),
-        total_return: (bt.total_return || 0) * 100,
-        sharpe_ratio: bt.sharpe_ratio || 0,
-        max_drawdown: (bt.max_drawdown || 0) * 100,
-        win_rate: (bt.win_rate || 0) * 100,
-      })),
-
+      recent_backtests: recentBacktests,
       equity_curve: equityCurve,
+      equity_curve_note:
+        equityCurve.length === 0
+          ? "No Real Historical Backtest equity curve available. Legacy/unverified runs do not synthesize curves."
+          : "From latest Real Historical Backtest",
     };
 
     res.setHeader("Cache-Control", "public, max-age=300, s-maxage=300");
-
     return sendSuccess(res, response, 200, req);
   } catch (error) {
     console.error("Error in strategy analysis endpoint:", error);
@@ -138,63 +131,13 @@ export default asyncHandler(async (req: NextApiRequest, res: NextApiResponse) =>
   }
 });
 
-/**
- * Generate synthetic equity curve based on strategy metrics
- */
-function generateEquityCurve(
-  initialCapital: number,
-  totalReturn: number,
-  maxDrawdown: number,
-  days: number
-): Array<{ timestamp: string; value: number }> {
-  const curve: Array<{ timestamp: string; value: number }> = [];
-  let currentValue = initialCapital;
-  const dailyReturn = totalReturn / days;
-
-  for (let i = 0; i <= days; i++) {
-    const date = new Date();
-    date.setDate(date.getDate() - (days - i));
-
-    // Add some realistic volatility
-    const volatility = (Math.random() - 0.5) * 0.02;
-    const dayReturn = dailyReturn + volatility;
-    currentValue = currentValue * (1 + dayReturn);
-
-    // Apply drawdown constraint
-    const minValue = initialCapital * (1 - Math.abs(maxDrawdown));
-    currentValue = Math.max(currentValue, minValue);
-
-    curve.push({
-      timestamp: date.toISOString().split("T")[0],
-      value: Math.round(currentValue * 100) / 100,
-    });
-  }
-
-  return curve;
-}
-
-/**
- * Calculate derived risk metrics
- */
-function calculateRiskMetrics(
-  totalReturn: number,
-  sharpeRatio: number,
-  maxDrawdown: number,
-  winRate: number
-) {
-  return {
-    sortino_ratio: sharpeRatio * 1.2, // Sortino is typically higher than Sharpe
-    calmar_ratio: totalReturn > 0 ? totalReturn / Math.max(maxDrawdown, 0.01) : 0,
-    recovery_factor: totalReturn > 0 ? totalReturn / Math.max(maxDrawdown, 0.01) : 0,
-    var_95: -maxDrawdown, // 95% VaR is approximately the max drawdown
-  };
-}
-
-/**
- * Calculate days between two dates
- */
-function calculateDays(startDate: string | Date, endDate: string | Date): number {
+function calculateDays(
+  startDate: string | Date,
+  endDate: string | Date
+): number {
   const start = new Date(startDate);
   const end = new Date(endDate);
-  return Math.ceil((end.getTime() - start.getTime()) / (1000 * 60 * 60 * 24));
+  return Math.ceil(
+    (end.getTime() - start.getTime()) / (1000 * 60 * 60 * 24)
+  );
 }
