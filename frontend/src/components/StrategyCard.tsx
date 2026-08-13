@@ -23,6 +23,9 @@ export interface StrategyCardStrategy {
   backtest_count: number;
   winning_trades?: number;
   losing_trades?: number;
+  /** Truth Engine executable — from list API enrichment */
+  executable?: boolean;
+  executability?: string;
 }
 
 export interface StrategyLiveStats {
@@ -70,6 +73,8 @@ export default function StrategyCard({
   const statusClass =
     STATUS_STYLES[strategy.status] ||
     "bg-slate-700/60 text-slate-300 border-slate-600";
+
+  const isExecutable = strategy.executable === true;
 
   const openSession = async (onFound: (sessionId: string) => void) => {
     const data = await apiFetch<{
@@ -122,6 +127,15 @@ export default function StrategyCard({
             >
               {strategy.status}
             </span>
+            {isExecutable ? (
+              <span className="rounded-full border border-emerald-500/40 bg-emerald-500/15 px-2.5 py-0.5 text-xs font-medium text-emerald-300">
+                Executable
+              </span>
+            ) : (
+              <span className="rounded-full border border-amber-500/40 bg-amber-500/15 px-2.5 py-0.5 text-xs font-medium text-amber-200">
+                Legacy / Requires Regeneration
+              </span>
+            )}
           </div>
 
           {strategy.description && (
@@ -232,8 +246,19 @@ export default function StrategyCard({
           >
             Analysis
           </Link>
-          <ActionBtn onClick={onRunBacktest} variant="blue">
-            Run backtest
+          <ActionBtn
+            onClick={() => {
+              if (!isExecutable) {
+                alert(
+                  "This strategy is not Truth Engine executable (legacy or draft). Regenerate with Claude AI to backtest."
+                );
+                return;
+              }
+              onRunBacktest();
+            }}
+            variant="blue"
+          >
+            {isExecutable ? "Run backtest" : "Backtest unavailable"}
           </ActionBtn>
           <ActionBtn onClick={onStartPaperTrading} variant="primary">
             Start paper

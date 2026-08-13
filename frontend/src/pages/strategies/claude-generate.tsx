@@ -3,6 +3,9 @@ import { apiPath } from "@/lib/api";
 import { useState } from "react";
 import PaperTradingModal from "@/components/PaperTradingModal";
 
+const PHASE1_SYMBOLS = ["BTCUSDT", "ETHUSDT", "SOLUSDT"] as const;
+const PHASE1_TIMEFRAMES = ["15m", "1h", "4h"] as const;
+
 export default function ClaudeGenerateStrategy() {
   const router = useRouter();
   const [loading, setLoading] = useState(false);
@@ -33,12 +36,25 @@ export default function ClaudeGenerateStrategy() {
   const handleGenerate = async (e: React.FormEvent) => {
     e.preventDefault();
     setError(null);
+    setSuccess(false);
+    setAnalysis(null);
     setLoading(true);
 
     try {
-      // Validate
       if (!formData.symbol || !formData.strategy_idea) {
         setError("Please fill in symbol and strategy idea");
+        setLoading(false);
+        return;
+      }
+
+      if (!(PHASE1_SYMBOLS as readonly string[]).includes(formData.symbol)) {
+        setError(`Symbol must be one of: ${PHASE1_SYMBOLS.join(", ")}`);
+        setLoading(false);
+        return;
+      }
+
+      if (!(PHASE1_TIMEFRAMES as readonly string[]).includes(formData.timeframe)) {
+        setError(`Timeframe must be one of: ${PHASE1_TIMEFRAMES.join(", ")}`);
         setLoading(false);
         return;
       }
@@ -51,17 +67,32 @@ export default function ClaudeGenerateStrategy() {
         body: JSON.stringify(formData),
       });
 
+      const payload = await response.json().catch(() => ({}));
+
       if (!response.ok) {
-        const errorData = await response.json();
-        throw new Error(errorData.error || "Failed to generate strategy");
+        throw new Error(
+          payload.error ||
+            payload.message ||
+            "Failed to generate strategy — nothing was saved"
+        );
       }
 
-      const result = await response.json();
-      setAnalysis(result.data);
-      setSuccess(true);
+      const data = payload.data;
+      if (
+        !data?.strategy?.id ||
+        data?.analysis?.executable !== true ||
+        data?.strategy?.entry_rules == null
+      ) {
+        throw new Error(
+          "Generation response was incomplete or non-executable — nothing was saved"
+        );
+      }
 
-      // Stay on results page so user can see Claude's analysis
+      setAnalysis(data);
+      setSuccess(true);
     } catch (err) {
+      setSuccess(false);
+      setAnalysis(null);
       setError(err instanceof Error ? err.message : "Failed to generate strategy");
     } finally {
       setLoading(false);
@@ -73,7 +104,7 @@ export default function ClaudeGenerateStrategy() {
       <div className="min-h-screen bg-gradient-to-b from-slate-950 via-slate-900 to-slate-950">
         <header className="border-b border-slate-800 bg-slate-950/50 backdrop-blur">
           <div className="max-w-7xl mx-auto px-4 sm:px-6 lg:px-8 py-8">
-            <h1 className="text-4xl font-bold text-white">Strategy Created! 🎉</h1>
+            <h1 className="text-4xl font-bold text-white">Strategy Created</h1>
           </div>
         </header>
 
@@ -81,7 +112,10 @@ export default function ClaudeGenerateStrategy() {
           <div className="bg-slate-800/50 border border-slate-700 rounded-lg p-6 space-y-6">
             <div className="bg-emerald-900/20 border border-emerald-700 rounded-lg p-4">
               <p className="text-emerald-300 font-semibold">
-                ✅ Strategy "{analysis.strategy.name}" created successfully!
+                Strategy &quot;{analysis.strategy.name}&quot; validated by Truth Engine and saved.
+              </p>
+              <p className="text-emerald-400/80 text-sm mt-1">
+                Schema {analysis.analysis?.schema_version || "truth_engine_v1"} · executable
               </p>
             </div>
 
@@ -146,7 +180,7 @@ export default function ClaudeGenerateStrategy() {
             </div>
 
             <div className="bg-slate-700/50 border border-slate-600 rounded-lg p-4">
-              <h3 className="font-bold text-white mb-2">Entry Rules</h3>
+              <h3 className="font-bold text-white mb-2">Entry Rules (structured)</h3>
               <pre className="text-xs bg-slate-900 p-2 rounded overflow-auto max-h-40 text-slate-300">
                 {JSON.stringify(analysis.strategy.entry_rules, null, 2)}
               </pre>
@@ -161,7 +195,7 @@ export default function ClaudeGenerateStrategy() {
 
             <div className="bg-blue-900/20 border border-blue-700 rounded-lg p-4 mt-6">
               <p className="text-blue-300 text-sm mb-4">
-                <strong>Next Step:</strong> Test your strategy with paper money (demo account) before trading with real capital.
+                <strong>Next Step:</strong> Run a real historical backtest (Truth Engine) or paper trade before live capital.
               </p>
             </div>
 
@@ -170,7 +204,7 @@ export default function ClaudeGenerateStrategy() {
                 onClick={() => setShowPaperTradingModal(true)}
                 className="flex-1 bg-blue-600 hover:bg-blue-500 text-white py-2 rounded-lg transition font-semibold"
               >
-                🚀 Start Paper Trading
+                Start Paper Trading
               </button>
               <button
                 onClick={() => router.push("/strategies")}
@@ -219,7 +253,7 @@ export default function ClaudeGenerateStrategy() {
             Generate Strategy with Claude AI
           </h1>
           <p className="mt-2 text-slate-400">
-            Describe your trading idea and Claude will analyze market data to create optimized entry/exit rules
+            Describe your idea. Claude returns structured Truth Engine rules (direction + conditions), validated before save.
           </p>
         </div>
       </header>
@@ -228,7 +262,8 @@ export default function ClaudeGenerateStrategy() {
         <div className="bg-slate-800/50 border border-slate-700 rounded-lg p-8">
           {error && (
             <div className="mb-6 p-4 bg-red-900/20 border border-red-800 rounded-lg">
-              <p className="text-red-300">{error}</p>
+              <p className="text-red-300 font-semibold">Generation failed — nothing was saved</p>
+              <p className="text-red-300/90 text-sm mt-1">{error}</p>
             </div>
           )}
 
@@ -238,15 +273,19 @@ export default function ClaudeGenerateStrategy() {
                 <label className="block text-sm font-semibold text-white mb-2">
                   Symbol *
                 </label>
-                <input
-                  type="text"
+                <select
                   name="symbol"
                   value={formData.symbol}
                   onChange={handleChange}
-                  className="w-full bg-slate-700/50 border border-slate-600 text-white rounded-lg px-4 py-2 placeholder-slate-500 focus:outline-none focus:ring-2 focus:ring-emerald-500 focus:border-transparent transition"
-                  placeholder="e.g., BTCUSDT"
+                  className="w-full bg-slate-700/50 border border-slate-600 text-white rounded-lg px-4 py-2 focus:outline-none focus:ring-2 focus:ring-emerald-500 focus:border-transparent transition"
                   required
-                />
+                >
+                  {PHASE1_SYMBOLS.map((s) => (
+                    <option key={s} value={s}>
+                      {s}
+                    </option>
+                  ))}
+                </select>
               </div>
 
               <div>
@@ -260,10 +299,9 @@ export default function ClaudeGenerateStrategy() {
                   className="w-full bg-slate-700/50 border border-slate-600 text-white rounded-lg px-4 py-2 focus:outline-none focus:ring-2 focus:ring-emerald-500 focus:border-transparent transition"
                   required
                 >
+                  <option value="15m">15 Minutes</option>
                   <option value="1h">1 Hour</option>
                   <option value="4h">4 Hours</option>
-                  <option value="1d">1 Day</option>
-                  <option value="1w">1 Week</option>
                 </select>
               </div>
 
@@ -292,20 +330,20 @@ export default function ClaudeGenerateStrategy() {
                 value={formData.strategy_idea}
                 onChange={handleChange}
                 className="w-full bg-slate-700/50 border border-slate-600 text-white rounded-lg px-4 py-2 placeholder-slate-500 focus:outline-none focus:ring-2 focus:ring-emerald-500 focus:border-transparent transition"
-                placeholder="e.g., 'Find oversold RSI levels on 1h timeframe and buy when RSI crosses above 30', 'Use MACD divergence for entry signals', 'Trade when price is near lower Bollinger Band'"
+                placeholder="e.g., Long when RSI(14) < 30 AND close > EMA(50); short when RSI(14) > 70 AND close < EMA(50). Use 2% stop and 4% take profit."
                 rows={6}
                 required
               />
               <p className="text-xs text-slate-500 mt-2">
-                Be specific about technical indicators and market conditions you want to use
+                Be explicit about direction, indicators, periods, and thresholds. Vague prose will be rejected.
               </p>
             </div>
 
             <div className="bg-emerald-900/20 border border-emerald-700 rounded-lg p-4">
               <p className="text-emerald-300 text-sm">
-                <strong>ℹ️ How it works:</strong> Claude will analyze the last 90 days of
-                {" "}{formData.symbol} {formData.timeframe} charts, identify technical
-                indicators, and create optimized entry/exit rules based on your idea.
+                <strong>How it works:</strong> Claude must return structured entries with explicit long/short
+                direction. The same Truth Engine validator used for backtests runs before save. Invalid
+                output is never persisted.
               </p>
             </div>
 
@@ -323,36 +361,36 @@ export default function ClaudeGenerateStrategy() {
                 disabled={loading}
                 className="flex-1 bg-emerald-600 hover:bg-emerald-500 disabled:bg-slate-700 disabled:cursor-not-allowed text-white py-2 rounded-lg transition font-semibold"
               >
-                {loading ? "Claude is analyzing..." : "✨ Generate with Claude"}
+                {loading ? "Claude is compiling rules…" : "Generate with Claude"}
               </button>
             </div>
           </form>
 
           <div className="mt-8 pt-8 border-t border-slate-700">
-            <h3 className="font-bold text-white mb-4">Example Ideas</h3>
+            <h3 className="font-bold text-white mb-4">Example Ideas (executable language)</h3>
             <div className="grid grid-cols-1 md:grid-cols-2 gap-4 text-sm">
               <div className="bg-slate-700/50 border border-slate-600 p-4 rounded-lg">
-                <p className="font-semibold text-white mb-2">📉 Oversold Bounce</p>
+                <p className="font-semibold text-white mb-2">Long RSI mean-reversion</p>
                 <p className="text-slate-400">
-                  "Buy when RSI drops below 30 on 1h candles, sell when RSI crosses above 70 or price closes below 2% support"
+                  &quot;Long only: RSI(14) &lt; 30 and close &gt; SMA(50). Stop 2%, take profit 4%, risk 1%.&quot;
                 </p>
               </div>
               <div className="bg-slate-700/50 border border-slate-600 p-4 rounded-lg">
-                <p className="font-semibold text-white mb-2">🔀 MACD Crossover</p>
+                <p className="font-semibold text-white mb-2">Short RSI stretch</p>
                 <p className="text-slate-400">
-                  {"\"Buy when MACD line crosses above signal line and RSI above 50, sell when MACD line crosses below signal\""}
+                  &quot;Short only: RSI(14) &gt; 70 and close &lt; EMA(20). Stop 2%, take profit 3%.&quot;
                 </p>
               </div>
               <div className="bg-slate-700/50 border border-slate-600 p-4 rounded-lg">
-                <p className="font-semibold text-white mb-2">📊 Bollinger Band</p>
+                <p className="font-semibold text-white mb-2">Dual direction</p>
                 <p className="text-slate-400">
-                  "Buy at lower Bollinger Band with RSI confirmation, take profit at middle band or upper band"
+                  &quot;Long when RSI(14) &lt; 30; short when RSI(14) &gt; 70. Separate setups. Stop 2%.&quot;
                 </p>
               </div>
               <div className="bg-slate-700/50 border border-slate-600 p-4 rounded-lg">
-                <p className="font-semibold text-white mb-2">🎯 Moving Average</p>
+                <p className="font-semibold text-white mb-2">Trend filter</p>
                 <p className="text-slate-400">
-                  "Buy when price bounces off 20-hour MA above 50-hour MA, exit on close below 20MA"
+                  &quot;Long when EMA(20) &gt; EMA(50) AND RSI(14) &lt; 40. Spot, leverage 1, risk 1%.&quot;
                 </p>
               </div>
             </div>
