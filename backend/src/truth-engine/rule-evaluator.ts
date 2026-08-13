@@ -1,6 +1,6 @@
 /**
- * Deterministic rule evaluator:
- * OHLCV + indicators + StrategyDefinition → entry/exit decisions on CLOSED candles.
+ * Deterministic rule evaluator — OHLCV + indicators + explicit condition trees.
+ * Direction comes only from DirectionalEntrySetup.direction — never guessed.
  */
 
 import {
@@ -15,7 +15,6 @@ import type {
   OHLCVBar,
   Rule,
   StrategyDefinition,
-  TradeDirection,
 } from "./types";
 
 export interface RuleEvalResult {
@@ -46,31 +45,31 @@ function readSeriesValue(
   switch (rule.indicator) {
     case "rsi": {
       const period = rule.period ?? 14;
-      const arr = ensurePeriod(series, "rsi", period, closes);
-      return arr[index] ?? null;
+      return ensurePeriod(series, "rsi", period, closes)[index] ?? null;
     }
     case "sma": {
       const period = rule.period ?? 20;
-      const arr = ensurePeriod(series, "sma", period, closes);
-      return arr[index] ?? null;
+      return ensurePeriod(series, "sma", period, closes)[index] ?? null;
     }
     case "ema": {
       const period = rule.period ?? 20;
-      const arr = ensurePeriod(series, "ema", period, closes);
-      return arr[index] ?? null;
+      return ensurePeriod(series, "ema", period, closes)[index] ?? null;
     }
     case "macd": {
-      const field = (rule.field as "line" | "signal" | "histogram") || "histogram";
+      const field =
+        (rule.field as "line" | "signal" | "histogram") || "histogram";
       return series.macd[field][index] ?? null;
     }
     case "bollinger": {
-      const field = (rule.field as "upper" | "middle" | "lower") || "middle";
+      const field =
+        (rule.field as "upper" | "middle" | "lower") || "middle";
       return series.bollinger[field][index] ?? null;
     }
     case "volume":
       return series.volume[index] ?? null;
     case "price": {
-      const field = (rule.field as "open" | "high" | "low" | "close") || "close";
+      const field =
+        (rule.field as "open" | "high" | "low" | "close") || "close";
       return series[field][index] ?? null;
     }
     default:
@@ -152,12 +151,32 @@ function evalIndicatorRule(
             closes
           )
         : null;
-  } else if (rule.operator === "cross_above" || rule.operator === "cross_below") {
+  } else if (
+    rule.operator === "cross_above" ||
+    rule.operator === "cross_below"
+  ) {
     prevRight = rule.value;
   }
 
-  const ok = compare(left, rule.operator, right, prevLeft, prevRight);
-  return { ok, label, left, right };
+  return {
+    ok: compare(left, rule.operator, right, prevLeft, prevRight),
+    label,
+    left,
+    right,
+  };
+}
+
+/** Evaluate a single root condition tree (group op is explicit in the schema). */
+export function evaluateCondition(
+  condition: Rule,
+  series: IndicatorSeries,
+  index: number,
+  closes: number[]
+): RuleEvalResult {
+  if (condition.type === "group") {
+    return evaluateRules(condition.rules, series, index, closes, condition.op);
+  }
+  return evaluateRules([condition], series, index, closes, "and");
 }
 
 export function evaluateRules(
@@ -165,7 +184,7 @@ export function evaluateRules(
   series: IndicatorSeries,
   index: number,
   closes: number[],
-  combine: "and" | "or" = "and"
+  combine: "and" | "or"
 ): RuleEvalResult {
   const conditions: ConditionSnapshot = {};
   const passedRules: string[] = [];
@@ -201,26 +220,9 @@ export function evaluateRules(
   return { passed, conditions, passedRules, failedRules };
 }
 
-function directionForEntry(
-  strategy: StrategyDefinition,
-  conditions: ConditionSnapshot
-): TradeDirection | null {
-  const dirs = strategy.allowedDirections;
-  if (dirs.length === 1) return dirs[0];
-
-  // Prefer RSI heuristics when both allowed
-  for (const [k, v] of Object.entries(conditions)) {
-    if (k.includes("rsi") && k.includes("::left") && typeof v === "number") {
-      if (v <= 40 && dirs.includes("long")) return "long";
-      if (v >= 60 && dirs.includes("short")) return "short";
-    }
-  }
-  return dirs[0] ?? null;
-}
-
 /**
- * Generate signals from closed candles only. Signal at index i is based on
- * bars[0..i]. Execution is deferred to open of i+1 by the executor.
+ * Generate signals from closed candles only.
+ * Each directional entry setup is evaluated independently.
  */
 export function generateSignals(
   bars: OHLCVBar[],
@@ -232,25 +234,28 @@ export function generateSignals(
   const closes = series.close;
   const signals: EvaluatedSignal[] = [];
 
-  // Need at least 1 prior bar for cross operators; start after minimal warmup
   for (let i = 1; i < bars.length; i++) {
-    const entry = evaluateRules(strategy.entryRules, series, i, closes, "and");
-    if (entry.passed) {
-      const direction = directionForEntry(strategy, entry.conditions);
-      if (direction) {
+    for (const setup of strategy.entries) {
+      const entry = evaluateCondition(setup.condition, series, i, closes);
+      if (entry.passed) {
         signals.push({
           barIndex: i,
           timestamp: bars[i].timestamp,
           action: "entry",
-          direction,
+          direction: setup.direction,
           conditions: entry.conditions,
           passedRules: entry.passedRules,
         });
       }
     }
 
-    if (strategy.exitRules.length > 0) {
-      const exit = evaluateRules(strategy.exitRules, series, i, closes, "and");
+    if (strategy.exitCondition) {
+      const exit = evaluateCondition(
+        strategy.exitCondition,
+        series,
+        i,
+        closes
+      );
       if (exit.passed) {
         signals.push({
           barIndex: i,
@@ -266,7 +271,6 @@ export function generateSignals(
   return signals;
 }
 
-/** Evaluate exit rules at a specific closed bar (for open positions). */
 export function shouldExitAtBar(
   bars: OHLCVBar[],
   strategy: StrategyDefinition,
@@ -274,10 +278,10 @@ export function shouldExitAtBar(
   series?: IndicatorSeries
 ): RuleEvalResult {
   const s = series ?? buildIndicatorSeries(bars);
-  if (strategy.exitRules.length === 0) {
+  if (!strategy.exitCondition) {
     return { passed: false, conditions: {}, passedRules: [], failedRules: [] };
   }
-  return evaluateRules(strategy.exitRules, s, index, s.close, "and");
+  return evaluateCondition(strategy.exitCondition, s, index, s.close);
 }
 
 export { buildIndicatorSeries };

@@ -4,7 +4,6 @@ import type { OHLCVBar } from "../types";
 
 function fixtureBars(): OHLCVBar[] {
   const bars: OHLCVBar[] = [];
-  // Flat warmup
   for (let i = 0; i < 20; i++) {
     bars.push({
       timestamp: new Date(Date.UTC(2024, 0, 1, 0, i * 15)),
@@ -15,7 +14,6 @@ function fixtureBars(): OHLCVBar[] {
       volume: 1000,
     });
   }
-  // Signal: close > 100
   bars.push({
     timestamp: new Date(Date.UTC(2024, 0, 1, 5, 0)),
     open: 100,
@@ -24,7 +22,6 @@ function fixtureBars(): OHLCVBar[] {
     close: 101,
     volume: 1500,
   });
-  // Entry + TP
   bars.push({
     timestamp: new Date(Date.UTC(2024, 0, 1, 5, 15)),
     open: 101,
@@ -33,7 +30,6 @@ function fixtureBars(): OHLCVBar[] {
     close: 103,
     volume: 1600,
   });
-  // Trailing bars
   for (let i = 0; i < 5; i++) {
     bars.push({
       timestamp: new Date(Date.UTC(2024, 0, 1, 5, 30 + i * 15)),
@@ -54,15 +50,14 @@ const strategyRow = {
   timeframe: "15m",
   market_type: "spot",
   entry_rules: {
-    rules: [
-      {
-        type: "indicator",
-        indicator: "price",
-        field: "close",
-        operator: ">",
-        value: 100,
-      },
-    ],
+    direction: "long",
+    condition: {
+      type: "indicator",
+      indicator: "price",
+      field: "close",
+      operator: ">",
+      value: 100,
+    },
   },
   exit_rules: {
     stop_loss_percent: 2,
@@ -94,14 +89,15 @@ describe("determinism", () => {
       },
     });
 
-    // Provenance timestamp differs — compare core outputs
     expect(a.trades).toEqual(b.trades);
     expect({ ...a.metrics, equityCurve: undefined }).toEqual({
       ...b.metrics,
       equityCurve: undefined,
     });
     expect(a.metrics.equityCurve).toEqual(b.metrics.equityCurve);
-    expect(a.signals.map((s) => ({ ...s, timestamp: s.timestamp.toISOString() }))).toEqual(
+    expect(
+      a.signals.map((s) => ({ ...s, timestamp: s.timestamp.toISOString() }))
+    ).toEqual(
       b.signals.map((s) => ({ ...s, timestamp: s.timestamp.toISOString() }))
     );
     expect(a.resultSource).toBe("REAL_BACKTEST");

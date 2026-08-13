@@ -1,10 +1,10 @@
 /**
- * Strict StrategyDefinition schema + legacy text → structured rule conversion.
- * Malformed Claude / DB output fails clearly — never silently ignored.
+ * Strict StrategyDefinition schema + legacy migration (fail loud, never invent).
  */
 
 import { z } from "zod";
 import type {
+  DirectionalEntrySetup,
   IndicatorRule,
   Rule,
   StrategyDefinition,
@@ -65,6 +65,11 @@ const ruleSchema: z.ZodType<Rule> = z.lazy(() =>
   ])
 );
 
+const directionalEntrySchema = z.object({
+  direction: z.enum(["long", "short"]),
+  condition: ruleSchema,
+});
+
 export const strategyDefinitionSchema = z.object({
   id: z.string().min(1),
   name: z.string().min(1),
@@ -74,12 +79,8 @@ export const strategyDefinitionSchema = z.object({
   biasTimeframe: z.string().optional(),
   confirmationTimeframe: z.string().optional(),
   entryTimeframe: z.string().min(1),
-  allowedDirections: z
-    .array(z.enum(["long", "short"]))
-    .min(1)
-    .default(["long"]),
-  entryRules: z.array(ruleSchema).min(1),
-  exitRules: z.array(ruleSchema).default([]),
+  entries: z.array(directionalEntrySchema).min(1),
+  exitCondition: ruleSchema.nullable().default(null),
   risk: z.object({
     riskPerTradePct: z.number().positive().max(100),
     stopLossPct: z.number().positive().optional(),
@@ -94,6 +95,7 @@ export const strategyDefinitionSchema = z.object({
       slippagePct: z.number().nonnegative().optional(),
     })
     .optional(),
+  leverage: z.number().positive().default(1),
 });
 
 export class StrategyValidationError extends Error {
@@ -104,20 +106,30 @@ export class StrategyValidationError extends Error {
 }
 
 /**
- * Parse free-text conditions used by existing Claude / deploy strategies
- * into executable IndicatorRule objects. Unsupported phrases fail clearly.
+ * Parse ONLY exact executable condition text.
+ * Ambiguous prose (oversold, overbought, "MACD bullish", …) FAILS.
  */
 export function parseConditionText(text: string): IndicatorRule {
   const raw = text.trim();
-  const normalized = raw
-    .replace(/\s+/g, " ")
-    .replace(/[()]/g, " ")
-    .trim()
-    .toLowerCase();
+  // Normalize whitespace; keep content for ambiguity checks
+  const normalized = raw.replace(/\s+/g, " ").trim();
+  const lower = normalized.toLowerCase();
 
-  // RSI < 30 / RSI > 70
-  let m = normalized.match(
-    /^rsi\s*(?:\(\s*(\d+)\s*\))?\s*(<=|>=|<|>|==)\s*(-?\d+(?:\.\d+)?)/
+  // Reject known ambiguous soft phrases — never invent thresholds
+  if (
+    /^(oversold|overbought)$/i.test(lower) ||
+    /^macd\s+bullish(\s+crossover)?$/i.test(lower) ||
+    /^macd\s+bearish(\s+crossover)?$/i.test(lower) ||
+    (/\b(oversold|overbought)\b/i.test(lower) && !/^rsi\b/i.test(lower))
+  ) {
+    throw new StrategyValidationError(
+      `Ambiguous condition text "${raw}" cannot be executed safely. Save a structured IndicatorRule (e.g. RSI < 30) instead of prose.`
+    );
+  }
+
+  // RSI < 30 — optional trailing parenthetical ignored ONLY when RSI threshold is complete
+  let m = lower.match(
+    /^rsi\s*(?:\(\s*(\d+)\s*\))?\s*(<=|>=|<|>|==)\s*(-?\d+(?:\.\d+)?)(?:\s*\([^)]*\))?$/
   );
   if (m) {
     return {
@@ -129,9 +141,9 @@ export function parseConditionText(text: string): IndicatorRule {
     };
   }
 
-  // close / price vs SMA/EMA
-  m = normalized.match(
-    /^(close|price|open|high|low)\s*(<=|>=|<|>|==)\s*(sma|ema)\s*\(\s*(\d+)\s*\)/
+  // close/price vs SMA/EMA
+  m = lower.match(
+    /^(close|price|open|high|low)\s*(<=|>=|<|>|==)\s*(sma|ema)\s*\(\s*(\d+)\s*\)$/
   );
   if (m) {
     return {
@@ -139,35 +151,25 @@ export function parseConditionText(text: string): IndicatorRule {
       indicator: "price",
       field: m[1] === "price" ? "close" : m[1],
       operator: m[2] as IndicatorRule["operator"],
-      value: {
-        indicator: m[3] as "sma" | "ema",
-        period: Number(m[4]),
-      },
+      value: { indicator: m[3] as "sma" | "ema", period: Number(m[4]) },
     };
   }
 
-  // SMA(20) < close
-  m = normalized.match(
-    /^(sma|ema)\s*\(\s*(\d+)\s*\)\s*(<=|>=|<|>|==)\s*(close|price|open|high|low)/
+  m = lower.match(
+    /^(sma|ema)\s*\(\s*(\d+)\s*\)\s*(<=|>=|<|>|==)\s*(close|price|open|high|low)$/
   );
   if (m) {
     const priceField = m[4] === "price" ? "close" : m[4];
-    // Invert into price op indicator for consistent evaluation
-    const op = invertOperator(m[3] as IndicatorRule["operator"]);
     return {
       type: "indicator",
       indicator: "price",
       field: priceField,
-      operator: op,
-      value: {
-        indicator: m[1] as "sma" | "ema",
-        period: Number(m[2]),
-      },
+      operator: invertOperator(m[3] as IndicatorRule["operator"]),
+      value: { indicator: m[1] as "sma" | "ema", period: Number(m[2]) },
     };
   }
 
-  // volume > N
-  m = normalized.match(/^volume\s*(<=|>=|<|>|==)\s*(-?\d+(?:\.\d+)?)/);
+  m = lower.match(/^volume\s*(<=|>=|<|>|==)\s*(-?\d+(?:\.\d+)?)$/);
   if (m) {
     return {
       type: "indicator",
@@ -177,9 +179,8 @@ export function parseConditionText(text: string): IndicatorRule {
     };
   }
 
-  // Bollinger: close < bb lower / price > upper band
-  m = normalized.match(
-    /^(close|price)\s*(<=|>=|<|>)\s*(?:bb|bollinger(?:\s*bands?)?)\s*(lower|upper|middle)/
+  m = lower.match(
+    /^(close|price)\s*(<=|>=|<|>)\s*(?:bb|bollinger(?:\s*bands?)?)\s*(lower|upper|middle)$/
   );
   if (m) {
     return {
@@ -191,76 +192,24 @@ export function parseConditionText(text: string): IndicatorRule {
     };
   }
 
-  // MACD phrases
-  if (
-    /macd.*(bullish\s+cross|cross(es|ed|ing)?\s+above|bullish)/.test(
-      normalized
-    ) ||
-    normalized === "macd bullish crossover"
-  ) {
-    return {
-      type: "indicator",
-      indicator: "macd",
-      field: "histogram",
-      operator: "cross_above",
-      value: 0,
-    };
-  }
-  if (
-    /macd.*(bearish\s+cross|cross(es|ed|ing)?\s+below|bearish)/.test(
-      normalized
-    ) ||
-    normalized === "macd bearish crossover"
-  ) {
-    return {
-      type: "indicator",
-      indicator: "macd",
-      field: "histogram",
-      operator: "cross_below",
-      value: 0,
-    };
-  }
-
-  // MACD histogram / line comparisons
-  m = normalized.match(
-    /^macd(?:\s*(histogram|line|signal))?\s*(<=|>=|<|>|==)\s*(-?\d+(?:\.\d+)?)/
+  // Explicit MACD only: "macd histogram cross_above 0" or "macd line > 0"
+  m = lower.match(
+    /^macd(?:\s*(histogram|line|signal))?\s*(cross_above|cross_below|<=|>=|<|>|==)\s*(-?\d+(?:\.\d+)?)$/
   );
   if (m) {
     return {
       type: "indicator",
       indicator: "macd",
-      field: (m[1] as Macdish) || "histogram",
+      field: (m[1] as "histogram" | "line" | "signal") || "histogram",
       operator: m[2] as IndicatorRule["operator"],
       value: Number(m[3]),
     };
   }
 
-  // Soft phrases from deploy-rsi-macd
-  if (/rsi\s*<\s*30/.test(normalized) || /oversold/.test(normalized)) {
-    return {
-      type: "indicator",
-      indicator: "rsi",
-      period: 14,
-      operator: "<",
-      value: 30,
-    };
-  }
-  if (/rsi\s*>\s*70/.test(normalized) || /overbought/.test(normalized)) {
-    return {
-      type: "indicator",
-      indicator: "rsi",
-      period: 14,
-      operator: ">",
-      value: 70,
-    };
-  }
-
   throw new StrategyValidationError(
-    `Unsupported or ambiguous entry/exit condition text: "${raw}". Provide a structured IndicatorRule (indicator, operator, value).`
+    `Unsupported or ambiguous entry/exit condition text: "${raw}". Provide a structured IndicatorRule. FAIL LOUDLY > INVENT MEANING.`
   );
 }
-
-type Macdish = "histogram" | "line" | "signal";
 
 function invertOperator(
   op: IndicatorRule["operator"]
@@ -300,6 +249,104 @@ function coercePercent(value: unknown): number | undefined {
   return Math.abs(value);
 }
 
+function asGroupAnd(rules: Rule[]): Rule {
+  if (rules.length === 1) return rules[0];
+  return { type: "group", op: "and", rules };
+}
+
+/**
+ * Resolve an unambiguous explicit direction from stored strategy fields.
+ * Never infers from RSI/MACD levels.
+ */
+function resolveExplicitDirection(
+  entryRulesRaw: unknown,
+  exitRulesRaw: unknown
+): TradeDirection | null {
+  const entryObj =
+    entryRulesRaw && typeof entryRulesRaw === "object"
+      ? (entryRulesRaw as Record<string, unknown>)
+      : {};
+  const exitObj =
+    exitRulesRaw && typeof exitRulesRaw === "object"
+      ? (exitRulesRaw as Record<string, unknown>)
+      : {};
+
+  if (entryObj.direction === "long" || entryObj.direction === "short") {
+    return entryObj.direction;
+  }
+  if (exitObj.direction === "long" || exitObj.direction === "short") {
+    return exitObj.direction;
+  }
+
+  const candidates = [
+    entryObj.allowed_directions,
+    exitObj.allowed_directions,
+    entryObj.allowedDirections,
+    exitObj.allowedDirections,
+  ];
+  for (const c of candidates) {
+    if (Array.isArray(c) && c.length === 1 && (c[0] === "long" || c[0] === "short")) {
+      return c[0];
+    }
+    if (Array.isArray(c) && c.length > 1) {
+      throw new StrategyValidationError(
+        `Ambiguous legacy direction ${JSON.stringify(
+          c
+        )}: dual-direction strategies must define separate directional entry setups. FAIL VALIDATION.`
+      );
+    }
+  }
+  return null;
+}
+
+function parseStructuredEntries(entryRulesRaw: unknown): DirectionalEntrySetup[] | null {
+  if (!entryRulesRaw || typeof entryRulesRaw !== "object") return null;
+  const obj = entryRulesRaw as Record<string, unknown>;
+
+  // Preferred: entries: [{ direction, condition }]
+  if (Array.isArray(obj.entries) && obj.entries.length > 0) {
+    return obj.entries.map((e, i) => {
+      const parsed = directionalEntrySchema.safeParse(e);
+      if (!parsed.success) {
+        throw new StrategyValidationError(
+          `Invalid entries[${i}]: ${parsed.error.issues
+            .map((x) => x.message)
+            .join("; ")}`
+        );
+      }
+      return parsed.data;
+    });
+  }
+
+  // Structured: { direction, condition: Rule }
+  if (obj.condition && (obj.direction === "long" || obj.direction === "short")) {
+    const cond = ruleSchema.safeParse(obj.condition);
+    if (!cond.success) {
+      throw new StrategyValidationError(
+        `Invalid entry condition: ${cond.error.message}`
+      );
+    }
+    return [{ direction: obj.direction, condition: cond.data }];
+  }
+
+  // Structured rules array with explicit direction on parent
+  if (
+    Array.isArray(obj.rules) &&
+    obj.rules.length > 0 &&
+    (obj.direction === "long" || obj.direction === "short")
+  ) {
+    const rules = z.array(ruleSchema).parse(obj.rules);
+    return [
+      {
+        direction: obj.direction,
+        condition: asGroupAnd(rules),
+      },
+    ];
+  }
+
+  return null;
+}
+
 /**
  * Build a StrategyDefinition from a DB strategy row (legacy or structured).
  */
@@ -313,51 +360,81 @@ export function buildStrategyDefinition(strategy: {
   exit_rules?: unknown;
   version?: number;
   backtest_count?: number;
+  leverage?: number;
 }): StrategyDefinition {
   const entryRulesRaw = strategy.entry_rules;
-  let entryRules: Rule[] = [];
-
-  if (
-    entryRulesRaw &&
-    typeof entryRulesRaw === "object" &&
-    Array.isArray((entryRulesRaw as { rules?: unknown }).rules)
-  ) {
-    entryRules = (entryRulesRaw as { rules: Rule[] }).rules;
-  } else if (
-    Array.isArray(entryRulesRaw) &&
-    entryRulesRaw.length > 0 &&
-    typeof entryRulesRaw[0] === "object" &&
-    entryRulesRaw[0] !== null &&
-    "type" in (entryRulesRaw[0] as object)
-  ) {
-    entryRules = entryRulesRaw as Rule[];
-  } else {
-    const texts = extractConditionStrings(entryRulesRaw);
-    if (texts.length === 0) {
-      throw new StrategyValidationError(
-        `Strategy ${strategy.id} has no executable entryRules. Store structured rules or parseable conditions.`
-      );
-    }
-    entryRules = texts.map(parseConditionText);
-  }
-
   const exitRulesRaw = strategy.exit_rules;
-  let exitRules: Rule[] = [];
-  if (
-    exitRulesRaw &&
-    typeof exitRulesRaw === "object" &&
-    Array.isArray((exitRulesRaw as { rules?: unknown }).rules)
-  ) {
-    exitRules = (exitRulesRaw as { rules: Rule[] }).rules;
-  } else {
-    const texts = extractConditionStrings(exitRulesRaw);
-    exitRules = texts.map(parseConditionText);
-  }
-
   const exitObj =
     exitRulesRaw && typeof exitRulesRaw === "object"
       ? (exitRulesRaw as Record<string, unknown>)
       : {};
+
+  let entries = parseStructuredEntries(entryRulesRaw);
+
+  if (!entries) {
+    // Legacy flat conditions — only if direction is unambiguous & text is exact
+    const texts = extractConditionStrings(entryRulesRaw);
+    if (texts.length === 0) {
+      // Bare array of Rule objects without direction — ambiguous
+      if (
+        Array.isArray(entryRulesRaw) &&
+        entryRulesRaw.length > 0 &&
+        typeof entryRulesRaw[0] === "object" &&
+        entryRulesRaw[0] !== null &&
+        "type" in (entryRulesRaw[0] as object)
+      ) {
+        throw new StrategyValidationError(
+          `Strategy ${strategy.id} has structured rules but no explicit direction. Provide entries: [{ direction, condition }].`
+        );
+      }
+      throw new StrategyValidationError(
+        `Strategy ${strategy.id} has no executable entries. Store structured directional entries.`
+      );
+    }
+
+    const direction = resolveExplicitDirection(entryRulesRaw, exitRulesRaw);
+    if (!direction) {
+      throw new StrategyValidationError(
+        `Strategy ${strategy.id} has no explicit trade direction. Set entry_rules.direction or entries[].direction. Direction is never inferred from indicators.`
+      );
+    }
+
+    const rules = texts.map(parseConditionText);
+    entries = [{ direction, condition: asGroupAnd(rules) }];
+  }
+
+  // Exit condition
+  let exitCondition: Rule | null = null;
+  if (
+    exitRulesRaw &&
+    typeof exitRulesRaw === "object" &&
+    (exitRulesRaw as { condition?: unknown }).condition
+  ) {
+    const parsed = ruleSchema.safeParse(
+      (exitRulesRaw as { condition: unknown }).condition
+    );
+    if (!parsed.success) {
+      throw new StrategyValidationError(
+        `Invalid exitCondition: ${parsed.error.message}`
+      );
+    }
+    exitCondition = parsed.data;
+  } else if (
+    exitRulesRaw &&
+    typeof exitRulesRaw === "object" &&
+    Array.isArray((exitRulesRaw as { rules?: unknown }).rules) &&
+    ((exitRulesRaw as { rules: unknown[] }).rules).length > 0
+  ) {
+    const rules = z
+      .array(ruleSchema)
+      .parse((exitRulesRaw as { rules: unknown[] }).rules);
+    exitCondition = asGroupAnd(rules);
+  } else {
+    const texts = extractConditionStrings(exitRulesRaw);
+    if (texts.length > 0) {
+      exitCondition = asGroupAnd(texts.map(parseConditionText));
+    }
+  }
 
   const stopLossPct = coercePercent(
     exitObj.stop_loss_percent ?? exitObj.stopLossPct ?? exitObj.stop_loss_pct
@@ -374,23 +451,38 @@ export function buildStrategyDefinition(strategy: {
     );
   }
 
+  const entryObj =
+    entryRulesRaw && typeof entryRulesRaw === "object"
+      ? (entryRulesRaw as Record<string, unknown>)
+      : {};
+
   const riskPerTradePct =
     typeof exitObj.risk_per_trade_pct === "number"
       ? Number(exitObj.risk_per_trade_pct)
-      : typeof (entryRulesRaw as { risk_per_trade_pct?: number })
-          ?.risk_per_trade_pct === "number"
-        ? Number(
-            (entryRulesRaw as { risk_per_trade_pct: number }).risk_per_trade_pct
-          )
+      : typeof entryObj.risk_per_trade_pct === "number"
+        ? Number(entryObj.risk_per_trade_pct)
         : 1;
 
   const marketType =
     strategy.market_type === "futures" ? "futures" : "spot";
 
-  const allowedDirections: TradeDirection[] = inferDirections(
-    entryRules,
-    exitObj
-  );
+  let leverage = 1;
+  if (typeof strategy.leverage === "number") {
+    leverage = strategy.leverage;
+  } else if (typeof exitObj.leverage === "number") {
+    leverage = Number(exitObj.leverage);
+  } else if (typeof entryObj.leverage === "number") {
+    leverage = Number(entryObj.leverage);
+  }
+
+  if (marketType === "spot" && leverage !== 1) {
+    throw new StrategyValidationError(
+      `Spot strategies must use leverage=1 (got ${leverage}).`
+    );
+  }
+  if (!(leverage > 0)) {
+    throw new StrategyValidationError(`Invalid leverage: ${leverage}`);
+  }
 
   const draft = {
     id: strategy.id,
@@ -402,9 +494,8 @@ export function buildStrategyDefinition(strategy: {
     marketType,
     symbol: strategy.symbol.toUpperCase(),
     entryTimeframe: strategy.timeframe,
-    allowedDirections,
-    entryRules,
-    exitRules,
+    entries,
+    exitCondition,
     risk: {
       riskPerTradePct,
       stopLossPct,
@@ -414,6 +505,7 @@ export function buildStrategyDefinition(strategy: {
           ? Number(exitObj.max_hold_bars)
           : undefined,
     },
+    leverage,
   };
 
   const parsed = strategyDefinitionSchema.safeParse(draft);
@@ -426,43 +518,6 @@ export function buildStrategyDefinition(strategy: {
   }
 
   return parsed.data as StrategyDefinition;
-}
-
-function inferDirections(
-  entryRules: Rule[],
-  exitObj: Record<string, unknown>
-): TradeDirection[] {
-  if (Array.isArray(exitObj.allowed_directions)) {
-    return exitObj.allowed_directions as TradeDirection[];
-  }
-  // Heuristic: RSI oversold → long; overbought → short; default long
-  const flat = flattenRules(entryRules);
-  const hasOversold = flat.some(
-    (r) =>
-      r.indicator === "rsi" &&
-      (r.operator === "<" || r.operator === "<=") &&
-      typeof r.value === "number" &&
-      r.value <= 40
-  );
-  const hasOverbought = flat.some(
-    (r) =>
-      r.indicator === "rsi" &&
-      (r.operator === ">" || r.operator === ">=") &&
-      typeof r.value === "number" &&
-      r.value >= 60
-  );
-  if (hasOversold && hasOverbought) return ["long", "short"];
-  if (hasOverbought && !hasOversold) return ["short"];
-  return ["long"];
-}
-
-function flattenRules(rules: Rule[]): IndicatorRule[] {
-  const out: IndicatorRule[] = [];
-  for (const r of rules) {
-    if (r.type === "indicator") out.push(r);
-    else out.push(...flattenRules(r.rules));
-  }
-  return out;
 }
 
 export function assertSupportedMarket(

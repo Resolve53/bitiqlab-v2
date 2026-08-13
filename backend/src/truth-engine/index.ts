@@ -23,6 +23,7 @@ export {
 } from "./indicators";
 export {
   evaluateRules,
+  evaluateCondition,
   generateSignals,
   shouldExitAtBar,
 } from "./rule-evaluator";

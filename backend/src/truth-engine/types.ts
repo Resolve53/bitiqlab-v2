@@ -1,12 +1,14 @@
 /**
  * Phase 1 Truth Engine — shared types
  *
- * Execution model (documented):
- * - Indicators and rules evaluate on CLOSED candle N only (no future bars).
+ * Execution model:
+ * - Indicators/rules evaluate on CLOSED candle N only (no future bars).
  * - Entry/exit strategy signals confirmed at close of N execute at OPEN of N+1.
- * - Stop-loss / take-profit are checked intrabar on each candle after entry
- *   using OHLC. If both SL and TP are touched in the same candle, the adverse
- *   event is assumed first (conservative). Recorded as intrabar_conflict=true.
+ * - After entry fill at open of N+1, that same bar's OHLC is checked for SL/TP.
+ * - Same-bar SL+TP → adverse first (intrabarConflict=true).
+ * - Gap through SL/TP → fill at worse executable open (+ slippage), not the
+ *   unattainable stop/target level.
+ * - Direction is NEVER inferred from indicators; each entry setup is explicit.
  */
 
 export type MarketType = "spot" | "futures";
@@ -30,10 +32,6 @@ export type RuleOperator =
   | "=="
   | "cross_above"
   | "cross_below";
-
-export type MacdField = "line" | "signal" | "histogram";
-export type BollingerField = "upper" | "middle" | "lower";
-export type PriceField = "open" | "high" | "low" | "close";
 
 export interface CompareToIndicator {
   indicator: IndicatorKind;
@@ -59,6 +57,12 @@ export interface GroupRule {
 
 export type Rule = IndicatorRule | GroupRule;
 
+/** One directional entry setup with an explicit boolean condition tree. */
+export interface DirectionalEntrySetup {
+  direction: TradeDirection;
+  condition: Rule;
+}
+
 export interface StrategyRiskConfig {
   riskPerTradePct: number;
   stopLossPct?: number;
@@ -82,11 +86,14 @@ export interface StrategyDefinition {
   biasTimeframe?: string;
   confirmationTimeframe?: string;
   entryTimeframe: string;
-  allowedDirections: TradeDirection[];
-  entryRules: Rule[];
-  exitRules: Rule[];
+  /** Explicit directional entry setups — no direction guessing. */
+  entries: DirectionalEntrySetup[];
+  /** Optional strategy-exit boolean tree (applies while in a position). */
+  exitCondition: Rule | null;
   risk: StrategyRiskConfig;
   fees?: StrategyFeesConfig;
+  /** Futures leverage; spot must be 1. */
+  leverage: number;
 }
 
 export interface OHLCVBar {
@@ -142,7 +149,13 @@ export interface BacktestTradeRecord {
   netPnl: number;
   pnlPctOnPosition: number;
   pnlPctOnEquity: number;
+  /** Configured risk before capital capping */
+  requestedRiskUsd: number;
+  /** Risk after capital/margin cap */
+  actualRiskUsd: number;
+  /** Alias of actualRiskUsd (compat) */
   initialRiskUsd: number;
+  capitalCapped: boolean;
   realizedR: number;
   mfe: number;
   mae: number;
@@ -152,6 +165,7 @@ export interface BacktestTradeRecord {
   leverage: number;
   marginUsed: number;
   intrabarConflict: boolean;
+  gapFill: boolean;
 }
 
 export interface EquityPoint {
@@ -221,6 +235,6 @@ export interface BacktestRunRequest {
   initialCapital?: number;
   commissionPct?: number;
   slippagePct?: number;
-  /** Injected OHLCV for tests — never used for silent production fallback */
+  leverage?: number;
   bars?: OHLCVBar[];
 }

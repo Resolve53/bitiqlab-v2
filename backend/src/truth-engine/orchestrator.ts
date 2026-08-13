@@ -139,11 +139,22 @@ export async function runTruthBacktest(params: {
     );
   }
 
+  const leverage =
+    request.leverage && request.leverage > 0
+      ? request.leverage
+      : definition.leverage;
+
+  if (definition.marketType === "spot" && leverage !== 1) {
+    throw new StrategyValidationError(
+      `Spot backtests require leverage=1 (got ${leverage}).`
+    );
+  }
+
   const executor = new TruthBacktestExecutor({
     initialCapital,
     commissionPct,
     slippagePct,
-    leverage: 1,
+    leverage,
   });
 
   const exec = executor.execute(bars, definition);
