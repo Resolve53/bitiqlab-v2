@@ -242,14 +242,45 @@ export class DatabaseService {
     total_return?: number;
     monthly_returns?: any;
     trade_list?: any;
+    /** REAL_BACKTEST | SIMULATED_LEGACY — also mirrored in monthly_returns */
+    result_source?: string;
+    provenance?: any;
   }) {
+    const row: Record<string, unknown> = {
+      ...backtest,
+      status: "completed",
+    };
+
+    // Prefer dedicated columns when migration 008 is applied; fall back gracefully.
     const { data, error } = await this.client
       .from("backtests")
-      .insert([{ ...backtest, status: "completed" }])
+      .insert([row])
       .select()
       .single();
 
-    if (error) throw new Error(`Failed to create backtest: ${error.message}`);
+    if (error) {
+      // Retry without optional provenance columns if schema not migrated yet
+      if (
+        /result_source|provenance/i.test(error.message) &&
+        (backtest.result_source || backtest.provenance)
+      ) {
+        const {
+          result_source: _rs,
+          provenance: _p,
+          ...rest
+        } = backtest;
+        const { data: retryData, error: retryError } = await this.client
+          .from("backtests")
+          .insert([{ ...rest, status: "completed" }])
+          .select()
+          .single();
+        if (retryError) {
+          throw new Error(`Failed to create backtest: ${retryError.message}`);
+        }
+        return retryData;
+      }
+      throw new Error(`Failed to create backtest: ${error.message}`);
+    }
     return data;
   }
 
