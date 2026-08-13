@@ -4,6 +4,7 @@ import { PageHeader } from "@/components/AppShell";
 import { apiFetch } from "@/lib/api";
 import BacktestModal from "@/components/BacktestModal";
 import PaperTradingModal from "@/components/PaperTradingModal";
+import ValidationModal from "@/components/ValidationModal";
 import StrategyCard, {
   type StrategyLiveStats,
 } from "@/components/StrategyCard";
@@ -45,6 +46,8 @@ export default function StrategiesPage() {
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState<string | null>(null);
   const [selectedStrategyForBacktest, setSelectedStrategyForBacktest] =
+    useState<Strategy | null>(null);
+  const [selectedStrategyForValidation, setSelectedStrategyForValidation] =
     useState<Strategy | null>(null);
   const [selectedStrategyForPaperTrading, setSelectedStrategyForPaperTrading] =
     useState<Strategy | null>(null);
@@ -180,6 +183,9 @@ export default function StrategiesPage() {
                 strategy={strategy}
                 liveStats={liveById[strategy.id]}
                 onRunBacktest={() => setSelectedStrategyForBacktest(strategy)}
+                onRunValidation={() =>
+                  setSelectedStrategyForValidation(strategy)
+                }
                 onStartPaperTrading={() =>
                   setSelectedStrategyForPaperTrading(strategy)
                 }
@@ -213,6 +219,14 @@ export default function StrategiesPage() {
             );
             setSelectedStrategyForBacktest(null);
           }}
+        />
+      )}
+
+      {selectedStrategyForValidation && (
+        <ValidationModal
+          strategyId={selectedStrategyForValidation.id}
+          symbol={selectedStrategyForValidation.symbol}
+          onClose={() => setSelectedStrategyForValidation(null)}
         />
       )}
 
