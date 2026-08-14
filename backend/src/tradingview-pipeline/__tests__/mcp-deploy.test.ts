@@ -78,6 +78,32 @@ describe("D. MCP deploy", () => {
     expect(result.status).not.toBe("deployed");
   });
 
+  it("surfaces COMPILE_FAILED error_class without claiming deployed", async () => {
+    const result = await runMcpDeployPipeline(
+      okTools({
+        pine_smart_compile: async () => ({
+          success: false,
+          error: "COMPILE_FAILED",
+          error_class: "COMPILE_FAILED",
+          has_errors: true,
+        }),
+      }),
+      input,
+      pendingAlert
+    );
+    expect(result.status).toBe("compile_failed");
+    expect(result.error_class).toBe("COMPILE_FAILED");
+    expect(result.status).not.toBe("deployed");
+  });
+
+  it("F. provenance readback verification is unchanged", async () => {
+    const result = await runMcpDeployPipeline(okTools(), input, pendingAlert);
+    expect(result.provenance_verified).toBe(true);
+    expect(result.expected_strategy_version_match).toBe(true);
+    expect(result.expected_hash_match).toBe(true);
+    expect(result.verified).toBe(true);
+  });
+
   it("fails verification when provenance markers are missing from readback", async () => {
     const result = await runMcpDeployPipeline(
       okTools({

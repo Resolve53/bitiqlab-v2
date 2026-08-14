@@ -34,3 +34,9 @@ export {
   generatePineForVersion,
   deployFrozenPine,
 } from "./deploy-service";
+export {
+  mcpHealth,
+  mcpHealthDetails,
+  errorFromMcpHealth,
+  mcpServerUrl,
+} from "./mcp-client";

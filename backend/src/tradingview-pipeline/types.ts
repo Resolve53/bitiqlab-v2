@@ -88,6 +88,7 @@ export interface CandidateIngestResult {
 export interface McpToolResult {
   success?: boolean;
   error?: string;
+  error_class?: string;
   message?: string;
   has_errors?: boolean;
   errors?: unknown[];
@@ -140,6 +141,7 @@ export interface McpDeployResult {
   expected_hash_match: boolean;
   steps: Record<string, McpToolResult | undefined>;
   failure?: string;
+  error_class?: string;
   alert: {
     status: AlertSetupStatus;
     instructions: string[];

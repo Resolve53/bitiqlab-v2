@@ -11,7 +11,8 @@
     "type-check": "tsc --noEmit",
     "test": "vitest run",
     "test:watch": "vitest",
-    "worker:enrichment": "tsx src/candidate-intelligence/worker-main.ts"
+    "worker:enrichment": "tsx src/candidate-intelligence/worker-main.ts",
+    "tv:bootstrap": "node tradingview-browser-bootstrap.js"
   },
   "dependencies": {
     "@anthropic-ai/sdk": "^0.20.0",
