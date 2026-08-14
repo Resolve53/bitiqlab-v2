@@ -6,7 +6,7 @@
  *
  * Usage:
  *   TRADINGVIEW_BROWSER_HEADLESS=false \
- *   TRADINGVIEW_BROWSER_USER_DATA_DIR=/data/tradingview-profile \
+ *   TRADINGVIEW_BROWSER_USER_DATA_DIR=./.tv-profile \
  *   node tradingview-browser-bootstrap.js
  */
 
@@ -20,14 +20,23 @@ process.env.TRADINGVIEW_BROWSER_USER_DATA_DIR = profile;
 
 const runtime = createRuntime();
 
+function logSnap(prefix, snap) {
+  console.log(
+    `${prefix} browser=${snap.browser} cdp=${snap.cdp} tradingview=${snap.tradingview} authenticated=${snap.authenticated}`
+  );
+  if (snap.page_target_count != null) {
+    console.log(
+      `${prefix} targets=${snap.page_target_count} selected=${snap.selected_target_url || "none"} readyState=${snap.page_ready_state || "n/a"} reason=${snap.detection_reason || "n/a"}`
+    );
+  }
+}
+
 async function main() {
   console.log("[bootstrap] Starting Chromium with persistent profile");
   console.log(`[bootstrap] user-data-dir=${profile}`);
-  console.log("[bootstrap] Sign in to TradingView in the opened window, then leave this process running until /health shows authenticated=yes");
+  console.log("[bootstrap] Sign in to TradingView in the opened window. This process now probes the chart tab via CDP (it does not guess from process liveness).");
   const snap = await runtime.start();
-  console.log(
-    `[bootstrap] status=${snap.status} browser=${snap.browser} cdp=${snap.cdp} authenticated=${snap.authenticated}`
-  );
+  logSnap("[bootstrap]", snap);
   if (snap.cdp !== "ok") {
     console.error("[bootstrap] CDP did not become ready. Check TRADINGVIEW_BROWSER_EXECUTABLE.");
     process.exitCode = 1;
@@ -37,15 +46,13 @@ async function main() {
   const holdMs = Number(process.env.TRADINGVIEW_BOOTSTRAP_HOLD_MS || 15 * 60 * 1000);
   const started = Date.now();
   while (Date.now() - started < holdMs) {
-    await new Promise((r) => setTimeout(r, 5000));
-    const now = runtime.snapshot();
-    console.log(
-      `[bootstrap] browser=${now.browser} cdp=${now.cdp} tradingview=${now.tradingview} authenticated=${now.authenticated}`
-    );
-    if (now.authenticated === "yes") {
+    const probed = await runtime.probeAndApply();
+    logSnap("[bootstrap]", probed);
+    if (probed.authenticated === "yes" && probed.tradingview === "ready") {
       console.log("[bootstrap] Session looks authenticated. You can stop this process; the profile on disk will be reused.");
       break;
     }
+    await new Promise((r) => setTimeout(r, 5000));
   }
 }
 

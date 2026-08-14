@@ -12,6 +12,9 @@ const CDP = require('chrome-remote-interface');
 const {
   createRuntime,
   tradingViewProbeScript,
+  selectChartTarget,
+  summarizeCdpTargets,
+  sanitizeTargetUrl,
 } = require('./tradingview-browser-runtime');
 const {
   MCP_ERROR_CLASSES,
@@ -65,13 +68,25 @@ async function connectTradingView() {
     cdpClient = await CDP({
       host: '127.0.0.1',
       port: cdpPort,
+      target: (targets) => {
+        const summary = summarizeCdpTargets(targets);
+        console.log(
+          `[MCP] cdp page targets=${summary.page_target_count} urls=${summary.target_urls.join(' | ') || '(none)'}`
+        );
+        const selected = selectChartTarget(targets);
+        if (!selected) {
+          throw new Error('No TradingView chart CDP target (ignored chrome:// / new-tab / extension pages)');
+        }
+        console.log(`[MCP] selected target url=${sanitizeTargetUrl(selected.url)}`);
+        return selected;
+      },
     });
 
     const { Page, Runtime } = cdpClient;
     await Page.enable();
     await Runtime.enable();
     browserRuntime.state.cdpReady = true;
-    console.log('[MCP] Connected to Chromium via internal CDP');
+    console.log('[MCP] Connected to Chromium via internal CDP (chart target)');
     return cdpClient;
   } catch (error) {
     cdpClient = null;
@@ -875,10 +890,9 @@ const server = app.listen(port, '0.0.0.0', () => {
       );
       if (snap.cdp === 'ok') {
         try {
-          await probeTradingViewPage();
-          const after = browserRuntime.snapshot();
+          const after = await browserRuntime.probeAndApply();
           console.log(
-            `[browser] tradingview=${after.tradingview} authenticated=${after.authenticated}`
+            `[browser] tradingview=${after.tradingview} authenticated=${after.authenticated} reason=${after.detection_reason || ''}`
           );
         } catch (err) {
           console.log(

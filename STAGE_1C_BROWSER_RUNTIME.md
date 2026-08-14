@@ -133,6 +133,7 @@ Sign in once, then set `TRADINGVIEW_BROWSER_HEADLESS=true` and restart.
   "browser": "ok",
   "cdp": "ok",
   "tradingview": "not_authenticated",
+  "detection_reason": "AUTH_REQUIRED",
   "authenticated": "no",
   "error_class": "TRADINGVIEW_AUTH_REQUIRED",
   "cdp_bind": "127.0.0.1",
@@ -141,7 +142,7 @@ Sign in once, then set `TRADINGVIEW_BROWSER_HEADLESS=true` and restart.
 }
 ```
 
-`status` is `"ok"` only when browser, CDP, and an authenticated TradingView chart page are all ready.
+`status` is `"ok"` only when browser, CDP, and an authenticated TradingView chart page are all ready (`tradingview` is `"ready"`).
 
 ## Error classes
 

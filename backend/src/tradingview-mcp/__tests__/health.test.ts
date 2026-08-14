@@ -74,7 +74,7 @@ describe("B. Health snapshots", () => {
     expect(snap.mcp_http).toBe("ok");
     expect(snap.browser).toBe("ok");
     expect(snap.cdp).toBe("ok");
-    expect(snap.tradingview).toBe("ok");
+    expect(snap.tradingview).toBe("ready");
     expect(snap.authenticated).toBe("yes");
     expect(snap.error_class).toBeNull();
   });

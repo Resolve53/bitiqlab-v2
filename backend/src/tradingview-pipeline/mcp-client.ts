@@ -89,7 +89,7 @@ export function errorFromMcpHealth(details: McpHealthDetails): {
       error_class: MCP_RUNTIME_ERROR_CLASSES.TRADINGVIEW_AUTH_REQUIRED,
     };
   }
-  if (details.tradingview && details.tradingview !== "ok") {
+  if (details.tradingview && details.tradingview !== "ok" && details.tradingview !== "ready") {
     return {
       error: "TradingView chart page is not ready",
       error_class: MCP_RUNTIME_ERROR_CLASSES.TRADINGVIEW_PAGE_NOT_READY,

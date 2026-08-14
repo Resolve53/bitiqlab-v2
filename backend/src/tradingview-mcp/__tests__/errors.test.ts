@@ -64,6 +64,19 @@ describe("C. Error classification", () => {
     expect(classified.error_class).not.toBe("MCP_HTTP_UNREACHABLE");
   });
 
+  it("tradingview=ready is not treated as a page-not-ready failure", () => {
+    const classified = errorFromMcpHealth({
+      reachable: true,
+      mcp_http: "ok",
+      browser: "ok",
+      cdp: "ok",
+      tradingview: "ready",
+      authenticated: "yes",
+    });
+    expect(classified.error_class).not.toBe("TRADINGVIEW_PAGE_NOT_READY");
+    expect(classified.error_class).not.toBe("MCP_HTTP_UNREACHABLE");
+  });
+
   it("unreachable HTTP is MCP_HTTP_UNREACHABLE", () => {
     const classified = errorFromMcpHealth({ reachable: false });
     expect(classified.error_class).toBe("MCP_HTTP_UNREACHABLE");
