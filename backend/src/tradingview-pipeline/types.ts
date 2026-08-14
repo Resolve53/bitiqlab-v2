@@ -70,6 +70,14 @@ export interface TradingViewCandidateRow {
   raw_payload: unknown;
   status: CandidateStatus;
   created_at: string;
+  attempt_count?: number | null;
+  last_attempt_at?: string | null;
+  next_retry_at?: string | null;
+  last_error_code?: string | null;
+  last_error_message_safe?: string | null;
+  claimed_at?: string | null;
+  claimed_by?: string | null;
+  enrichment_completed_at?: string | null;
 }
 
 export interface CandidateIngestResult {
