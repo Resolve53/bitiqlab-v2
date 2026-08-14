@@ -6,6 +6,7 @@ import Script from "next/script";
 import MultiCoinMonitorWizard from "@/components/MultiCoinMonitorWizard";
 import TradeHistoryAnalysis from "@/components/TradeHistoryAnalysis";
 import { sessionStorageManager } from "@/lib/sessionStorage";
+import PaperForwardSessionPanel from "@/components/PaperForwardSessionPanel";
 
 interface Trade {
   id: string;
@@ -109,7 +110,7 @@ export default function PaperTradingDashboard() {
     } catch {
       // Legacy session without Phase 4A columns — still show safety banner.
       setPhase4Notice(
-        "Paper Forward Engine pending / not executing trades yet (Phase 4A). Legacy auto-trade is disabled."
+        "PAPER / SIMULATED. Legacy auto-trade is disabled."
       );
     }
   };
@@ -226,8 +227,10 @@ export default function PaperTradingDashboard() {
       <header className="border-b border-slate-800 bg-slate-950/50 backdrop-blur sticky top-0 z-40">
         <div className="max-w-7xl mx-auto px-4 sm:px-6 lg:px-8 py-6">
           <div className="mb-4 rounded-lg border border-amber-500/40 bg-amber-500/10 px-4 py-3 text-sm text-amber-100">
+            <span className="font-semibold">PAPER / SIMULATED</span>
+            {" — "}
             {phase4Notice ||
-              "Paper Forward Engine pending / not executing trades yet (Phase 4A)."}
+              "No real capital. No exchange orders. Phase 4B paper-forward engine."}
             {lifecycleStatus ? (
               <span className="ml-2 font-semibold">Lifecycle: {lifecycleStatus}</span>
             ) : null}
@@ -235,10 +238,10 @@ export default function PaperTradingDashboard() {
           <div className="flex justify-between items-start">
             <div>
               <h1 className="text-4xl font-bold text-white">
-                {stats.strategy_name} - Paper Trading
+                {stats.strategy_name} — Paper / Simulated
               </h1>
               <p className="mt-2 text-slate-400">
-                Phase 4A safety session — no exchange orders until Phase 4B
+                Simulated paper-forward session. Not live trading. Not real funds.
               </p>
             </div>
             <div className="flex gap-3">
@@ -281,6 +284,12 @@ export default function PaperTradingDashboard() {
         {error && (
           <div className="mb-4 p-4 bg-red-900/30 border border-red-700/50 rounded-lg">
             <p className="text-red-300">Error: {error}</p>
+          </div>
+        )}
+
+        {typeof session_id === "string" && (
+          <div className="mb-8">
+            <PaperForwardSessionPanel sessionId={session_id} />
           </div>
         )}
 

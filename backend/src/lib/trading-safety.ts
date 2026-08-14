@@ -1,30 +1,37 @@
 /**
- * Central trading safety configuration (Phase 4A).
+ * Central trading safety configuration (Phase 4A foundation + Phase 4B paper sim).
  *
- * ENABLE_LIVE_TRADING — defaults FALSE. Phase 4A never enables live trading.
- * ENABLE_PAPER_TRADING — feature gate for creating Phase 4A paper sessions.
+ * ENABLE_LIVE_TRADING — defaults FALSE. Phase 4B never enables live trading
+ * and never places real exchange orders (paper fills are simulated only).
+ * ENABLE_PAPER_TRADING — feature gate for creating paper sessions.
  *   Defaults TRUE when unset (paper sessions allowed once migrations applied).
  *   Set to "false" to refuse new paper session creation server-side.
  *
  * These flags are enforced server-side. Frontend hiding buttons is not a control.
  */
 
-export const PAPER_FORWARD_ENGINE_VERSION = "paper_forward_v1_phase4a";
+export const PAPER_FORWARD_ENGINE_VERSION = "paper_forward_v1_phase4b";
+
+/** Execution-engine version recorded on paper events/trades (simulated fills). */
+export const PAPER_FORWARD_EXEC_ENGINE_VERSION = "paper_forward_exec_v1_phase4b";
 
 export const LEGACY_PAPER_EXECUTION_DISABLED =
-  "Legacy paper execution is disabled. Phase 4 live-forward engine is not enabled yet.";
+  "Legacy paper execution is disabled. Use Phase 4B paper-forward simulated execution.";
 
 export const LIVE_TRADING_DISABLED =
-  "Live trading is disabled. ENABLE_LIVE_TRADING is false and Phase 4A does not place exchange orders.";
+  "Live trading is disabled. ENABLE_LIVE_TRADING is false and Phase 4B does not place exchange orders.";
 
 export const PAPER_FORWARD_FEATURE_DISABLED =
   "Paper-forward session creation is disabled (ENABLE_PAPER_TRADING=false).";
+
+export const PAPER_SIMULATED_NOTICE =
+  "PAPER / SIMULATED — no real capital, no exchange orders. ENABLE_LIVE_TRADING remains false.";
 
 export const PROMOTION_FORCE_DISABLED =
   "Force promotion is disabled. Evidence gates cannot be bypassed.";
 
 export const PROMOTION_AUTO_DISABLED =
-  "Automatic Bitiq promotion is disabled in Phase 4A. Human review of paper-forward evidence is required in a later phase.";
+  "Automatic Bitiq promotion is disabled in Phase 4B. Human review of paper-forward evidence is required in a later phase.";
 
 export const STATUS_APPROVED_VIA_PATCH_DISABLED =
   "Setting status to 'approved' via PATCH is disabled. Approval requires evidence gates (not UI status alone).";
@@ -39,8 +46,7 @@ function envFlag(name: string, defaultValue: boolean): boolean {
 }
 
 export function isLiveTradingEnabled(): boolean {
-  // Phase 4A hard rule: never treat live as enabled regardless of env typos in future.
-  // Still read the flag so ops can see intent, but assertLiveTradingAllowed always fails in 4A.
+  // Hard rule: never treat live as enabled for execution. Flag is observability only.
   return envFlag("ENABLE_LIVE_TRADING", false);
 }
 
@@ -55,7 +61,7 @@ export function assertPaperForwardEnabled(): void {
 }
 
 /**
- * Phase 4A: live trading is never allowed.
+ * Live / exchange order placement is never allowed in Phase 4B.
  * Call before any path that could place non-testnet / live exchange orders.
  */
 export function assertLiveTradingAllowed(): void {
@@ -66,15 +72,23 @@ export function assertNoExchangeOrdersInPhase4A(): void {
   throw new Error(LEGACY_PAPER_EXECUTION_DISABLED);
 }
 
+/** Alias kept for Phase 4B call sites that refuse exchange execution. */
+export function assertNoExchangeOrders(): void {
+  throw new Error(LIVE_TRADING_DISABLED);
+}
+
 export function getTradingSafetyState() {
   return {
     engineVersion: PAPER_FORWARD_ENGINE_VERSION,
+    execEngineVersion: PAPER_FORWARD_EXEC_ENGINE_VERSION,
     enablePaperTrading: isPaperTradingEnabled(),
-    enableLiveTrading: false, // Phase 4A hard-forced off
+    enableLiveTrading: false, // hard-forced off regardless of env
     envEnableLiveTradingRaw: process.env.ENABLE_LIVE_TRADING ?? "(unset→false)",
     envEnablePaperTradingRaw: process.env.ENABLE_PAPER_TRADING ?? "(unset→true)",
     exchangeOrdersAllowed: false,
     liveForwardExecutionEnabled: false,
-    phase: "4A" as const,
+    paperSimExecutionEnabled: true,
+    phase: "4B" as const,
+    notice: PAPER_SIMULATED_NOTICE,
   };
 }

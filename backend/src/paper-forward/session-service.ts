@@ -88,6 +88,15 @@ function asSession(row: any): PaperForwardSession {
     abort_reason: row.abort_reason ?? null,
     created_at: row.created_at,
     start_time: row.start_time,
+    last_processed_candle_ts: row.last_processed_candle_ts ?? null,
+    execution_state: row.execution_state ?? null,
+    paper_metrics: row.paper_metrics ?? null,
+    realized_pnl: row.realized_pnl != null ? Number(row.realized_pnl) : null,
+    unrealized_pnl:
+      row.unrealized_pnl != null ? Number(row.unrealized_pnl) : null,
+    fees_paid: row.fees_paid != null ? Number(row.fees_paid) : null,
+    max_drawdown: row.max_drawdown != null ? Number(row.max_drawdown) : null,
+    peak_equity: row.peak_equity != null ? Number(row.peak_equity) : null,
   };
 }
 
@@ -349,6 +358,20 @@ export async function abortPaperSession(
   }
   return transition(db, sessionId, "ABORTED", actor, "PAPER_SESSION_ABORTED", {
     abort_reason: reason.trim(),
+  });
+}
+
+export async function failPaperSession(
+  db: PaperForwardPersistence,
+  sessionId: string,
+  reason: string,
+  actor = "paper_forward_engine"
+) {
+  if (!reason?.trim()) {
+    throw new PaperLifecycleError("failure_reason is required");
+  }
+  return transition(db, sessionId, "FAILED", actor, "PAPER_SESSION_FAILED", {
+    failure_reason: reason.trim().slice(0, 2000),
   });
 }
 

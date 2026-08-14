@@ -580,6 +580,224 @@ export class DatabaseService {
     return data;
   }
 
+  /**
+   * Phase 4B execution cursor/metrics — still forbids provenance mutation.
+   */
+  async updatePaperForwardExecution(
+    id: string,
+    updates: Record<string, unknown>
+  ) {
+    const forbidden = [
+      "strategy_id",
+      "strategy_version_id",
+      "strategy_version",
+      "snapshot_hash",
+      "strategy_snapshot",
+      "research_run_id",
+      "validation_id",
+      "symbol",
+      "timeframe",
+      "engine_version",
+    ];
+    for (const key of forbidden) {
+      if (key in updates) {
+        throw new Phase4PersistenceError(
+          `Refusing to mutate immutable paper session field: ${key}`
+        );
+      }
+    }
+
+    const { data, error } = await this.client
+      .from("trading_sessions")
+      .update(updates)
+      .eq("id", id)
+      .select()
+      .single();
+    if (error) {
+      throwIfMissingPhase4Schema("trading_sessions execution update", error.message);
+      throw new Phase4PersistenceError(
+        `Failed to update paper-forward execution state: ${error.message}`
+      );
+    }
+    if (!data?.id) {
+      throw new Phase4PersistenceError(
+        "updatePaperForwardExecution returned no persisted id"
+      );
+    }
+    return data;
+  }
+
+  async insertPaperForwardEvent(row: Record<string, unknown>) {
+    const { data, error } = await this.client
+      .from("paper_forward_events")
+      .insert([row])
+      .select("id")
+      .single();
+    if (error) {
+      throwIfMissingPhase4Schema("paper_forward_events", error.message);
+      if (/duplicate key|unique constraint|23505/i.test(error.message)) {
+        return { id: String(row.idempotency_key || "duplicate"), duplicate: true };
+      }
+      throw new Phase4PersistenceError(
+        `Failed to insert paper-forward event: ${error.message}`
+      );
+    }
+    if (!data?.id) {
+      throw new Phase4PersistenceError(
+        "insertPaperForwardEvent returned no persisted id"
+      );
+    }
+    return { id: String(data.id), duplicate: false };
+  }
+
+  async insertPaperForwardTrade(row: Record<string, unknown>) {
+    const { data, error } = await this.client
+      .from("paper_forward_trades")
+      .insert([row])
+      .select("id")
+      .single();
+    if (error) {
+      throwIfMissingPhase4Schema("paper_forward_trades", error.message);
+      if (/duplicate key|unique constraint|23505/i.test(error.message)) {
+        return { id: "duplicate", duplicate: true };
+      }
+      throw new Phase4PersistenceError(
+        `Failed to insert paper-forward trade: ${error.message}`
+      );
+    }
+    if (!data?.id) {
+      throw new Phase4PersistenceError(
+        "insertPaperForwardTrade returned no persisted id"
+      );
+    }
+    return { id: String(data.id), duplicate: false };
+  }
+
+  async updatePaperForwardTrade(
+    sessionId: string,
+    entryCandleTs: string,
+    updates: Record<string, unknown>
+  ) {
+    const { data, error } = await this.client
+      .from("paper_forward_trades")
+      .update(updates)
+      .eq("session_id", sessionId)
+      .eq("entry_candle_ts", entryCandleTs)
+      .select("id")
+      .maybeSingle();
+    if (error) {
+      throwIfMissingPhase4Schema("paper_forward_trades update", error.message);
+      throw new Phase4PersistenceError(
+        `Failed to update paper-forward trade: ${error.message}`
+      );
+    }
+    if (!data?.id) {
+      throw new Phase4PersistenceError(
+        "updatePaperForwardTrade matched no persisted trade (fail closed)"
+      );
+    }
+    return { id: String(data.id) };
+  }
+
+  async upsertPaperForwardPosition(row: Record<string, unknown>) {
+    const { data, error } = await this.client
+      .from("paper_forward_positions")
+      .upsert([row], { onConflict: "session_id" })
+      .select("id")
+      .single();
+    if (error) {
+      throwIfMissingPhase4Schema("paper_forward_positions", error.message);
+      throw new Phase4PersistenceError(
+        `Failed to upsert paper-forward position: ${error.message}`
+      );
+    }
+    if (!data?.id) {
+      throw new Phase4PersistenceError(
+        "upsertPaperForwardPosition returned no persisted id"
+      );
+    }
+    return { id: String(data.id) };
+  }
+
+  async deletePaperForwardPosition(sessionId: string) {
+    const { error } = await this.client
+      .from("paper_forward_positions")
+      .delete()
+      .eq("session_id", sessionId);
+    if (error) {
+      throwIfMissingPhase4Schema("paper_forward_positions delete", error.message);
+      throw new Phase4PersistenceError(
+        `Failed to clear paper-forward position: ${error.message}`
+      );
+    }
+  }
+
+  async listPaperForwardEvents(sessionId: string, limit = 100) {
+    const { data, error } = await this.client
+      .from("paper_forward_events")
+      .select("*")
+      .eq("session_id", sessionId)
+      .order("candle_timestamp", { ascending: false })
+      .limit(limit);
+    if (error) {
+      throwIfMissingPhase4Schema("paper_forward_events list", error.message);
+      throw new Phase4PersistenceError(
+        `Failed to list paper-forward events: ${error.message}`
+      );
+    }
+    return data || [];
+  }
+
+  async listPaperForwardTrades(sessionId: string) {
+    const { data, error } = await this.client
+      .from("paper_forward_trades")
+      .select("*")
+      .eq("session_id", sessionId)
+      .order("entry_candle_ts", { ascending: true });
+    if (error) {
+      throwIfMissingPhase4Schema("paper_forward_trades list", error.message);
+      throw new Phase4PersistenceError(
+        `Failed to list paper-forward trades: ${error.message}`
+      );
+    }
+    return data || [];
+  }
+
+  async getPaperForwardPosition(sessionId: string) {
+    const { data, error } = await this.client
+      .from("paper_forward_positions")
+      .select("*")
+      .eq("session_id", sessionId)
+      .maybeSingle();
+    if (error) {
+      throwIfMissingPhase4Schema("paper_forward_positions get", error.message);
+      throw new Phase4PersistenceError(
+        `Failed to get paper-forward position: ${error.message}`
+      );
+    }
+    return data;
+  }
+
+  async listPaperForwardSessions(filters?: { strategy_id?: string }) {
+    let query = this.client
+      .from("trading_sessions")
+      .select("*")
+      .not("lifecycle_status", "is", null);
+    if (filters?.strategy_id) {
+      query = query.eq("strategy_id", filters.strategy_id);
+    }
+    const { data, error } = await query.order("created_at", {
+      ascending: false,
+    });
+    if (error) {
+      throwIfMissingPhase4Schema("trading_sessions list", error.message);
+      throw new Phase4PersistenceError(
+        `Failed to list paper-forward sessions: ${error.message}`
+      );
+    }
+    return data || [];
+  }
+
   async createResearchRun(row: Record<string, unknown>) {
     const { data, error } = await this.client
       .from("strategy_research_runs")

@@ -1,6 +1,6 @@
 /**
- * POST /api/paper-forward/sessions — create immutable paper session (Phase 4A)
- * GET  /api/paper-forward/sessions?strategyId= — list sessions for strategy
+ * POST /api/paper-forward/sessions — create immutable paper session
+ * GET  /api/paper-forward/sessions?strategyId= — list Phase 4 paper sessions
  */
 
 import type { NextApiRequest, NextApiResponse } from "next";
@@ -11,7 +11,10 @@ import {
   asyncHandler,
   handleCORSPreflight,
 } from "@/lib/utils";
-import { getTradingSafetyState } from "@/lib/trading-safety";
+import {
+  getTradingSafetyState,
+  PAPER_SIMULATED_NOTICE,
+} from "@/lib/trading-safety";
 import {
   createPaperForwardSession,
   PaperEligibilityError,
@@ -26,20 +29,27 @@ export default asyncHandler(async (req: NextApiRequest, res: NextApiResponse) =>
 
   if (req.method === "GET") {
     const strategyId = String(req.query.strategyId || "");
-    if (!strategyId) {
-      return sendError(res, "Missing strategyId", 400, req);
+    try {
+      const db = getDB();
+      const sessions = await db.listPaperForwardSessions(
+        strategyId ? { strategy_id: strategyId } : undefined
+      );
+      return sendSuccess(
+        res,
+        {
+          sessions,
+          safety: getTradingSafetyState(),
+          notice: PAPER_SIMULATED_NOTICE,
+        },
+        200,
+        req
+      );
+    } catch (error) {
+      if (error instanceof Phase4PersistenceError) {
+        return sendError(res, error.message, 503, req);
+      }
+      throw error;
     }
-    const db = getDB();
-    const sessions = await db.listTradingSessions({ strategy_id: strategyId });
-    const phase4 = (sessions || []).filter(
-      (s: { lifecycle_status?: string | null }) => Boolean(s.lifecycle_status)
-    );
-    return sendSuccess(
-      res,
-      { sessions: phase4, safety: getTradingSafetyState() },
-      200,
-      req
-    );
   }
 
   if (req.method !== "POST") {
@@ -76,8 +86,7 @@ export default asyncHandler(async (req: NextApiRequest, res: NextApiResponse) =>
         session: result.session,
         eligibility: result.eligibility,
         safety: result.safety,
-        notice:
-          "Paper Forward Engine pending / not executing trades yet (Phase 4A).",
+        notice: PAPER_SIMULATED_NOTICE,
       },
       201,
       req

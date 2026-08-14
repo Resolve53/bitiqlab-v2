@@ -11,6 +11,7 @@ import {
   PaperLifecycleError,
   Phase4PersistenceError,
   getTradingSafetyState,
+  PAPER_SIMULATED_NOTICE,
 } from "@/paper-forward";
 import { asPaperForwardPersistence } from "@/paper-forward/db-adapter";
 import { PaperAuthError, requireHumanActor } from "@/paper-forward/auth";
@@ -38,8 +39,7 @@ export default asyncHandler(async (req: NextApiRequest, res: NextApiResponse) =>
       {
         session,
         safety: getTradingSafetyState(),
-        notice:
-          "Paper Forward Engine pending / not executing trades yet (Phase 4A).",
+        notice: PAPER_SIMULATED_NOTICE,
       },
       200,
       req

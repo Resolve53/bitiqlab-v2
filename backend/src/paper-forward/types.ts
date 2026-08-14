@@ -71,6 +71,148 @@ export interface PaperForwardSession {
   abort_reason: string | null;
   created_at?: string;
   start_time?: string;
+  last_processed_candle_ts?: string | null;
+  execution_state?: PaperExecutionState | null;
+  paper_metrics?: PaperSessionMetrics | null;
+  realized_pnl?: number | null;
+  unrealized_pnl?: number | null;
+  fees_paid?: number | null;
+  max_drawdown?: number | null;
+  peak_equity?: number | null;
+}
+
+export type PaperEventType =
+  | "candle_processed"
+  | "signal_entry"
+  | "signal_exit"
+  | "fill_entry"
+  | "fill_exit"
+  | "session_failed";
+
+export interface PaperPendingEntry {
+  signalCandleTs: string;
+  direction: "long" | "short";
+  conditions: Record<string, number | boolean | string | null>;
+  passedRules: string[];
+}
+
+export interface PaperOpenPositionState {
+  direction: "long" | "short";
+  entryPrice: number;
+  entryTime: string;
+  entryCandleTs: string;
+  barsHeld: number;
+  quantity: number;
+  stopLoss: number;
+  takeProfit: number | null;
+  requestedRiskUsd: number;
+  actualRiskUsd: number;
+  capitalCapped: boolean;
+  positionNotional: number;
+  leverage: number;
+  marginUsed: number;
+  entryConditions: Record<string, number | boolean | string | null>;
+  entryCommission: number;
+  highestPrice: number;
+  lowestPrice: number;
+  pendingStrategyExit: {
+    signalCandleTs: string;
+    conditions: Record<string, number | boolean | string | null>;
+  } | null;
+}
+
+export interface PaperExecutionState {
+  pendingEntry: PaperPendingEntry | null;
+  position: PaperOpenPositionState | null;
+  equity: number;
+  peakEquity: number;
+  maxDrawdown: number;
+  feesPaid: number;
+  realizedPnl: number;
+  wins: number;
+  losses: number;
+  totalTrades: number;
+  commissionPct: number;
+  slippagePct: number;
+}
+
+export interface PaperSessionMetrics {
+  startingCapital: number;
+  currentEquity: number;
+  realizedPnl: number;
+  unrealizedPnl: number;
+  totalTrades: number;
+  wins: number;
+  losses: number;
+  winRate: number;
+  maxDrawdown: number;
+  feesPaid: number;
+  lastProcessedCandleTs: string | null;
+  source: "paper_forward_simulated";
+}
+
+export interface PaperForwardEventRow {
+  id: string;
+  session_id: string;
+  strategy_version_id: string;
+  snapshot_hash: string;
+  event_type: PaperEventType;
+  candle_timestamp: string;
+  signal?: unknown;
+  fill_price?: number | null;
+  fee?: number | null;
+  slippage?: number | null;
+  quantity?: number | null;
+  realized_pnl?: number | null;
+  reason?: string | null;
+  engine_version: string;
+  idempotency_key: string;
+  created_at?: string;
+}
+
+export interface PaperForwardTradeRow {
+  id: string;
+  session_id: string;
+  strategy_version_id: string;
+  snapshot_hash: string;
+  direction: "long" | "short";
+  entry_candle_ts: string;
+  exit_candle_ts?: string | null;
+  entry_price: number;
+  exit_price?: number | null;
+  quantity: number;
+  fee: number;
+  slippage_entry?: number | null;
+  slippage_exit?: number | null;
+  realized_pnl?: number | null;
+  unrealized_pnl?: number | null;
+  reason?: string | null;
+  signal?: unknown;
+  engine_version: string;
+  status: "open" | "closed";
+  created_at?: string;
+}
+
+export interface PaperForwardPositionRow {
+  id: string;
+  session_id: string;
+  strategy_version_id: string;
+  snapshot_hash: string;
+  direction: "long" | "short";
+  entry_candle_ts: string;
+  entry_price: number;
+  quantity: number;
+  stop_loss: number;
+  take_profit?: number | null;
+  leverage: number;
+  fee: number;
+  slippage?: number | null;
+  unrealized_pnl: number;
+  mark_price?: number | null;
+  mark_candle_ts?: string | null;
+  reason?: string | null;
+  engine_version: string;
+  position_state?: unknown;
 }
 
 export interface StrategyVersionRow {
