@@ -1636,6 +1636,97 @@ export class DatabaseService {
     return data;
   }
 
+  async claimEnrichmentCandidates(opts: {
+    workerId: string;
+    limit: number;
+    staleLockMs: number;
+    maxAttempts: number;
+    nowMs: number;
+  }) {
+    const { data, error } = await this.client.rpc("claim_enrichment_candidates", {
+      p_worker_id: opts.workerId,
+      p_limit: opts.limit,
+      p_stale_ms: opts.staleLockMs,
+      p_max_attempts: opts.maxAttempts,
+      p_now: new Date(opts.nowMs).toISOString(),
+    });
+    if (error) {
+      throwIfMissingPhase4Schema("claim_enrichment_candidates", error.message);
+      throw new Phase4PersistenceError(
+        `Failed to claim enrichment candidates: ${error.message}`
+      );
+    }
+    return (data || []) as Array<Record<string, unknown>>;
+  }
+
+  async updateEnrichmentOps(
+    id: string,
+    patch: {
+      status?: string;
+      next_retry_at?: string | null;
+      last_error_code?: string | null;
+      last_error_message_safe?: string | null;
+      enrichment_completed_at?: string | null;
+      claimed_at?: string | null;
+      claimed_by?: string | null;
+    }
+  ) {
+    const { data, error } = await this.client
+      .from("tradingview_candidates")
+      .update(patch)
+      .eq("id", id)
+      .select()
+      .single();
+    if (error) {
+      throwIfMissingPhase4Schema("tradingview_candidates", error.message);
+      throw new Phase4PersistenceError(
+        `Failed to update enrichment ops: ${error.message}`
+      );
+    }
+    if (!data?.id) {
+      throw new Phase4PersistenceError("updateEnrichmentOps returned no row");
+    }
+    return data;
+  }
+
+  async upsertEnrichmentWorkerHeartbeat(row: {
+    worker_id: string;
+    worker_version: string;
+    status: string;
+    last_heartbeat: string;
+    last_tick_at: string | null;
+    last_success_at: string | null;
+    last_failure_at: string | null;
+    processed_count: number;
+    failed_count: number;
+    currently_processing: string | null;
+  }) {
+    const { error } = await this.client.from("enrichment_worker_heartbeats").upsert(
+      { ...row, updated_at: new Date().toISOString() },
+      { onConflict: "worker_id" }
+    );
+    if (error) {
+      throwIfMissingPhase4Schema("enrichment_worker_heartbeats", error.message);
+      throw new Phase4PersistenceError(
+        `Failed to upsert enrichment worker heartbeat: ${error.message}`
+      );
+    }
+  }
+
+  async listEnrichmentWorkerHeartbeats() {
+    const { data, error } = await this.client
+      .from("enrichment_worker_heartbeats")
+      .select("*")
+      .order("last_heartbeat", { ascending: false });
+    if (error) {
+      throwIfMissingPhase4Schema("enrichment_worker_heartbeats", error.message);
+      throw new Phase4PersistenceError(
+        `Failed to list enrichment worker heartbeats: ${error.message}`
+      );
+    }
+    return data || [];
+  }
+
 }
 
 /**

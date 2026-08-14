@@ -11,6 +11,8 @@ import {
 import type { TradingViewCandidateRow } from "@/tradingview-pipeline/types";
 import type { CandidateStatus } from "@/tradingview-pipeline/constants";
 import type { IntelligencePersistence, EnrichmentProviders } from "../enrich";
+import { createMemoryClaimLock, claimEligibleCandidatesInMemory } from "../claim";
+import type { WorkerHeartbeatRow, WorkerPersistence } from "../worker";
 import type {
   FundingBlock,
   LiquidationClustersBlock,
@@ -399,6 +401,68 @@ export async function seedCandidate(opts?: {
     deps: {
       ...authorityDeps(frozen.row, liveSpy),
       ...intel,
+    },
+  };
+}
+
+export function memoryWorkerStore(
+  intel: ReturnType<typeof memoryIntelligence>
+): WorkerPersistence & {
+  rows: TradingViewCandidateRow[];
+  snapshots: SnapshotRow[];
+  heartbeats: Map<string, WorkerHeartbeatRow>;
+} {
+  const lock = createMemoryClaimLock();
+  const heartbeats = new Map<string, WorkerHeartbeatRow>();
+  return {
+    ...intel,
+    heartbeats,
+    async claimEnrichmentCandidates(opts) {
+      return claimEligibleCandidatesInMemory(intel.rows, { ...opts, lock });
+    },
+    async updateEnrichmentOps(id, patch) {
+      const row = intel.rows.find((r) => r.id === id);
+      if (!row) throw new Error("candidate row missing");
+      Object.assign(row, patch);
+      if (patch.status) {
+        row.status = patch.status as TradingViewCandidateRow["status"];
+      }
+      return row;
+    },
+    async getLatestIntelligenceSnapshot(candidateId) {
+      const snaps = intel.snapshots
+        .filter((s) => s.candidate_id === candidateId)
+        .sort((a, b) => b.enrichment_version - a.enrichment_version);
+      const latest = snaps[0];
+      if (!latest) return null;
+      return {
+        status: latest.status,
+        enrichment_version: latest.enrichment_version,
+        fetched_at: latest.fetched_at,
+        intelligence: latest.intelligence,
+      };
+    },
+    async upsertEnrichmentWorkerHeartbeat(row) {
+      heartbeats.set(row.worker_id, { ...row });
+    },
+    async listEnrichmentWorkerHeartbeats() {
+      return [...heartbeats.values()];
+    },
+  };
+}
+
+export async function seedWorker(opts?: {
+  futures?: boolean;
+  status?: CandidateStatus;
+}) {
+  const seeded = await seedCandidate(opts);
+  const worker = memoryWorkerStore(seeded.intel);
+  return {
+    ...seeded,
+    worker,
+    deps: {
+      ...seeded.deps,
+      ...worker,
     },
   };
 }

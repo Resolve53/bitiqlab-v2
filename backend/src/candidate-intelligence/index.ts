@@ -7,3 +7,6 @@ export { scoreIntelligence } from "./score";
 export { evaluateFreshness, isReadyForAiReview } from "./freshness";
 export { revalidateCandidateAuthority } from "./provenance";
 export { calcAtr } from "./providers/binance-market";
+export { runEnrichmentWorkerTick, summarizeHeartbeats } from "./worker";
+export type { WorkerPersistence, TickResult } from "./worker";
+export { isClaimEligible } from "./claim";

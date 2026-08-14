@@ -214,3 +214,57 @@ curl -X POST https://bitiqlab-backend-production.up.railway.app/api/paper-tradin
 ---
 
 **Your complete MCP integration is ready!** 🚀
+
+---
+
+## Stage 2B — Enrichment worker (dedicated Railway service)
+
+Stage 2 enrichment is automatic. Do **not** rely on manual `POST /api/tradingview/candidates/:id/enrich` in production.
+
+### New Railway service
+
+- **Name**: `bitiqlab-enrichment-worker`
+- **Dockerfile**: `backend.Dockerfile` (same image as the API)
+- **Root Directory**: `/`
+- **Start command** (override the image `CMD`):
+
+```
+npm run worker:enrichment
+```
+
+That runs `tsx src/candidate-intelligence/worker-main.ts`.
+
+- **Health**: `GET /health` on the worker process (uses `PORT`, default `3011` if unset), and `GET /api/health/enrichment-worker` on the backend API (reads durable DB heartbeats).
+- **Poll interval**: `ENRICHMENT_WORKER_POLL_MS` (default `5000`)
+
+### Required env vars (worker service)
+
+```
+SUPABASE_URL=...
+SUPABASE_SERVICE_ROLE_KEY=...
+ENRICHMENT_WORKER_POLL_MS=5000
+ENRICHMENT_WORKER_BATCH_SIZE=3
+ENRICHMENT_WORKER_CONCURRENCY=1
+ENRICHMENT_MAX_ATTEMPTS=5
+ENRICHMENT_RETRY_BASE_MS=5000
+ENRICHMENT_RETRY_MAX_MS=900000
+ENRICHMENT_STALE_LOCK_MS=300000
+ENRICHMENT_WORKER_ID=enrichment-railway-1
+PORT=3011
+```
+
+Optional provider keys (same as API): `COINGLASS_API_KEY`, `COINAPI_KEY`, `ALPHA_VANTAGE_API_KEY`, `COINMARKETCAP_API_KEY`.
+
+Apply `migrations/016_enrichment_worker.sql` in Supabase before starting the worker.
+
+### Cron fallback (optional)
+
+If you do not run a dedicated worker, you may call:
+
+```
+POST /api/internal/enrichment-tick
+Header: x-enrichment-worker-key: $ENRICHMENT_WORKER_SECRET
+```
+
+`ENRICHMENT_WORKER_SECRET` must be set on the API; the route fails closed if it is missing.
+
