@@ -18,6 +18,48 @@ Bitiq backend
 
 CDP is never published on the public Railway hostname.
 
+## Railway build config (required — this is why production was running Next.js)
+
+Repo-level `/railway.toml` **cannot** select a Dockerfile per Railway service. It always sets:
+
+```
+dockerfilePath = "./backend.Dockerfile"
+```
+
+That image runs `npm start` → `node server.js` (Next.js). That is why `tradingview-mcp` logs showed:
+
+```
+> bitiqlab-backend@1.0.0 start
+> node server.js
+Starting Next.js server...
+```
+
+**Fix (isolated to tradingview-mcp):**
+
+1. This repo now has `/railway.tradingview-mcp.toml` with `dockerfilePath = "./Dockerfile.mcp"` and `startCommand = "node mcp-http-server.js"`.
+2. **You must point the Railway service at that file.** Railway does not auto-detect `railway.tradingview-mcp.toml`.
+
+In Railway → service **tradingview-mcp** → **Settings**:
+
+| Setting | Value |
+|---|---|
+| Config File Path (Config-as-code) | `/railway.tradingview-mcp.toml` |
+| Root Directory | empty / repository root (`/`) — **not** `/backend` |
+| Dockerfile (after redeploy) | `./Dockerfile.mcp` (sourced from the MCP toml) |
+| Volume mount | `/data` (already attached) |
+
+Do **not** change the root `/railway.toml` Dockerfile for other services (`bitiqlab-v2`, Analysis, Signal, Trade, enrichment worker). Those must keep `./backend.Dockerfile`.
+
+After the Config File Path is saved, **Redeploy**. Settings → Build must show `./Dockerfile.mcp`, not `./backend.Dockerfile`. Until that UI line changes, Stage 1C is **not** deployed.
+
+Optional belt-and-suspenders variable on **tradingview-mcp only**:
+
+```
+RAILWAY_DOCKERFILE_PATH=Dockerfile.mcp
+```
+
+This is not a substitute for the Config File Path. While the service still loads `/railway.toml`, config-as-code will keep forcing `backend.Dockerfile`.
+
 ## Railway volume (manual step)
 
 Railway volumes cannot be declared completely in this repo. In the Railway dashboard:

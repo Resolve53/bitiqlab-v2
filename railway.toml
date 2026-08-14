@@ -1,3 +1,7 @@
+# Shared default for Bitiq backend API / services that should run Next.js.
+# This file is what Railway loads when Config File Path is unset.
+# Do NOT point tradingview-mcp at this file.
+# tradingview-mcp must use /railway.tradingview-mcp.toml → Dockerfile.mcp
 [build]
 builder = "dockerfile"
 dockerfilePath = "./backend.Dockerfile"

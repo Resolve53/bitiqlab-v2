@@ -53,7 +53,9 @@
 
 4. **Deploy TradingView MCP Service**:
    - **Name**: `tradingview-mcp`
-   - **Dockerfile**: `Dockerfile.mcp`
+   - **Config File Path:** `/railway.tradingview-mcp.toml` (required — root `/railway.toml` would force `backend.Dockerfile`)
+   - **Dockerfile**: `./Dockerfile.mcp` (from that config file)
+   - **Start command**: `node mcp-http-server.js`
    - **Root Directory**: `/`
    - **Port**: Railway `PORT` (HTTP only). Do **not** publish `9222`.
    - **Volume (required):** mount path `/data` — Chromium profile is `/data/tradingview-profile`
@@ -72,14 +74,11 @@
      ```
    - First-login and smoke tests: [STAGE_1C_BROWSER_RUNTIME.md](./STAGE_1C_BROWSER_RUNTIME.md)
 
-### Option B: Using `railway.toml` (Infrastructure as Code)
+### Option B: Config-as-code (per service)
 
-Railway automatically detects `railway.toml` and deploys both services:
+Root `/railway.toml` applies only to services that do **not** set a custom Config File Path. It builds `./backend.Dockerfile` (Next.js API).
 
-```bash
-# Just push to main and Railway deploys both automatically
-git push origin main
-```
+`tradingview-mcp` must set Config File Path to `/railway.tradingview-mcp.toml`. Railway will not infer that file from the service name.
 
 ---
 
@@ -286,7 +285,18 @@ Header: x-enrichment-worker-key: $ENRICHMENT_WORKER_SECRET
 
 Production MCP no longer uses a laptop CDP endpoint.
 
+**Critical:** root `/railway.toml` forces `./backend.Dockerfile` (Next.js). Railway cannot pick a per-service Dockerfile from that single file.
+
+On **tradingview-mcp only**:
+
+1. Settings → Config-as-code → **Config File Path** = `/railway.tradingview-mcp.toml`
+2. Root Directory = repository root (do not set `/backend`)
+3. Redeploy
+4. Confirm Settings → Build shows `./Dockerfile.mcp` (not `./backend.Dockerfile`)
+5. Confirm deploy logs start with `node mcp-http-server.js`, **not** `node server.js`
+
 - **Image:** `Dockerfile.mcp` (Debian slim + Chromium)
+- **Start:** `node mcp-http-server.js`
 - **HTTP:** Railway `PORT` (public/private as you already expose)
 - **CDP:** `127.0.0.1:9222` inside the container only — never add a public TCP proxy for 9222
 - **Volume:** mount `/data` so `/data/tradingview-profile` survives redeploys
