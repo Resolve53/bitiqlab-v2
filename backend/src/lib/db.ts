@@ -1372,6 +1372,155 @@ export class DatabaseService {
     return data || [];
   }
 
+  /**
+   * Stage 1 TradingView candidates — persist-only. Fail closed if migration 014 is missing.
+   */
+  async insertTradingViewCandidate(row: {
+    candidate_id: string;
+    strategy_id: string;
+    strategy_version_id: string;
+    snapshot_hash: string;
+    symbol: string;
+    timeframe: string;
+    direction: string;
+    signal_candle_ts: string;
+    received_at: string;
+    entry: number;
+    stop_loss: number;
+    take_profits: number[];
+    pine_version: string;
+    source: string;
+    raw_payload: unknown;
+    status: string;
+  }) {
+    const { data, error } = await this.client
+      .from("tradingview_candidates")
+      .insert([row])
+      .select()
+      .single();
+    if (error) {
+      throwIfMissingPhase4Schema("tradingview_candidates", error.message);
+      throw new Phase4PersistenceError(
+        `Failed to insert tradingview candidate: ${error.message}`
+      );
+    }
+    if (!data?.id) {
+      throw new Phase4PersistenceError(
+        "insertTradingViewCandidate returned no persisted id"
+      );
+    }
+    return data;
+  }
+
+  async getTradingViewCandidateByCandidateId(candidateId: string) {
+    const { data, error } = await this.client
+      .from("tradingview_candidates")
+      .select("*")
+      .eq("candidate_id", candidateId)
+      .maybeSingle();
+    if (error) {
+      throwIfMissingPhase4Schema("tradingview_candidates", error.message);
+      throw new Phase4PersistenceError(
+        `Failed to get tradingview candidate: ${error.message}`
+      );
+    }
+    return data;
+  }
+
+  async getTradingViewCandidateById(id: string) {
+    const { data, error } = await this.client
+      .from("tradingview_candidates")
+      .select("*")
+      .eq("id", id)
+      .maybeSingle();
+    if (error) {
+      throwIfMissingPhase4Schema("tradingview_candidates", error.message);
+      throw new Phase4PersistenceError(
+        `Failed to get tradingview candidate by id: ${error.message}`
+      );
+    }
+    return data;
+  }
+
+  async getTradingViewCandidateByNaturalKey(key: {
+    strategy_version_id: string;
+    symbol: string;
+    timeframe: string;
+    direction: string;
+    signal_candle_ts: string;
+  }) {
+    const { data, error } = await this.client
+      .from("tradingview_candidates")
+      .select("*")
+      .eq("strategy_version_id", key.strategy_version_id)
+      .eq("symbol", key.symbol)
+      .eq("timeframe", key.timeframe)
+      .eq("direction", key.direction)
+      .eq("signal_candle_ts", key.signal_candle_ts)
+      .maybeSingle();
+    if (error) {
+      throwIfMissingPhase4Schema("tradingview_candidates", error.message);
+      throw new Phase4PersistenceError(
+        `Failed to get tradingview candidate by natural key: ${error.message}`
+      );
+    }
+    return data;
+  }
+
+  async listTradingViewCandidates(filters?: {
+    strategy_id?: string;
+    strategy_version_id?: string;
+    symbol?: string;
+    status?: string;
+    limit?: number;
+  }) {
+    let query = this.client.from("tradingview_candidates").select("*");
+    if (filters?.strategy_id) query = query.eq("strategy_id", filters.strategy_id);
+    if (filters?.strategy_version_id) {
+      query = query.eq("strategy_version_id", filters.strategy_version_id);
+    }
+    if (filters?.symbol) query = query.eq("symbol", filters.symbol);
+    if (filters?.status) query = query.eq("status", filters.status);
+    query = query.order("received_at", { ascending: false });
+    if (filters?.limit) query = query.limit(filters.limit);
+    const { data, error } = await query;
+    if (error) {
+      throwIfMissingPhase4Schema("tradingview_candidates", error.message);
+      throw new Phase4PersistenceError(
+        `Failed to list tradingview candidates: ${error.message}`
+      );
+    }
+    return data || [];
+  }
+
+  async insertTradingViewDeployment(row: {
+    strategy_id: string;
+    strategy_version_id: string;
+    snapshot_hash: string;
+    symbol: string;
+    timeframe: string;
+    pine_script: string;
+    pine_version: string;
+    compile_status: string;
+    alert_status: string;
+    alert_instructions: string | null;
+    webhook_url: string | null;
+    verification: unknown;
+  }) {
+    const { data, error } = await this.client
+      .from("tradingview_deployments")
+      .insert([row])
+      .select()
+      .single();
+    if (error) {
+      throwIfMissingPhase4Schema("tradingview_deployments", error.message);
+      throw new Phase4PersistenceError(
+        `Failed to insert tradingview deployment: ${error.message}`
+      );
+    }
+    return data;
+  }
+
 }
 
 /**

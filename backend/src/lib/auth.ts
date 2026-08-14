@@ -16,6 +16,7 @@ const PUBLIC_API_PATHS = [
   "/api/auth/bootstrap",
   "/api/auth/diagnose",
   "/api/paper-trading/tradingview-webhook",
+  "/api/tradingview/candidates",
 ];
 
 export function isAuthRequired(): boolean {
