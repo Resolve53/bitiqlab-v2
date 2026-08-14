@@ -63,6 +63,18 @@ export default function PaperTradingPage() {
   const [error, setError] = useState<string | null>(null);
   const [deletingId, setDeletingId] = useState<string | null>(null);
   const [sessionListVersion, setSessionListVersion] = useState(0);
+  const [forwardSessions, setForwardSessions] = useState<
+    Array<{
+      id: string;
+      session_name?: string;
+      lifecycle_status?: string;
+      symbol?: string;
+      timeframe?: string;
+      strategy_version?: number;
+      current_balance?: number;
+      paper_metrics?: { currentEquity?: number; realizedPnl?: number };
+    }>
+  >([]);
 
   async function handleDeleteSession(sessionId: string) {
     if (
@@ -92,6 +104,10 @@ export default function PaperTradingPage() {
       setError(null);
       const overview = await apiFetch<Overview>("/api/paper-trading/overview");
       setData(overview);
+      const fwd = await apiFetch<{ sessions: typeof forwardSessions }>(
+        "/api/paper-forward/sessions"
+      ).catch(() => ({ sessions: [] }));
+      setForwardSessions(fwd.sessions || []);
     } catch (e) {
       setError(e instanceof Error ? e.message : "Failed to load paper trading data");
       setData(null);
@@ -121,7 +137,7 @@ export default function PaperTradingPage() {
     <>
       <PageHeader
         title="Paper Trading"
-        subtitle="Live Binance testnet trades from your database — not simulated demo numbers."
+        subtitle="PAPER / SIMULATED forward sessions — not real capital, not exchange orders. Legacy testnet paths stay quarantined."
         actions={
           <Link
             href="/strategies"
@@ -138,6 +154,43 @@ export default function PaperTradingPage() {
         onSessionsChanged={() => void load()}
       />
 
+      {forwardSessions.length > 0 && (
+        <section className="mb-8 space-y-3">
+          <h2 className="text-lg font-semibold text-white">
+            PAPER / SIMULATED forward sessions
+          </h2>
+          <div className="space-y-2">
+            {forwardSessions.map((s) => (
+              <Link
+                key={s.id}
+                href={`/paper-trading/${s.id}/dashboard`}
+                className="block rounded-lg border border-amber-500/20 bg-slate-900/60 px-4 py-3 hover:border-amber-400/40"
+              >
+                <div className="flex flex-wrap items-center justify-between gap-2">
+                  <div>
+                    <p className="text-sm text-white">
+                      {s.session_name || s.id.slice(0, 8)}{" "}
+                      <span className="ml-2 rounded bg-amber-500/20 px-2 py-0.5 text-[11px] text-amber-100">
+                        PAPER / SIMULATED
+                      </span>
+                    </p>
+                    <p className="text-xs text-slate-400 mt-1">
+                      {s.lifecycle_status} · {s.symbol} {s.timeframe} · v
+                      {s.strategy_version ?? "—"}
+                    </p>
+                  </div>
+                  <p className="text-sm text-slate-300">
+                    {formatPnl(
+                      s.paper_metrics?.currentEquity ?? s.current_balance
+                    )}
+                  </p>
+                </div>
+              </Link>
+            ))}
+          </div>
+        </section>
+      )}
+
       {error && (
         <div className="mb-6 rounded-lg border border-red-500/30 bg-red-500/10 px-4 py-3 text-sm text-red-200">
           {error}
@@ -145,7 +198,7 @@ export default function PaperTradingPage() {
       )}
 
       {loading && !data && (
-        <p className="text-slate-400 py-12 text-center">Loading real trade data…</p>
+        <p className="text-slate-400 py-12 text-center">Loading paper sessions…</p>
       )}
 
       {data && (

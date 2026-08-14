@@ -1,3 +1,8 @@
+/**
+ * POST /api/paper-forward/sessions/[id]/tick
+ * Process new CLOSED candles for a RUNNING paper session (simulated fills only).
+ */
+
 import type { NextApiRequest, NextApiResponse } from "next";
 import { getDB } from "@/lib/db";
 import {
@@ -7,13 +12,18 @@ import {
   handleCORSPreflight,
 } from "@/lib/utils";
 import {
-  abortPaperSession,
+  tickPaperSession,
+  PaperTickError,
+  PaperSnapshotError,
   PaperLifecycleError,
   Phase4PersistenceError,
-  getTradingSafetyState,
   PAPER_SIMULATED_NOTICE,
 } from "@/paper-forward";
-import { asPaperForwardPersistence } from "@/paper-forward/db-adapter";
+import { PaperCandleError } from "@/paper-forward/closed-candles";
+import {
+  asPaperExecutionPersistence,
+  asPaperForwardPersistence,
+} from "@/paper-forward/db-adapter";
 import { PaperAuthError, requireHumanActor } from "@/paper-forward/auth";
 
 export default asyncHandler(async (req: NextApiRequest, res: NextApiResponse) => {
@@ -24,23 +34,26 @@ export default asyncHandler(async (req: NextApiRequest, res: NextApiResponse) =>
   }
   const id = String(req.query.id || "");
   if (!id) return sendError(res, "Missing session id", 400, req);
+
   try {
     const actor = await requireHumanActor(
       req,
       req.body?.createdBy || req.body?.created_by
     );
-    const reason = String(req.body?.reason || req.body?.abort_reason || "");
-    const session = await abortPaperSession(
-      asPaperForwardPersistence(getDB()),
-      id,
-      reason,
-      actor
+    const db = getDB();
+    const result = await tickPaperSession(
+      asPaperForwardPersistence(db),
+      asPaperExecutionPersistence(db),
+      {
+        sessionId: id,
+        actor,
+        maxBars: req.body?.maxBars,
+      }
     );
     return sendSuccess(
       res,
       {
-        session,
-        safety: getTradingSafetyState(),
+        ...result,
         notice: PAPER_SIMULATED_NOTICE,
       },
       200,
@@ -49,6 +62,12 @@ export default asyncHandler(async (req: NextApiRequest, res: NextApiResponse) =>
   } catch (error) {
     if (error instanceof PaperAuthError)
       return sendError(res, error.message, error.statusCode, req);
+    if (error instanceof PaperTickError)
+      return sendError(res, error.message, error.statusCode, req);
+    if (error instanceof PaperSnapshotError)
+      return sendError(res, error.message, 409, req);
+    if (error instanceof PaperCandleError)
+      return sendError(res, error.message, 400, req);
     if (error instanceof PaperLifecycleError)
       return sendError(res, error.message, 400, req);
     if (error instanceof Phase4PersistenceError)

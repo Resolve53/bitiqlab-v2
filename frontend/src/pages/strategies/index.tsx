@@ -115,7 +115,7 @@ export default function StrategiesPage() {
     <>
       <PageHeader
         title="Strategies"
-        subtitle="Paper trading starts from an immutable validated strategy version (Phase 4A). No exchange orders until Phase 4B."
+        subtitle="Paper trading starts from an immutable validated strategy version. Phase 4B runs PAPER / SIMULATED fills only — no exchange orders."
         actions={
           <div className="flex gap-2 flex-wrap">
             <button

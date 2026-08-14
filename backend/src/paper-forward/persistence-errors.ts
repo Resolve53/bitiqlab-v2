@@ -3,7 +3,7 @@
  */
 
 export const PHASE4_PERSISTENCE_UNAVAILABLE =
-  "Phase 4 paper-forward persistence is unavailable. Apply migration 012 (and Phase 2/3 migrations) before creating paper sessions.";
+  "Phase 4 paper-forward persistence is unavailable. Apply migrations 012 and 013 (and Phase 2/3 migrations) before creating or ticking paper sessions.";
 
 export class Phase4PersistenceError extends Error {
   readonly causeMessage?: string;

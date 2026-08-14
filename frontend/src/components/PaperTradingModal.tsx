@@ -142,7 +142,7 @@ export default function PaperTradingModal({
       });
       setNotice(
         data.notice ||
-          "Paper Forward Engine pending / not executing trades yet"
+          "PAPER / SIMULATED session created. No exchange orders."
       );
       setSubmitted(true);
       setTimeout(() => {
@@ -165,7 +165,7 @@ export default function PaperTradingModal({
           <h2 className="text-xl font-semibold text-white">Session created</h2>
           <p className="mt-2 text-sm text-amber-200/90">
             {notice ||
-              "Paper Forward Engine pending / not executing trades yet"}
+              "PAPER / SIMULATED session created. No exchange orders."}
           </p>
           <p className="mt-4 text-xs text-slate-500">Opening session…</p>
         </div>
@@ -199,8 +199,8 @@ export default function PaperTradingModal({
           )}
 
           <div className="rounded-lg border border-amber-500/30 bg-amber-500/10 px-4 py-3 text-sm text-amber-100">
-            Phase 4A creates an immutable session only. No live-forward
-            execution or exchange orders yet.
+            PAPER / SIMULATED. Phase 4B will process closed candles against the
+            frozen strategy snapshot. No real capital and no exchange orders.
           </div>
 
           <div>
