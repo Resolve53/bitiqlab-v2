@@ -71,6 +71,7 @@ export function authorityDeps(row: VersionRow, liveSpy?: () => Promise<unknown>)
 
 export function memoryCandidates(): CandidatePersistence & {
   rows: TradingViewCandidateRow[];
+  getTradingViewCandidateById: (id: string) => Promise<TradingViewCandidateRow | null>;
 } {
   const rows: TradingViewCandidateRow[] = [];
   return {
@@ -113,6 +114,9 @@ export function memoryCandidates(): CandidatePersistence & {
       };
       rows.push(stored);
       return stored;
+    },
+    async getTradingViewCandidateById(id) {
+      return rows.find((r) => r.id === id) || null;
     },
     async getTradingViewCandidateByCandidateId(candidateId) {
       return rows.find((r) => r.candidate_id === candidateId) || null;

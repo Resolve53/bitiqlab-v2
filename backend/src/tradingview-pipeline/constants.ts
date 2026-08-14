@@ -12,6 +12,10 @@ export const CANDIDATE_STATUSES = [
   "RECEIVED",
   "INVALID",
   "READY_FOR_ENRICHMENT",
+  "ENRICHING",
+  "READY_FOR_AI_REVIEW",
+  "ENRICHMENT_PARTIAL",
+  "ENRICHMENT_FAILED",
 ] as const;
 
 export type CandidateStatus = (typeof CANDIDATE_STATUSES)[number];

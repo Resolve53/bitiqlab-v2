@@ -1,5 +1,5 @@
 /**
- * GET /api/tradingview/candidates/:id
+ * GET /api/tradingview/candidates/:id/intelligence
  */
 
 import type { NextApiRequest, NextApiResponse } from "next";
@@ -25,29 +25,24 @@ export default asyncHandler(async (req: NextApiRequest, res: NextApiResponse) =>
   try {
     const db = getDB();
     const byId = await db.getTradingViewCandidateById(id);
-    const row = byId || (await db.getTradingViewCandidateByCandidateId(id));
-    if (!row) return sendError(res, "Candidate not found", 404, req);
+    const candidate = byId || (await db.getTradingViewCandidateByCandidateId(id));
+    if (!candidate) return sendError(res, "Candidate not found", 404, req);
 
+    const snapshots = await db.listIntelligenceSnapshots(candidate.candidate_id);
     return sendSuccess(
       res,
       {
-        id: row.id,
-        candidate_id: row.candidate_id,
-        strategy_id: row.strategy_id,
-        strategy_version_id: row.strategy_version_id,
-        snapshot_hash: row.snapshot_hash,
-        symbol: row.symbol,
-        timeframe: row.timeframe,
-        direction: row.direction,
-        signal_candle_ts: row.signal_candle_ts,
-        entry: row.entry,
-        stop_loss: row.stop_loss,
-        take_profits: row.take_profits,
-        pine_version: row.pine_version,
-        source: row.source,
-        status: row.status,
-        received_at: row.received_at,
-        created_at: row.created_at,
+        candidate_id: candidate.candidate_id,
+        candidate_status: candidate.status,
+        latest: snapshots[0] || null,
+        history: snapshots.map((s) => ({
+          enrichment_version: s.enrichment_version,
+          status: s.status,
+          quality_score: s.quality_score,
+          fetched_at: s.fetched_at,
+          freshness: s.freshness,
+          provider_status: s.provider_status,
+        })),
       },
       200,
       req

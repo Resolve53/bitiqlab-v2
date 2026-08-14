@@ -26,7 +26,7 @@ describe("F. Safety — Stage 1 detector never executes", () => {
     "tradingview-pipeline/mcp-deploy.ts",
     "tradingview-pipeline/webhook-security.ts",
     "pages/api/tradingview/candidates/index.ts",
-    "pages/api/tradingview/candidates/[id].ts",
+    "pages/api/tradingview/candidates/[id]/index.ts",
     "pages/api/tradingview/deploy.ts",
     "pages/api/tradingview/pine.ts",
   ];
