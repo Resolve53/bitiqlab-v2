@@ -4,6 +4,10 @@ import type { StrategySnapshot } from "@/research-engine/types";
 import type { PaperForwardSession } from "../types";
 import type { PaperForwardPersistence } from "../session-service";
 import type { PaperExecutionPersistence } from "../execution-persistence";
+import type { PaperOpsPersistence } from "../ops-persistence";
+import type { PaperForwardEvaluation } from "../forward-evaluation";
+import type { PaperReadinessDecision } from "../readiness-gate";
+
 
 export function makeBars(
   rows: Array<Partial<OHLCVBar> & { close: number; open?: number }>
@@ -121,6 +125,12 @@ export function makeRunningSession(
     last_processed_candle_ts: null,
     execution_state: null,
     paper_metrics: null,
+    last_tick_at: extras.last_tick_at ?? null,
+    last_tick_error: extras.last_tick_error ?? null,
+    tick_error_count: extras.tick_error_count ?? 0,
+    candles_processed: extras.candles_processed ?? 0,
+    stale_detected_at: extras.stale_detected_at ?? null,
+    readiness_status: extras.readiness_status ?? null,
     ...extras,
   };
 }
@@ -232,6 +242,221 @@ export function makeExecDb(): PaperExecutionPersistence & {
     getPaperForwardPosition: async () => bag.position,
   };
   return bag;
+}
+
+export function makeClosedTrade(
+  overrides: Record<string, unknown> = {}
+): any {
+  return {
+    id: "tr-1",
+    session_id: "sess-1",
+    strategy_version_id: "ver-1",
+    snapshot_hash: "h",
+    direction: "long",
+    entry_candle_ts: "2024-01-01T00:00:00.000Z",
+    exit_candle_ts: "2024-01-01T01:00:00.000Z",
+    entry_price: 100,
+    exit_price: 104,
+    quantity: 1,
+    fee: 0.1,
+    realized_pnl: 3.9,
+    status: "closed",
+    engine_version: "paper_forward_exec_v1_phase4b",
+    ...overrides,
+  };
+}
+
+export function makeOpsHarness(session: PaperForwardSession) {
+  const { db: sessionDb, store } = makeSessionDb(session);
+  const exec = makeExecDb();
+  exec.updatePaperForwardExecution = async (_id, updates) => {
+    store.sess = { ...store.sess, ...updates } as PaperForwardSession;
+    return { ...store.sess };
+  };
+  sessionDb.updatePaperForwardLifecycle = async (_id, updates) => {
+    store.sess = { ...store.sess, ...updates } as PaperForwardSession;
+    return { ...store.sess };
+  };
+
+  const opsEvents: any[] = [];
+  const evaluations: any[] = [];
+  const readiness: any[] = [];
+  const reviews: any[] = [];
+  const audit: any[] = [];
+  const lock = { token: null as string | null, until: 0 };
+  let liveEligible = false;
+  let validation: any = {
+    id: session.validation_id,
+    strategy_id: session.strategy_id,
+    strategy_version: session.strategy_version,
+    strategy_snapshot: session.strategy_snapshot,
+    status: "pass",
+    gate: { status: "pass" },
+    report: {
+      chronological: {
+        validation: {
+          tradeCount: 40,
+          barCount: 500,
+          metrics: {
+            totalTrades: 40,
+            winRate: 0.55,
+            expectancy: 12,
+            profitFactor: 1.8,
+            totalReturn: 0.2,
+            maxDrawdown: 0.08,
+            sharpeRatio: 1.1,
+            netProfit: 480,
+          },
+        },
+        test: {
+          tradeCount: 20,
+          barCount: 200,
+          metrics: {
+            totalTrades: 20,
+            winRate: 0.5,
+            expectancy: 8,
+            profitFactor: 1.4,
+            totalReturn: 0.1,
+            maxDrawdown: 0.1,
+            sharpeRatio: 0.9,
+            netProfit: 160,
+          },
+        },
+      },
+    },
+    symbol: session.symbol,
+    timeframe: session.timeframe,
+  };
+
+  const ops: PaperOpsPersistence = {
+    getPaperForwardSession: async () => ({ ...store.sess }),
+    updatePaperForwardLifecycle: async (_id, updates) => {
+      store.sess = { ...store.sess, ...updates } as PaperForwardSession;
+      return { ...store.sess };
+    },
+    updatePaperForwardExecution: async (_id, updates) => {
+      store.sess = { ...store.sess, ...updates } as PaperForwardSession;
+      return { ...store.sess };
+    },
+    listPaperForwardTrades: async () => exec.trades,
+    listPaperForwardEvents: async () => exec.events,
+    countPaperForwardCandleEvents: async () =>
+      exec.events.filter((e) => e.event_type === "candle_processed").length,
+    listRunningPaperForwardSessions: async (limit) => {
+      if (store.sess.lifecycle_status !== "RUNNING") return [];
+      return [{ ...store.sess }].slice(0, limit);
+    },
+    acquirePaperForwardTickLock: async (_id, token, leaseMs) => {
+      const now = Date.now();
+      if (store.sess.lifecycle_status !== "RUNNING") return false;
+      if (lock.until > now && lock.token && lock.token !== token) return false;
+      lock.token = token;
+      lock.until = now + leaseMs;
+      store.sess.tick_lock_token = token;
+      store.sess.tick_lock_until = new Date(lock.until).toISOString();
+      return true;
+    },
+    releasePaperForwardTickLock: async (_id, token) => {
+      if (lock.token === token) {
+        lock.token = null;
+        lock.until = 0;
+        store.sess.tick_lock_token = null;
+        store.sess.tick_lock_until = null;
+      }
+    },
+    insertPaperForwardOpsEvent: async (row) => {
+      const rec = { id: `ops-${opsEvents.length + 1}`, ...row };
+      opsEvents.push(rec);
+      return { id: rec.id };
+    },
+    insertPaperForwardEvaluation: async (row) => {
+      const rec = { id: `evl-${evaluations.length + 1}`, ...row };
+      evaluations.push(rec);
+      return { id: rec.id };
+    },
+    getLatestPaperForwardEvaluation: async () => {
+      const last = evaluations[evaluations.length - 1];
+      return last
+        ? { id: last.id, evaluation: last.evaluation as PaperForwardEvaluation }
+        : null;
+    },
+    insertPaperForwardReadiness: async (row) => {
+      const rec = { id: `rd-${readiness.length + 1}`, ...row };
+      readiness.push(rec);
+      return { id: rec.id };
+    },
+    getLatestPaperForwardReadiness: async () => {
+      const last = readiness[readiness.length - 1];
+      if (!last) return null;
+      return {
+        id: last.id,
+        decision: {
+          status: last.status,
+          reasons: last.reasons,
+          checks: last.checks,
+          config: last.config,
+          evaluationSource: "paper_forward_simulated" as const,
+          historicalSourceExcluded: true as const,
+        } as PaperReadinessDecision,
+      };
+    },
+    insertPaperForwardReview: async (row) => {
+      const rec = { id: `rv-${reviews.length + 1}`, ...row };
+      reviews.push(rec);
+      return { id: rec.id };
+    },
+    listPaperForwardReviews: async () => reviews,
+    listPaperForwardOpsEvents: async () => opsEvents,
+    getStrategyValidationById: async () => validation,
+    getStrategyVersionById: async () => ({
+      id: session.strategy_version_id,
+      strategy_id: session.strategy_id,
+      version: session.strategy_version,
+      snapshot_hash: session.snapshot_hash,
+      strategy_snapshot: session.strategy_snapshot,
+      live_phase_eligible: liveEligible,
+    }),
+    markStrategyVersionLivePhaseEligible: async (_id, actor, notes) => {
+      liveEligible = true;
+      return {
+        id: session.strategy_version_id,
+        live_phase_eligible: true,
+        live_phase_eligible_by: actor,
+        live_phase_review_notes: notes,
+        snapshot_hash: session.snapshot_hash,
+      };
+    },
+    createStrategyAuditLog: async (log) => {
+      audit.push(log);
+      return log;
+    },
+  };
+
+  sessionDb.getStrategyValidationById = async () => validation;
+  sessionDb.insertPaperForwardOpsEvent = async (row) =>
+    ops.insertPaperForwardOpsEvent({
+      ...row,
+      engine_version: row.engine_version,
+    });
+
+  return {
+    sessionDb,
+    store,
+    exec,
+    ops,
+    opsEvents,
+    evaluations,
+    readiness,
+    reviews,
+    audit,
+    lock,
+    get liveEligible() {
+      return liveEligible;
+    },
+    setValidation(next: any) {
+      validation = next;
+    },
+  };
 }
 
 export function tpLongBars(): OHLCVBar[] {

@@ -1,6 +1,7 @@
 /**
  * Phase 4A — Paper Forward Safety Foundation
  * Phase 4B — Simulated paper-forward execution (no exchange orders)
+ * Phase 4C — Paper-forward operations, evaluation, readiness, human review
  */
 
 export {
@@ -8,6 +9,7 @@ export {
   PAPER_FORWARD_EXEC_ENGINE_VERSION,
   LEGACY_PAPER_EXECUTION_DISABLED,
   PAPER_SIMULATED_NOTICE,
+  PROMOTION_FORCE_DISABLED,
   getTradingSafetyState,
   assertPaperForwardEnabled,
   assertNoExchangeOrdersInPhase4A,
@@ -24,6 +26,7 @@ export {
   pausePaperSession,
   resumePaperSession,
   abortPaperSession,
+  completePaperSession,
   failPaperSession,
   getPaperSession,
 } from "./session-service";
@@ -31,3 +34,14 @@ export { tickPaperSession, PaperTickError } from "./tick";
 export { PaperSnapshotError, verifyImmutableSnapshot } from "./snapshot";
 export { processClosedBars, initialPaperState } from "./sim-executor";
 export { buildPaperMetrics } from "./paper-metrics";
+export { evaluatePaperForward } from "./forward-evaluation";
+export { evaluatePaperReadiness } from "./readiness-gate";
+export {
+  getPaperReadinessConfig,
+  DEFAULT_PAPER_READINESS_CONFIG,
+  PAPER_FORWARD_OPS_ENGINE_VERSION,
+} from "./readiness-config";
+export { runScheduledPaperTicks } from "./scheduler";
+export { submitPaperReview, PaperReviewError } from "./review";
+export { evaluateAndPersistPaperSession } from "./evaluate-persist";
+export { buildHistoricalVsForwardComparison } from "./comparison";

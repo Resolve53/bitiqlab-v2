@@ -230,7 +230,7 @@ export default function PaperTradingDashboard() {
             <span className="font-semibold">PAPER / SIMULATED</span>
             {" — "}
             {phase4Notice ||
-              "No real capital. No exchange orders. Phase 4B paper-forward engine."}
+              "No real capital. No exchange orders. Phase 4C paper-forward operations."}
             {lifecycleStatus ? (
               <span className="ml-2 font-semibold">Lifecycle: {lifecycleStatus}</span>
             ) : null}

@@ -1,17 +1,18 @@
-# Phase 4B — Paper-forward simulated execution engine
+# Phase 4B / 4C — Paper-forward simulated execution + operations
 
 Phase 4A established immutable sessions and safety quarantine.
 Phase 4B adds **deterministic simulated paper execution** on RUNNING sessions.
+Phase 4C adds **operations, evaluation, readiness, and human review**.
 
 It does **not**:
 - place Binance (testnet or live) market/limit orders
 - call Cornix, webhooks, or legacy execute-signal paths
 - mutate `strategies.entry_rules` / `exit_rules`
-- rewrite strategies or invoke Claude
-- run TEST/validation logic
-- start Phase 4C live trading
+- rewrite strategies or invoke Claude as a promotion authority
+- automatically activate live trading
+- start a real-money phase
 
-`ENABLE_LIVE_TRADING` remains false-safe. Paper fills never touch `BinanceTradingClient`.
+`ENABLE_LIVE_TRADING` remains false-safe. Paper fills never touch exchange order APIs.
 
 ## Execution authority
 
@@ -103,3 +104,144 @@ total trades, wins, losses, win rate, max drawdown, fees paid.
 ## UI
 
 Paper Trading surfaces must be labeled **PAPER / SIMULATED**. They must not look like real capital.
+
+---
+
+# Phase 4C — Paper-forward operations + evaluation
+
+## Session operations
+
+Legal transitions (unchanged from 4A, plus complete used in ops):
+
+| From | To |
+|---|---|
+| CREATED | RUNNING, ABORTED, FAILED |
+| RUNNING | PAUSED, COMPLETED, FAILED, ABORTED |
+| PAUSED | RUNNING, COMPLETED, FAILED, ABORTED |
+| COMPLETED / FAILED / ABORTED | none (terminal — cannot restart) |
+
+`POST /api/paper-forward/sessions/:id/complete` moves RUNNING or PAUSED → COMPLETED.
+Completing does **not** flatten leftover simulated positions (same as 4B: no `end_of_test`).
+Start / pause / resume / abort APIs from 4A remain.
+
+## Processing / scheduling
+
+There is **no in-process infinite loop**. Production should cron:
+
+```
+POST /api/paper-forward/scheduler/run
+Header: X-Paper-Forward-Scheduler-Token: $PAPER_FORWARD_SCHEDULER_TOKEN
+```
+
+If `PAPER_FORWARD_SCHEDULER_TOKEN` is unset, a human actor is required (no anonymous mass-tick).
+
+Per RUNNING session:
+
+1. Detect stale (no successful tick for `PAPER_FORWARD_STALE_AFTER_HOURS`, default 6h). Audit `STALE_DETECTED`. Do **not** auto-fail solely for staleness.
+2. Compare-and-set lease lock (`tick_lock_token`, `tick_lock_until`). Expired leases are stealable after crash/deploy.
+3. Call Phase 4B `tickPaperSession` (idempotent cursor + unique events — no duplicate candles).
+4. On success: `last_tick_at`, increment `candles_processed`, persist evaluation + readiness.
+5. On failure: increment `tick_error_count`. At `PAPER_FORWARD_MAX_TICK_ERRORS` (default 5) → session `FAILED`.
+6. Release lock (or let lease expire on crash).
+
+Max sessions per run: `PAPER_FORWARD_SCHEDULER_MAX_SESSIONS` (default 25). Lock lease: `PAPER_FORWARD_LOCK_LEASE_MS` (default 120000).
+
+## Forward evaluation formulas
+
+Source: **only** Phase 4B `paper_forward_trades` with `status=closed`. Never Phase 2 validation metrics.
+
+Let closed trade net P&L be `p_i` (includes fees already in simulated `realized_pnl`).
+
+- elapsed hours = `(end − started_at) / 3600000` where end is `completed_at` / `failed_at` / `aborted_at` / now
+- closed candles processed = `trading_sessions.candles_processed` (fallback: count `candle_processed` events)
+- trades = count closed
+- wins = count `p_i > 0`; losses = count `p_i < 0`
+- win rate = wins / closed (0 if none)
+- expectancy = mean(`p_i`) or null if no closed trades
+- profit factor = grossProfit / |grossLoss|; **null** if wins exist and grossLoss=0; **0** if closed trades exist with no profit and no loss path that yields PF; null if no trades
+- realized P&L = sum(`p_i`)
+- fees = sum of trade `fee` (open + closed)
+- equity curve = initial capital, then cumulative `p_i` at each exit (source tagged `paper_forward_simulated`)
+- max drawdown = Truth Engine `calcMaxDrawdown` on that equity path (fraction)
+- consistency = mean expectancy of first half vs second half of closed trades (need ≥2 trades)
+
+## Exact readiness criteria
+
+Deterministic code in `readiness-gate.ts`. Claude is not consulted. `force=true` is not an input.
+
+Statuses: `NOT_READY` | `READY_FOR_REVIEW` | `REJECT`.
+
+Hard REJECT even with a small sample:
+
+- session `FAILED`
+- frozen snapshot hash mismatch / corrupt
+- missing `validation_id` or validation `fail` (CONDITIONAL requires `conditional_acknowledged`)
+- `tick_error_count >= maxTickErrors`
+- max drawdown > `maxDrawdown`
+
+After sufficient sample, also hard REJECT when:
+
+- expectancy < `minExpectancy`
+- profit factor < `minProfitFactor` (null PF with wins and zero losses **passes**)
+- win rate < `minWinRate`
+- first-half or second-half expectancy < `minHalfExpectancy`
+- max consecutive losses > `maxConsecutiveLosses`
+
+Insufficient sample (and no hard fail) → `NOT_READY`.
+
+All hard+sample checks pass → `READY_FOR_REVIEW`.
+
+Defaults (env override in parentheses):
+
+| Key | Default | Env |
+|---|---|---|
+| minClosedTrades | 20 | `PAPER_FORWARD_MIN_TRADES` |
+| minClosedCandles | 100 | `PAPER_FORWARD_MIN_CANDLES` |
+| minElapsedHours | 24 | `PAPER_FORWARD_MIN_ELAPSED_HOURS` |
+| minExpectancy | 0 | `PAPER_FORWARD_MIN_EXPECTANCY` |
+| minProfitFactor | 1.2 | `PAPER_FORWARD_MIN_PROFIT_FACTOR` |
+| maxDrawdown | 0.20 | `PAPER_FORWARD_MAX_DRAWDOWN` |
+| minWinRate | 0.40 | `PAPER_FORWARD_MIN_WIN_RATE` |
+| minHalfExpectancy | 0 | `PAPER_FORWARD_MIN_HALF_EXPECTANCY` |
+| maxConsecutiveLosses | 10 | `PAPER_FORWARD_MAX_CONSECUTIVE_LOSSES` |
+| maxTickErrors | 5 | `PAPER_FORWARD_MAX_TICK_ERRORS` |
+| staleAfterHours | 6 | `PAPER_FORWARD_STALE_AFTER_HOURS` |
+
+Gate output is tagged `evaluationSource: paper_forward_simulated` and `historicalSourceExcluded: true`.
+
+## Human-review workflow
+
+Only when **current** re-evaluated readiness is `READY_FOR_REVIEW`:
+
+`POST /api/paper-forward/sessions/:id/review`
+`{ decision: "APPROVE_FUTURE_LIVE_ELIGIBLE" | "REJECT_REVIEW", notes }`
+
+- Re-verifies frozen snapshot hash.
+- Re-runs evaluation + gate (does not trust a stale stored status).
+- `force=true` → HTTP 400 `PROMOTION_FORCE_DISABLED`.
+- APPROVE sets `strategy_versions.live_phase_eligible*` — **future live phase eligibility only**.
+- Does **not** place an exchange order, enable `ENABLE_LIVE_TRADING`, call Cornix, or `promoteStrategyToBitiq`.
+- Every decision is appended to `paper_forward_reviews`, `paper_forward_ops_events`, and `strategy_audit_log`.
+
+## Historical vs forward comparison
+
+GET session returns `comparison.blended = false` with two slices:
+
+- `historical.source = phase2_historical_validation` from `strategy_validations.report.chronological.validation|test.metrics`
+- `forward.source = paper_forward_simulated` from Phase 4C evaluation
+
+Never averaged, substituted, or mixed.
+
+## Persistence / audit (migration 014)
+
+Append-oriented tables:
+
+- `paper_forward_ops_events` — lifecycle, locks, ticks, stale, evaluations, reviews
+- `paper_forward_evaluations` — metric snapshots
+- `paper_forward_readiness` — gate decisions
+- `paper_forward_reviews` — human decisions
+
+Session columns: lock, last tick, errors, stale, candles_processed, readiness_status/reasons, last_evaluated_at.
+
+Apply `migrations/014_paper_forward_operations.sql` manually in Supabase (same policy as 012/013).
+
