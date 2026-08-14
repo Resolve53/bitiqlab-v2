@@ -29,6 +29,15 @@ function logSnap(prefix, snap) {
       `${prefix} targets=${snap.page_target_count} selected=${snap.selected_target_url || "none"} readyState=${snap.page_ready_state || "n/a"} reason=${snap.detection_reason || "n/a"}`
     );
   }
+  if (snap.auth_signals) {
+    const s = snap.auth_signals;
+    console.log(
+      `${prefix} auth_signals is_authenticated=${s.window_is_authenticated} has_user_username=${s.has_user_username} has_user_id=${s.has_user_id} sign_in=${s.has_sign_in} anonymous_menu=${s.has_anonymous_menu} account_menu=${s.has_account_menu} sign_out=${s.has_sign_out} profile_link=${s.has_profile_link}`
+    );
+    if (s.userish_data_names && s.userish_data_names.length) {
+      console.log(`${prefix} userish_data_names=${s.userish_data_names.join(",")}`);
+    }
+  }
 }
 
 async function main() {

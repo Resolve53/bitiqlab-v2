@@ -196,37 +196,96 @@ async function listCdpTargets(cfg, opts = {}) {
   return { targets: Array.isArray(json) ? json : [] };
 }
 
-function interpretPageProbe(probe) {
-  const url = String(probe?.url || "");
-  const title = String(probe?.title || "");
-  const readyState = probe?.readyState || null;
-  let authenticated = "unknown";
-  if (probe?.authenticated === true || probe?.authenticated === "yes") {
-    authenticated = "yes";
-  } else if (probe?.authenticated === false || probe?.authenticated === "no") {
-    authenticated = "no";
-  } else if (probe?.hasSignInControl || probe?.hasAnonymousMenu || isSignInUrl(url)) {
-    authenticated = "no";
-  } else if (probe?.hasAccountMenu) {
-    authenticated = "yes";
+function truthyAuthFlag(value) {
+  return value === true || value === "true" || value === "yes" || value === 1;
+}
+
+function falseyAuthFlag(value) {
+  return value === false || value === "false" || value === "no" || value === 0;
+}
+
+/**
+ * Fail-closed auth resolution from page signals.
+ * Never treats missing header-menu nodes as logged-in.
+ * Never copies usernames, ids, tokens, or cookies.
+ */
+function resolveAuthFromSignals(probe = {}) {
+  const url = String(probe.url || "");
+  const winAuth = probe.windowIsAuthenticated;
+  const signedOutUi =
+    Boolean(probe.hasSignInControl) ||
+    Boolean(probe.hasAnonymousMenu) ||
+    isSignInUrl(url);
+
+  if (falseyAuthFlag(winAuth)) {
+    return { authenticated: "no", reason: "WINDOW_IS_AUTHENTICATED_FALSE" };
   }
+  if (signedOutUi && !truthyAuthFlag(winAuth)) {
+    return { authenticated: "no", reason: "AUTH_REQUIRED" };
+  }
+
+  const loggedInSignals = [
+    truthyAuthFlag(winAuth) && "WINDOW_IS_AUTHENTICATED",
+    probe.hasUserUsername && "USER_USERNAME_PRESENT",
+    probe.hasUserId && "USER_ID_PRESENT",
+    probe.hasSignOut && "SIGN_OUT_CONTROL",
+    probe.hasAccountMenu && "ACCOUNT_MENU",
+    probe.hasLoggedMenuClass && "LOGGED_MENU_CLASS",
+    probe.hasProfileLink && "PROFILE_LINK",
+  ].filter(Boolean);
+
+  if (loggedInSignals.length) {
+    return { authenticated: "yes", reason: "CHART_AUTHENTICATED" };
+  }
+  if (probe.authenticated === true || probe.authenticated === "yes") {
+    return { authenticated: "yes", reason: probe.reason || "CHART_AUTHENTICATED" };
+  }
+  if (probe.authenticated === false || probe.authenticated === "no") {
+    return { authenticated: "no", reason: probe.reason || "AUTH_REQUIRED" };
+  }
+  return { authenticated: "unknown", reason: "CHART_READY_AUTH_UNKNOWN" };
+}
+
+function interpretPageProbe(probe) {
+  const prior = (probe && probe.authSignals) || {};
+  const normalized = {
+    ...probe,
+    windowIsAuthenticated:
+      probe?.windowIsAuthenticated !== undefined
+        ? probe.windowIsAuthenticated
+        : prior.window_is_authenticated,
+    hasUserUsername: probe?.hasUserUsername ?? prior.has_user_username,
+    hasUserId: probe?.hasUserId ?? prior.has_user_id,
+    hasSignInControl: probe?.hasSignInControl ?? prior.has_sign_in,
+    hasAnonymousMenu: probe?.hasAnonymousMenu ?? prior.has_anonymous_menu,
+    hasAccountMenu: probe?.hasAccountMenu ?? prior.has_account_menu,
+    hasSignOut: probe?.hasSignOut ?? prior.has_sign_out,
+    hasProfileLink: probe?.hasProfileLink ?? prior.has_profile_link,
+    hasLoggedMenuClass: probe?.hasLoggedMenuClass ?? prior.has_logged_menu_class,
+    userishDataNames: probe?.userishDataNames || prior.userish_data_names,
+  };
+  const url = String(normalized.url || "");
+  const title = String(normalized.title || "");
+  const readyState = normalized.readyState || null;
+  const auth = resolveAuthFromSignals({ ...normalized, url });
+  const authenticated = auth.authenticated;
 
   const chartUrl = isTradingViewChartUrl(url);
   const documentReady = readyState === "complete" || readyState === "interactive";
   const chartChrome = Boolean(
-    probe?.hasSymbolSearch || probe?.hasHeaderToolbar || probe?.hasTvApi || probe?.hasChartCanvas
+    normalized.hasSymbolSearch || normalized.hasHeaderToolbar || normalized.hasTvApi || normalized.hasChartCanvas
   );
   let ready = false;
-  let reason = probe?.reason || null;
-  if (typeof probe?.ready === "boolean") {
-    ready = probe.ready && chartUrl && authenticated !== "no";
-    if (probe.ready && !chartUrl) reason = reason || "URL_NOT_CHART";
-    if (probe.ready && authenticated === "no") reason = reason || "AUTH_SIGN_IN";
+  let reason = auth.reason;
+  if (typeof normalized.ready === "boolean") {
+    ready = normalized.ready && chartUrl && authenticated !== "no";
+    if (normalized.ready && !chartUrl) reason = "URL_NOT_CHART";
+    else if (authenticated === "no") reason = auth.reason;
+    else if (normalized.ready && authenticated === "unknown") reason = "CHART_READY_AUTH_UNKNOWN";
+    else if (normalized.ready && authenticated === "yes") reason = "CHART_AUTHENTICATED";
   } else {
     ready = chartUrl && documentReady && chartChrome && authenticated !== "no";
-  }
-  if (!reason) {
-    if (authenticated === "no") reason = "AUTH_REQUIRED";
+    if (authenticated === "no") reason = auth.reason;
     else if (!chartUrl) reason = url ? "URL_NOT_CHART" : "NO_CHART_TARGET";
     else if (!documentReady && readyState) reason = "DOCUMENT_LOADING";
     else if (!chartChrome) reason = "CHART_CHROME_MISSING";
@@ -235,17 +294,39 @@ function interpretPageProbe(probe) {
     else if (!ready) reason = "NOT_READY";
   }
   if (authenticated === "no") ready = false;
+
+  const userishNames = Array.isArray(normalized.userishDataNames)
+    ? normalized.userishDataNames.filter((n) => typeof n === "string" && n && !/token|cookie|password|secret|authorization/i.test(n)).slice(0, 20)
+    : [];
+
   return {
     ready,
     authenticated,
     url: url ? sanitizeTargetUrl(url) : null,
     title: title || null,
-    pineEditor: Boolean(probe?.pineEditor),
+    pineEditor: Boolean(normalized.pineEditor),
     readyState,
     reason,
-    hasSymbolSearch: Boolean(probe?.hasSymbolSearch),
-    hasAccountMenu: Boolean(probe?.hasAccountMenu),
-    hasSignInControl: Boolean(probe?.hasSignInControl),
+    hasSymbolSearch: Boolean(normalized.hasSymbolSearch),
+    hasAccountMenu: Boolean(normalized.hasAccountMenu),
+    hasSignInControl: Boolean(normalized.hasSignInControl),
+    authSignals: {
+      window_is_authenticated:
+        normalized.windowIsAuthenticated === true
+          ? true
+          : normalized.windowIsAuthenticated === false
+            ? false
+            : null,
+      has_user_username: Boolean(normalized.hasUserUsername),
+      has_user_id: Boolean(normalized.hasUserId),
+      has_sign_in: Boolean(normalized.hasSignInControl),
+      has_anonymous_menu: Boolean(normalized.hasAnonymousMenu),
+      has_account_menu: Boolean(normalized.hasAccountMenu),
+      has_sign_out: Boolean(normalized.hasSignOut),
+      has_profile_link: Boolean(normalized.hasProfileLink),
+      has_logged_menu_class: Boolean(normalized.hasLoggedMenuClass),
+      userish_data_names: userishNames,
+    },
   };
 }
 
@@ -351,6 +432,7 @@ function createRuntime(deps = {}) {
       page_ready_state: state.page.readyState || null,
       detection_reason: state.page.reason || null,
       page_target_count: state.page.targetCount ?? null,
+      auth_signals: state.page.authSignals || null,
     };
   }
 
@@ -503,9 +585,16 @@ function createRuntime(deps = {}) {
     }
     applyPageProbe({ ...probe, url: probe.url || selectedUrl });
     const after = snapshot();
+    const signals = after.auth_signals || {};
     log(
       `[browser] probe readyState=${after.page_ready_state || "unknown"} chart=${after.tradingview} authenticated=${after.authenticated} reason=${after.detection_reason || ""}`
     );
+    log(
+      `[browser] auth_signals is_authenticated=${signals.window_is_authenticated} has_user_username=${signals.has_user_username} has_user_id=${signals.has_user_id} sign_in=${signals.has_sign_in} anonymous_menu=${signals.has_anonymous_menu} account_menu=${signals.has_account_menu} sign_out=${signals.has_sign_out} profile_link=${signals.has_profile_link}`
+    );
+    if (signals.userish_data_names && signals.userish_data_names.length) {
+      log(`[browser] userish_data_names=${signals.userish_data_names.join(",")}`);
+    }
     return after;
   }
 
@@ -556,6 +645,34 @@ function tradingViewProbeScript() {
       var isChartPath = /^\\/chart(\\/|$)/.test(path);
       var isSignInUrl = /signin|accounts\\/login|#signin/i.test(url);
 
+      function guestName(name) {
+        return !name || /^guest$/i.test(String(name));
+      }
+      function readUser(obj) {
+        if (!obj || typeof obj !== 'object') {
+          return { hasUsername: false, hasId: false };
+        }
+        var name = obj.username;
+        var hasUsername = typeof name === 'string' && name.length > 0 && !guestName(name);
+        var id = obj.id;
+        var hasId = id != null && String(id) !== '' && String(id) !== '0';
+        return { hasUsername: hasUsername, hasId: hasId };
+      }
+
+      var windowIsAuthenticated = null;
+      if (window.is_authenticated === true || window.is_authenticated === 1) windowIsAuthenticated = true;
+      else if (window.is_authenticated === false || window.is_authenticated === 0) windowIsAuthenticated = false;
+
+      var userObj = null;
+      try { if (typeof window.user !== 'undefined') userObj = window.user; } catch (e1) {}
+      try {
+        if (!userObj && window.TradingViewApi && window.TradingViewApi.user) userObj = window.TradingViewApi.user;
+      } catch (e2) {}
+      var userBits = readUser(userObj);
+      if (userObj && (userObj.is_authenticated === true || userObj.authenticated === true)) {
+        windowIsAuthenticated = windowIsAuthenticated === false ? false : true;
+      }
+
       var hasSignInControl = !!(
         document.querySelector('[data-name="header-user-menu-sign-in"]')
         || document.querySelector('[data-name="login-page-email-button"]')
@@ -574,16 +691,31 @@ function tradingViewProbeScript() {
       var hasAnonymousMenu = !!(
         document.querySelector('[class*="user-menu-button--anonymous"]')
         || document.querySelector('[class*="userMenuButtonAnonymous"]')
+        || document.querySelector('[class*="tv-header__user-menu-button--anonymous"]')
+      );
+      var hasLoggedMenuClass = !!(
+        document.querySelector('[class*="user-menu-button--logged"]')
+        || document.querySelector('[class*="tv-header__user-menu-button--logged"]')
       );
       var hasAccountMenu = !!(
         document.querySelector('[data-name="header-user-menu-button"]')
         || document.querySelector('[data-name="header-user-menu"]')
+        || document.querySelector('[data-name="user-menu-button"]')
+        || document.querySelector('[data-name="header-toolbar-user-menu"]')
       );
       if (hasAnonymousMenu) hasAccountMenu = false;
-      if (!hasAccountMenu && !hasAnonymousMenu) {
-        var openMenu = document.querySelector('button[aria-label="Open user menu"], button[aria-label*="Open user menu" i]');
-        if (openMenu && !/anonymous/i.test(openMenu.className || '')) {
-          if (openMenu.querySelector('img, [class*="avatar" i]')) hasAccountMenu = true;
+      var hasSignOut = !!(
+        document.querySelector('[data-name="header-user-menu-sign-out"]')
+        || document.querySelector('[data-name="header-user-menu-logout"]')
+      );
+      var hasProfileLink = !!document.querySelector('a[href^="/u/"], a[href*="tradingview.com/u/"]');
+
+      var userishDataNames = [];
+      var named = document.querySelectorAll('[data-name]');
+      for (var d = 0; d < named.length && userishDataNames.length < 20; d++) {
+        var dn = named[d].getAttribute('data-name') || '';
+        if (/user|account|avatar|profile|sign|login|logout/i.test(dn) && userishDataNames.indexOf(dn) === -1) {
+          userishDataNames.push(dn);
         }
       }
 
@@ -604,8 +736,19 @@ function tradingViewProbeScript() {
         || document.querySelector('[class*="PineEditor"]');
 
       var authenticated = 'unknown';
-      if (isSignInUrl || hasSignInControl || hasAnonymousMenu) authenticated = 'no';
-      else if (hasAccountMenu) authenticated = 'yes';
+      if (windowIsAuthenticated === false || isSignInUrl || hasSignInControl || hasAnonymousMenu) {
+        authenticated = 'no';
+      } else if (
+        windowIsAuthenticated === true
+        || userBits.hasUsername
+        || userBits.hasId
+        || hasSignOut
+        || hasAccountMenu
+        || hasLoggedMenuClass
+        || hasProfileLink
+      ) {
+        authenticated = 'yes';
+      }
 
       var chartUrl = isTvHost && isChartPath;
       var documentReady = readyState === 'complete' || readyState === 'interactive';
@@ -613,7 +756,8 @@ function tradingViewProbeScript() {
       var ready = chartUrl && documentReady && chartChrome && authenticated !== 'no';
 
       var reason = 'CHART_AUTHENTICATED';
-      if (authenticated === 'no') reason = 'AUTH_REQUIRED';
+      if (authenticated === 'no' && windowIsAuthenticated === false) reason = 'WINDOW_IS_AUTHENTICATED_FALSE';
+      else if (authenticated === 'no') reason = 'AUTH_REQUIRED';
       else if (!isTvHost) reason = 'URL_NOT_TRADINGVIEW';
       else if (!isChartPath) reason = 'URL_NOT_CHART';
       else if (!documentReady) reason = 'DOCUMENT_LOADING';
@@ -626,9 +770,16 @@ function tradingViewProbeScript() {
         readyState: readyState,
         ready: ready,
         authenticated: authenticated,
+        windowIsAuthenticated: windowIsAuthenticated,
+        hasUserUsername: userBits.hasUsername,
+        hasUserId: userBits.hasId,
         hasSignInControl: hasSignInControl,
         hasAnonymousMenu: hasAnonymousMenu,
         hasAccountMenu: hasAccountMenu,
+        hasLoggedMenuClass: hasLoggedMenuClass,
+        hasSignOut: hasSignOut,
+        hasProfileLink: hasProfileLink,
+        userishDataNames: userishDataNames,
         hasSymbolSearch: hasSymbolSearch,
         hasHeaderToolbar: hasHeaderToolbar,
         hasTvApi: hasTvApi,
@@ -660,6 +811,7 @@ module.exports = {
   selectChartTarget,
   summarizeCdpTargets,
   interpretPageProbe,
+  resolveAuthFromSignals,
   listCdpTargets,
   MCP_ERROR_CLASSES,
 };

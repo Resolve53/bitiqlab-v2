@@ -10,6 +10,7 @@ const {
   isTradingViewChartUrl,
   isIgnoredTargetUrl,
   interpretPageProbe,
+  resolveAuthFromSignals,
   sanitizeTargetUrl,
 } = requireCjs(path.join(process.cwd(), "tradingview-browser-runtime.js"));
 
@@ -187,6 +188,98 @@ describe("TradingView readiness / auth interpretation", () => {
     });
     expect(interpreted.ready).toBe(false);
     expect(interpreted.reason).toBe("URL_NOT_CHART");
+  });
+
+  it("logged-in chart page via window.is_authenticated + user handle → yes", () => {
+    const rt = runtime();
+    rt.state.browserRunning = true;
+    rt.state.cdpReady = true;
+    const interpreted = interpretPageProbe({
+      url: "https://www.tradingview.com/chart/",
+      title: "BTCUSDT — TradingView",
+      readyState: "complete",
+      ready: true,
+      windowIsAuthenticated: true,
+      hasUserUsername: true,
+      hasUserId: true,
+      hasSignInControl: false,
+      hasAnonymousMenu: false,
+      hasAccountMenu: false,
+      hasSymbolSearch: true,
+      hasHeaderToolbar: true,
+      hasTvApi: true,
+      hasChartCanvas: true,
+      userishDataNames: ["header-toolbar-symbol-search"],
+      username: "must-not-leak",
+      auth_token: "must-not-leak",
+    });
+    expect(interpreted.authenticated).toBe("yes");
+    expect(interpreted.ready).toBe(true);
+    expect(interpreted.reason).toBe("CHART_AUTHENTICATED");
+    expect(JSON.stringify(interpreted)).not.toMatch(/must-not-leak/);
+    rt.applyPageProbe(interpreted);
+    const snap = rt.snapshot();
+    expect(snap.tradingview).toBe("ready");
+    expect(snap.authenticated).toBe("yes");
+    expect(snap.auth_signals.window_is_authenticated).toBe(true);
+    expect(snap.auth_signals.has_user_username).toBe(true);
+    expect(JSON.stringify(snap)).not.toMatch(/must-not-leak/);
+  });
+
+  it("window.is_authenticated=false is an explicit no", () => {
+    const auth = resolveAuthFromSignals({
+      url: "https://www.tradingview.com/chart/",
+      windowIsAuthenticated: false,
+      hasUserUsername: false,
+      hasSymbolSearch: true,
+    });
+    expect(auth.authenticated).toBe("no");
+    expect(auth.reason).toBe("WINDOW_IS_AUTHENTICATED_FALSE");
+  });
+
+  it("guest username / empty user object is not treated as logged in", () => {
+    const auth = resolveAuthFromSignals({
+      url: "https://www.tradingview.com/chart/",
+      windowIsAuthenticated: false,
+      hasUserUsername: false,
+      hasUserId: false,
+      hasAccountMenu: false,
+    });
+    expect(auth.authenticated).toBe("no");
+  });
+
+  it("sign-out or /u/ profile link is a logged-in signal", () => {
+    expect(
+      resolveAuthFromSignals({
+        url: "https://www.tradingview.com/chart/",
+        hasSignOut: true,
+      }).authenticated
+    ).toBe("yes");
+    expect(
+      resolveAuthFromSignals({
+        url: "https://www.tradingview.com/chart/",
+        hasProfileLink: true,
+      }).authenticated
+    ).toBe("yes");
+  });
+
+  it("chart ready with no auth signals stays genuinely unknown", () => {
+    const interpreted = interpretPageProbe({
+      url: "https://www.tradingview.com/chart/",
+      readyState: "complete",
+      ready: true,
+      windowIsAuthenticated: null,
+      hasUserUsername: false,
+      hasUserId: false,
+      hasSignInControl: false,
+      hasAnonymousMenu: false,
+      hasAccountMenu: false,
+      hasSymbolSearch: true,
+      hasChartCanvas: true,
+    });
+    expect(interpreted.authenticated).toBe("unknown");
+    expect(interpreted.tradingview || interpreted.reason).toBe("CHART_READY_AUTH_UNKNOWN");
+    expect(interpreted.ready).toBe(true);
   });
 
   it("probeAndApply uses the chart target, not the first chrome:// page", async () => {
