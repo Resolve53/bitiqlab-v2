@@ -1,7 +1,7 @@
 /**
- * Central trading safety configuration (Phase 4A foundation + Phase 4B paper sim).
+ * Central trading safety configuration (Phase 4A–4C).
  *
- * ENABLE_LIVE_TRADING — defaults FALSE. Phase 4B never enables live trading
+ * ENABLE_LIVE_TRADING — defaults FALSE. Phase 4C never enables live trading
  * and never places real exchange orders (paper fills are simulated only).
  * ENABLE_PAPER_TRADING — feature gate for creating paper sessions.
  *   Defaults TRUE when unset (paper sessions allowed once migrations applied).
@@ -10,7 +10,7 @@
  * These flags are enforced server-side. Frontend hiding buttons is not a control.
  */
 
-export const PAPER_FORWARD_ENGINE_VERSION = "paper_forward_v1_phase4b";
+export const PAPER_FORWARD_ENGINE_VERSION = "paper_forward_v1_phase4c";
 
 /** Execution-engine version recorded on paper events/trades (simulated fills). */
 export const PAPER_FORWARD_EXEC_ENGINE_VERSION = "paper_forward_exec_v1_phase4b";
@@ -19,7 +19,7 @@ export const LEGACY_PAPER_EXECUTION_DISABLED =
   "Legacy paper execution is disabled. Use Phase 4B paper-forward simulated execution.";
 
 export const LIVE_TRADING_DISABLED =
-  "Live trading is disabled. ENABLE_LIVE_TRADING is false and Phase 4B does not place exchange orders.";
+  "Live trading is disabled. ENABLE_LIVE_TRADING is false and Phase 4C does not place exchange orders.";
 
 export const PAPER_FORWARD_FEATURE_DISABLED =
   "Paper-forward session creation is disabled (ENABLE_PAPER_TRADING=false).";
@@ -31,7 +31,7 @@ export const PROMOTION_FORCE_DISABLED =
   "Force promotion is disabled. Evidence gates cannot be bypassed.";
 
 export const PROMOTION_AUTO_DISABLED =
-  "Automatic Bitiq promotion is disabled in Phase 4B. Human review of paper-forward evidence is required in a later phase.";
+  "Automatic Bitiq promotion is disabled in Phase 4C. Human review may only mark a frozen version eligible for a future live phase — it does not place orders.";
 
 export const STATUS_APPROVED_VIA_PATCH_DISABLED =
   "Setting status to 'approved' via PATCH is disabled. Approval requires evidence gates (not UI status alone).";
@@ -61,7 +61,7 @@ export function assertPaperForwardEnabled(): void {
 }
 
 /**
- * Live / exchange order placement is never allowed in Phase 4B.
+ * Live / exchange order placement is never allowed in Phase 4C.
  * Call before any path that could place non-testnet / live exchange orders.
  */
 export function assertLiveTradingAllowed(): void {
@@ -72,7 +72,7 @@ export function assertNoExchangeOrdersInPhase4A(): void {
   throw new Error(LEGACY_PAPER_EXECUTION_DISABLED);
 }
 
-/** Alias kept for Phase 4B call sites that refuse exchange execution. */
+/** Alias kept for Phase 4B/4C call sites that refuse exchange execution. */
 export function assertNoExchangeOrders(): void {
   throw new Error(LIVE_TRADING_DISABLED);
 }
@@ -81,6 +81,7 @@ export function getTradingSafetyState() {
   return {
     engineVersion: PAPER_FORWARD_ENGINE_VERSION,
     execEngineVersion: PAPER_FORWARD_EXEC_ENGINE_VERSION,
+    opsEngineVersion: "paper_forward_ops_v1_phase4c",
     enablePaperTrading: isPaperTradingEnabled(),
     enableLiveTrading: false, // hard-forced off regardless of env
     envEnableLiveTradingRaw: process.env.ENABLE_LIVE_TRADING ?? "(unset→false)",
@@ -88,7 +89,10 @@ export function getTradingSafetyState() {
     exchangeOrdersAllowed: false,
     liveForwardExecutionEnabled: false,
     paperSimExecutionEnabled: true,
-    phase: "4B" as const,
+    paperOpsEnabled: true,
+    autoPromoteEnabled: false,
+    forcePromotionEnabled: false,
+    phase: "4C" as const,
     notice: PAPER_SIMULATED_NOTICE,
   };
 }

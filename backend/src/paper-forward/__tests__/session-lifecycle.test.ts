@@ -5,6 +5,7 @@ import {
   pausePaperSession,
   resumePaperSession,
   abortPaperSession,
+  completePaperSession,
 } from "../session-service";
 import type { PaperForwardPersistence } from "../session-service";
 import { PaperLifecycleError } from "../lifecycle";
@@ -77,6 +78,21 @@ describe("Phase 4A session lifecycle service", () => {
     expect(s.abort_reason).toBe("manual stop");
   });
 
+  it("RUNNING→COMPLETED is terminal", async () => {
+    const db = makeDb();
+    await createPaperForwardSession(db, {
+      strategyId: "strat-1",
+      strategyVersionId: "ver-1",
+      validationId: "val-1",
+    });
+    await startPaperSession(db, "sess-1");
+    const done = await completePaperSession(db, "sess-1");
+    expect(done.lifecycle_status).toBe("COMPLETED");
+    await expect(startPaperSession(db, "sess-1")).rejects.toThrow(
+      PaperLifecycleError
+    );
+  });
+
   it("terminal states cannot restart", async () => {
     const db = makeDb();
     const { session } = await createPaperForwardSession(db, {
@@ -108,9 +124,8 @@ describe("Phase 4A exchange safety on session flows", () => {
     vi.restoreAllMocks();
   });
 
-  it("create/start/pause/resume/abort never call order methods", async () => {
+  it("create/start/pause/resume/abort/complete never call order methods", async () => {
     const db = makeDb();
-    // If session service imported binance, these would be called — assert zero.
     await createPaperForwardSession(db, {
       strategyId: "strat-1",
       strategyVersionId: "ver-1",
@@ -119,7 +134,7 @@ describe("Phase 4A exchange safety on session flows", () => {
     await startPaperSession(db, "sess-1");
     await pausePaperSession(db, "sess-1");
     await resumePaperSession(db, "sess-1");
-    await abortPaperSession(db, "sess-1", "end");
+    await completePaperSession(db, "sess-1");
 
     expect(orderSpies.marketOrder).not.toHaveBeenCalled();
     expect(orderSpies.limitOrder).not.toHaveBeenCalled();

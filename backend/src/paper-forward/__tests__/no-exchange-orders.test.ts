@@ -6,13 +6,13 @@ import {
   assertLiveTradingAllowed,
 } from "@/lib/trading-safety";
 
-describe("Phase 4B live-trading safety", () => {
+describe("Phase 4C live-trading safety", () => {
   it("ENABLE_LIVE_TRADING remains false-safe and exchange orders are forbidden", () => {
     expect(getTradingSafetyState().enableLiveTrading).toBe(false);
     expect(getTradingSafetyState().exchangeOrdersAllowed).toBe(false);
     expect(getTradingSafetyState().liveForwardExecutionEnabled).toBe(false);
     expect(getTradingSafetyState().paperSimExecutionEnabled).toBe(true);
-    expect(getTradingSafetyState().phase).toBe("4B");
+    expect(getTradingSafetyState().phase).toBe("4C");
     expect(() => assertLiveTradingAllowed()).toThrow(/Live trading is disabled/);
   });
 

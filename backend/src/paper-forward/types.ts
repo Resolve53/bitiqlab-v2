@@ -79,7 +79,22 @@ export interface PaperForwardSession {
   fees_paid?: number | null;
   max_drawdown?: number | null;
   peak_equity?: number | null;
+  /** Phase 4C scheduler lease. */
+  tick_lock_token?: string | null;
+  tick_lock_until?: string | null;
+  last_tick_at?: string | null;
+  last_tick_error?: string | null;
+  tick_error_count?: number | null;
+  stale_detected_at?: string | null;
+  candles_processed?: number | null;
+  readiness_status?: "NOT_READY" | "READY_FOR_REVIEW" | "REJECT" | null;
+  readiness_reasons?: unknown;
+  last_evaluated_at?: string | null;
 }
+
+export type PaperReviewDecision =
+  | "APPROVE_FUTURE_LIVE_ELIGIBLE"
+  | "REJECT_REVIEW";
 
 export type PaperEventType =
   | "candle_processed"

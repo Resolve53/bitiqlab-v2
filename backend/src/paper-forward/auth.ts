@@ -37,3 +37,26 @@ export async function requireHumanActor(
   }
   return "explicit_api_caller";
 }
+
+/**
+ * Scheduler cron may authenticate with PAPER_FORWARD_SCHEDULER_TOKEN.
+ * If the token is unset, a human actor is required (no anonymous mass-tick).
+ */
+export async function requireSchedulerActor(
+  req: NextApiRequest,
+  bodyActor?: string
+): Promise<string> {
+  const expected = process.env.PAPER_FORWARD_SCHEDULER_TOKEN;
+  const provided = String(
+    req.headers["x-paper-forward-scheduler-token"] ||
+      req.headers["x-scheduler-token"] ||
+      ""
+  );
+  if (expected && expected.trim()) {
+    if (provided !== expected) {
+      throw new PaperAuthError("Invalid paper-forward scheduler token", 401);
+    }
+    return "paper_forward_scheduler";
+  }
+  return requireHumanActor(req, bodyActor);
+}

@@ -18,13 +18,17 @@ import {
   PaperLifecycleError,
   Phase4PersistenceError,
   PAPER_SIMULATED_NOTICE,
+  evaluateAndPersistPaperSession,
 } from "@/paper-forward";
 import { PaperCandleError } from "@/paper-forward/closed-candles";
 import {
   asPaperExecutionPersistence,
   asPaperForwardPersistence,
+  asPaperOpsPersistence,
 } from "@/paper-forward/db-adapter";
 import { PaperAuthError, requireHumanActor } from "@/paper-forward/auth";
+import { recordTickSuccess } from "@/paper-forward/session-ops";
+import { getPaperSession } from "@/paper-forward/session-service";
 
 export default asyncHandler(async (req: NextApiRequest, res: NextApiResponse) => {
   if (handleCORSPreflight(req, res)) return;
@@ -41,19 +45,27 @@ export default asyncHandler(async (req: NextApiRequest, res: NextApiResponse) =>
       req.body?.createdBy || req.body?.created_by
     );
     const db = getDB();
-    const result = await tickPaperSession(
-      asPaperForwardPersistence(db),
-      asPaperExecutionPersistence(db),
-      {
-        sessionId: id,
-        actor,
-        maxBars: req.body?.maxBars,
-      }
+    const sessionDb = asPaperForwardPersistence(db);
+    const execDb = asPaperExecutionPersistence(db);
+    const opsDb = asPaperOpsPersistence(db);
+    const result = await tickPaperSession(sessionDb, execDb, {
+      sessionId: id,
+      actor,
+      maxBars: req.body?.maxBars,
+    });
+    const after = await getPaperSession(sessionDb, id);
+    await recordTickSuccess(opsDb, after, result.candlesProcessed);
+    const evaluated = await evaluateAndPersistPaperSession(
+      sessionDb,
+      opsDb,
+      id
     );
     return sendSuccess(
       res,
       {
         ...result,
+        evaluation: evaluated.evaluation,
+        readiness: evaluated.readiness,
         notice: PAPER_SIMULATED_NOTICE,
       },
       200,

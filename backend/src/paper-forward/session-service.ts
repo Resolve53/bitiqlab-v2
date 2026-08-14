@@ -48,6 +48,17 @@ export interface PaperForwardPersistence {
     new_values?: unknown;
     changed_by?: string;
   }) => Promise<unknown>;
+  /** Phase 4C append-only ops audit. Optional so Phase 4A/4B tests stay valid. */
+  insertPaperForwardOpsEvent?: (row: {
+    session_id: string;
+    strategy_id?: string | null;
+    strategy_version_id?: string | null;
+    snapshot_hash?: string | null;
+    event_type: string;
+    payload?: Record<string, unknown> | null;
+    actor?: string | null;
+    engine_version: string;
+  }) => Promise<unknown>;
 }
 
 const DEFAULT_CAPITAL = 10_000;
@@ -97,6 +108,18 @@ function asSession(row: any): PaperForwardSession {
     fees_paid: row.fees_paid != null ? Number(row.fees_paid) : null,
     max_drawdown: row.max_drawdown != null ? Number(row.max_drawdown) : null,
     peak_equity: row.peak_equity != null ? Number(row.peak_equity) : null,
+    tick_lock_token: row.tick_lock_token ?? null,
+    tick_lock_until: row.tick_lock_until ?? null,
+    last_tick_at: row.last_tick_at ?? null,
+    last_tick_error: row.last_tick_error ?? null,
+    tick_error_count:
+      row.tick_error_count != null ? Number(row.tick_error_count) : 0,
+    stale_detected_at: row.stale_detected_at ?? null,
+    candles_processed:
+      row.candles_processed != null ? Number(row.candles_processed) : 0,
+    readiness_status: row.readiness_status ?? null,
+    readiness_reasons: row.readiness_reasons ?? null,
+    last_evaluated_at: row.last_evaluated_at ?? null,
   };
 }
 
@@ -320,6 +343,25 @@ async function transition(
     ...extra,
   });
 
+  if (db.insertPaperForwardOpsEvent) {
+    const eventType =
+      to === "RUNNING"
+        ? session.lifecycle_status === "PAUSED"
+          ? "RESUMED"
+          : "STARTED"
+        : to;
+    await db.insertPaperForwardOpsEvent({
+      session_id: sessionId,
+      strategy_id: session.strategy_id,
+      strategy_version_id: session.strategy_version_id,
+      snapshot_hash: session.snapshot_hash,
+      event_type: eventType,
+      payload: { from: session.lifecycle_status, to, ...extra },
+      actor,
+      engine_version: PAPER_FORWARD_ENGINE_VERSION,
+    });
+  }
+
   return next;
 }
 
@@ -358,6 +400,19 @@ export async function abortPaperSession(
   }
   return transition(db, sessionId, "ABORTED", actor, "PAPER_SESSION_ABORTED", {
     abort_reason: reason.trim(),
+    tick_lock_token: null,
+    tick_lock_until: null,
+  });
+}
+
+export async function completePaperSession(
+  db: PaperForwardPersistence,
+  sessionId: string,
+  actor = "explicit_api_caller"
+) {
+  return transition(db, sessionId, "COMPLETED", actor, "PAPER_SESSION_COMPLETED", {
+    tick_lock_token: null,
+    tick_lock_until: null,
   });
 }
 
@@ -372,6 +427,8 @@ export async function failPaperSession(
   }
   return transition(db, sessionId, "FAILED", actor, "PAPER_SESSION_FAILED", {
     failure_reason: reason.trim().slice(0, 2000),
+    tick_lock_token: null,
+    tick_lock_until: null,
   });
 }
 

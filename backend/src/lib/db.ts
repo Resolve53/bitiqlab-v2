@@ -798,6 +798,257 @@ export class DatabaseService {
     return data || [];
   }
 
+  async listRunningPaperForwardSessions(limit = 25) {
+    const { data, error } = await this.client
+      .from("trading_sessions")
+      .select("*")
+      .eq("lifecycle_status", "RUNNING")
+      .order("last_tick_at", { ascending: true, nullsFirst: true })
+      .limit(Math.min(Math.max(limit, 1), 100));
+    if (error) {
+      throwIfMissingPhase4Schema("trading_sessions running list", error.message);
+      throw new Phase4PersistenceError(
+        `Failed to list RUNNING paper-forward sessions: ${error.message}`
+      );
+    }
+    return data || [];
+  }
+
+  async acquirePaperForwardTickLock(
+    sessionId: string,
+    token: string,
+    leaseMs: number
+  ): Promise<boolean> {
+    const nowIso = new Date().toISOString();
+    const until = new Date(Date.now() + leaseMs).toISOString();
+    const { data, error } = await this.client
+      .from("trading_sessions")
+      .update({
+        tick_lock_token: token,
+        tick_lock_until: until,
+      })
+      .eq("id", sessionId)
+      .eq("lifecycle_status", "RUNNING")
+      .or(`tick_lock_until.is.null,tick_lock_until.lt.${nowIso}`)
+      .select("id,tick_lock_token")
+      .maybeSingle();
+    if (error) {
+      throwIfMissingPhase4Schema("trading_sessions tick lock", error.message);
+      throw new Phase4PersistenceError(
+        `Failed to acquire paper-forward tick lock: ${error.message}`
+      );
+    }
+    return Boolean(data?.id) && data?.tick_lock_token === token;
+  }
+
+  async releasePaperForwardTickLock(sessionId: string, token: string) {
+    const { error } = await this.client
+      .from("trading_sessions")
+      .update({ tick_lock_token: null, tick_lock_until: null })
+      .eq("id", sessionId)
+      .eq("tick_lock_token", token);
+    if (error) {
+      throwIfMissingPhase4Schema("trading_sessions tick unlock", error.message);
+      throw new Phase4PersistenceError(
+        `Failed to release paper-forward tick lock: ${error.message}`
+      );
+    }
+  }
+
+  async countPaperForwardCandleEvents(sessionId: string): Promise<number> {
+    const { count, error } = await this.client
+      .from("paper_forward_events")
+      .select("id", { count: "exact", head: true })
+      .eq("session_id", sessionId)
+      .eq("event_type", "candle_processed");
+    if (error) {
+      throwIfMissingPhase4Schema("paper_forward_events count", error.message);
+      throw new Phase4PersistenceError(
+        `Failed to count paper-forward candles: ${error.message}`
+      );
+    }
+    return count ?? 0;
+  }
+
+  async insertPaperForwardOpsEvent(row: Record<string, unknown>) {
+    const { data, error } = await this.client
+      .from("paper_forward_ops_events")
+      .insert([row])
+      .select("id")
+      .single();
+    if (error) {
+      throwIfMissingPhase4Schema("paper_forward_ops_events", error.message);
+      throw new Phase4PersistenceError(
+        `Failed to insert paper-forward ops event: ${error.message}`
+      );
+    }
+    if (!data?.id) {
+      throw new Phase4PersistenceError(
+        "insertPaperForwardOpsEvent returned no persisted id"
+      );
+    }
+    return { id: String(data.id) };
+  }
+
+  async listPaperForwardOpsEvents(sessionId: string, limit = 100) {
+    const { data, error } = await this.client
+      .from("paper_forward_ops_events")
+      .select("*")
+      .eq("session_id", sessionId)
+      .order("created_at", { ascending: false })
+      .limit(limit);
+    if (error) {
+      throwIfMissingPhase4Schema("paper_forward_ops_events list", error.message);
+      throw new Phase4PersistenceError(
+        `Failed to list paper-forward ops events: ${error.message}`
+      );
+    }
+    return data || [];
+  }
+
+  async insertPaperForwardEvaluation(row: Record<string, unknown>) {
+    const { data, error } = await this.client
+      .from("paper_forward_evaluations")
+      .insert([row])
+      .select("id")
+      .single();
+    if (error) {
+      throwIfMissingPhase4Schema("paper_forward_evaluations", error.message);
+      throw new Phase4PersistenceError(
+        `Failed to insert paper-forward evaluation: ${error.message}`
+      );
+    }
+    if (!data?.id) {
+      throw new Phase4PersistenceError(
+        "insertPaperForwardEvaluation returned no persisted id"
+      );
+    }
+    return { id: String(data.id) };
+  }
+
+  async getLatestPaperForwardEvaluation(sessionId: string) {
+    const { data, error } = await this.client
+      .from("paper_forward_evaluations")
+      .select("*")
+      .eq("session_id", sessionId)
+      .order("created_at", { ascending: false })
+      .limit(1)
+      .maybeSingle();
+    if (error) {
+      throwIfMissingPhase4Schema("paper_forward_evaluations get", error.message);
+      throw new Phase4PersistenceError(
+        `Failed to get paper-forward evaluation: ${error.message}`
+      );
+    }
+    return data;
+  }
+
+  async insertPaperForwardReadiness(row: Record<string, unknown>) {
+    const { data, error } = await this.client
+      .from("paper_forward_readiness")
+      .insert([row])
+      .select("id")
+      .single();
+    if (error) {
+      throwIfMissingPhase4Schema("paper_forward_readiness", error.message);
+      throw new Phase4PersistenceError(
+        `Failed to insert paper-forward readiness: ${error.message}`
+      );
+    }
+    if (!data?.id) {
+      throw new Phase4PersistenceError(
+        "insertPaperForwardReadiness returned no persisted id"
+      );
+    }
+    return { id: String(data.id) };
+  }
+
+  async getLatestPaperForwardReadiness(sessionId: string) {
+    const { data, error } = await this.client
+      .from("paper_forward_readiness")
+      .select("*")
+      .eq("session_id", sessionId)
+      .order("created_at", { ascending: false })
+      .limit(1)
+      .maybeSingle();
+    if (error) {
+      throwIfMissingPhase4Schema("paper_forward_readiness get", error.message);
+      throw new Phase4PersistenceError(
+        `Failed to get paper-forward readiness: ${error.message}`
+      );
+    }
+    return data;
+  }
+
+  async insertPaperForwardReview(row: Record<string, unknown>) {
+    const { data, error } = await this.client
+      .from("paper_forward_reviews")
+      .insert([row])
+      .select("id")
+      .single();
+    if (error) {
+      throwIfMissingPhase4Schema("paper_forward_reviews", error.message);
+      throw new Phase4PersistenceError(
+        `Failed to insert paper-forward review: ${error.message}`
+      );
+    }
+    if (!data?.id) {
+      throw new Phase4PersistenceError(
+        "insertPaperForwardReview returned no persisted id"
+      );
+    }
+    return { id: String(data.id) };
+  }
+
+  async listPaperForwardReviews(sessionId: string) {
+    const { data, error } = await this.client
+      .from("paper_forward_reviews")
+      .select("*")
+      .eq("session_id", sessionId)
+      .order("created_at", { ascending: false });
+    if (error) {
+      throwIfMissingPhase4Schema("paper_forward_reviews list", error.message);
+      throw new Phase4PersistenceError(
+        `Failed to list paper-forward reviews: ${error.message}`
+      );
+    }
+    return data || [];
+  }
+
+  /**
+   * Future-live eligibility only. Never mutates frozen snapshot / hash / rules.
+   * Does not enable live trading or place exchange orders.
+   */
+  async markStrategyVersionLivePhaseEligible(
+    versionId: string,
+    actor: string,
+    notes: string | null
+  ) {
+    const { data, error } = await this.client
+      .from("strategy_versions")
+      .update({
+        live_phase_eligible: true,
+        live_phase_eligible_at: new Date().toISOString(),
+        live_phase_eligible_by: actor,
+        live_phase_review_notes: notes,
+      })
+      .eq("id", versionId)
+      .select("id,live_phase_eligible,snapshot_hash,version")
+      .single();
+    if (error) {
+      throwIfMissingPhase4Schema("strategy_versions live_phase_eligible", error.message);
+      throw new Phase4PersistenceError(
+        `Failed to mark strategy version future-live eligible: ${error.message}`
+      );
+    }
+    if (!data?.id) {
+      throw new Phase4PersistenceError(
+        "markStrategyVersionLivePhaseEligible returned no persisted id"
+      );
+    }
+    return data;
+  }
+
   async createResearchRun(row: Record<string, unknown>) {
     const { data, error } = await this.client
       .from("strategy_research_runs")

@@ -40,6 +40,11 @@ interface PaperSession {
     feesPaid: number;
   } | null;
   failure_reason?: string | null;
+  readiness_status?: "NOT_READY" | "READY_FOR_REVIEW" | "REJECT" | null;
+  candles_processed?: number | null;
+  last_tick_at?: string | null;
+  last_tick_error?: string | null;
+  tick_error_count?: number | null;
 }
 
 interface PaperTrade {
@@ -85,6 +90,60 @@ interface Payload {
   position?: PaperPosition | null;
   metrics?: PaperSession["paper_metrics"];
   notice?: string;
+  evaluation?: {
+    source: string;
+    elapsedHours: number;
+    closedCandlesProcessed: number;
+    closedTrades: number;
+    expectancy: number | null;
+    profitFactor: number | null;
+    winRate: number;
+    realizedPnl: number;
+    maxDrawdown: number;
+    feesPaid: number;
+    currentEquity: number;
+    equityCurve?: Array<{ timestamp: string; equity: number }>;
+  } | null;
+  readiness?: {
+    status: "NOT_READY" | "READY_FOR_REVIEW" | "REJECT";
+    reasons: string[];
+    checks?: Record<string, { passed: boolean; detail: string }>;
+  } | null;
+  comparison?: {
+    blended: false;
+    historical: {
+      source: string;
+      notice: string;
+      status?: string | null;
+      validationSplit?: {
+        expectancy?: number | null;
+        profitFactor?: number | null;
+        winRate?: number | null;
+        maxDrawdown?: number | null;
+        totalTrades?: number | null;
+      } | null;
+    };
+    forward: {
+      source: string;
+      notice: string;
+      evaluation?: Payload["evaluation"];
+    };
+    disclaimer: string;
+  };
+  reviewEligible?: boolean;
+  reviewAction?: {
+    available: boolean;
+    decisions?: string[];
+    notice?: string;
+    reasons?: string[];
+  };
+  reviews?: Array<{
+    id: string;
+    decision: string;
+    actor: string;
+    notes?: string | null;
+    created_at?: string;
+  }>;
 }
 
 function fmtTs(iso?: string | null) {
@@ -106,6 +165,7 @@ export default function PaperForwardSessionPanel({
   const [data, setData] = useState<Payload | null>(null);
   const [error, setError] = useState<string | null>(null);
   const [busy, setBusy] = useState<string | null>(null);
+  const [reviewNotes, setReviewNotes] = useState("");
 
   const load = useCallback(async () => {
     if (!sessionId) return;
@@ -266,16 +326,42 @@ export default function PaperForwardSessionPanel({
               </>
             )}
             {status === "PAUSED" && (
+              <>
+                <Btn
+                  disabled={!!busy}
+                  onClick={() =>
+                    act(
+                      `/api/paper-forward/sessions/${sessionId}/resume`,
+                      "resume"
+                    )
+                  }
+                >
+                  Resume
+                </Btn>
+                <Btn
+                  disabled={!!busy}
+                  onClick={() =>
+                    act(
+                      `/api/paper-forward/sessions/${sessionId}/complete`,
+                      "complete"
+                    )
+                  }
+                >
+                  {busy === "complete" ? "Completing…" : "Complete session"}
+                </Btn>
+              </>
+            )}
+            {status === "RUNNING" && (
               <Btn
                 disabled={!!busy}
                 onClick={() =>
                   act(
-                    `/api/paper-forward/sessions/${sessionId}/resume`,
-                    "resume"
+                    `/api/paper-forward/sessions/${sessionId}/complete`,
+                    "complete"
                   )
                 }
               >
-                Resume
+                {busy === "complete" ? "Completing…" : "Complete session"}
               </Btn>
             )}
             {status !== "ABORTED" &&
@@ -301,6 +387,217 @@ export default function PaperForwardSessionPanel({
             <p className="text-sm text-red-300">
               Failed closed: {session.failure_reason}
             </p>
+          )}
+
+          <div className="rounded-lg border border-slate-800 bg-slate-900/60 p-4 space-y-2">
+            <div className="flex flex-wrap items-center gap-2">
+              <h3 className="text-sm font-semibold text-white">
+                Paper-forward readiness
+              </h3>
+              <span
+                className={`rounded px-2 py-0.5 text-[11px] font-semibold ${
+                  data?.readiness?.status === "READY_FOR_REVIEW"
+                    ? "bg-emerald-500/20 text-emerald-200"
+                    : data?.readiness?.status === "REJECT"
+                      ? "bg-red-500/20 text-red-200"
+                      : "bg-amber-500/20 text-amber-100"
+                }`}
+              >
+                {data?.readiness?.status ||
+                  session.readiness_status ||
+                  "NOT_READY"}
+              </span>
+            </div>
+            <p className="text-xs text-slate-500">
+              Deterministic code gate — not Claude. Does not enable live trading.
+            </p>
+            {data?.evaluation && (
+              <div className="grid grid-cols-2 gap-2 md:grid-cols-4 text-sm">
+                <Stat
+                  label="Elapsed (forward)"
+                  value={`${data.evaluation.elapsedHours.toFixed(1)}h`}
+                />
+                <Stat
+                  label="Closed candles"
+                  value={String(data.evaluation.closedCandlesProcessed)}
+                />
+                <Stat
+                  label="Expectancy (sim)"
+                  value={
+                    data.evaluation.expectancy == null
+                      ? "—"
+                      : formatPnl(data.evaluation.expectancy)
+                  }
+                />
+                <Stat
+                  label="Profit factor (sim)"
+                  value={
+                    data.evaluation.profitFactor == null
+                      ? "—"
+                      : data.evaluation.profitFactor.toFixed(2)
+                  }
+                />
+              </div>
+            )}
+            {data?.readiness?.reasons && data.readiness.reasons.length > 0 && (
+              <ul className="text-xs text-slate-400 list-disc pl-4 space-y-1">
+                {data.readiness.reasons.map((r) => (
+                  <li key={r}>{r}</li>
+                ))}
+              </ul>
+            )}
+            <Btn
+              disabled={!!busy}
+              onClick={() =>
+                act(
+                  `/api/paper-forward/sessions/${sessionId}/evaluate`,
+                  "evaluate"
+                )
+              }
+            >
+              {busy === "evaluate" ? "Evaluating…" : "Recompute forward evaluation"}
+            </Btn>
+            {session.last_tick_error && (
+              <p className="text-xs text-red-300">
+                Last tick error: {session.last_tick_error} (count{" "}
+                {session.tick_error_count ?? 0})
+              </p>
+            )}
+          </div>
+
+          {data?.comparison && (
+            <div className="rounded-lg border border-slate-800 bg-slate-900/60 p-4">
+              <h3 className="text-sm font-semibold text-white mb-1">
+                Historical vs paper-forward
+              </h3>
+              <p className="text-xs text-slate-500 mb-3">
+                {data.comparison.disclaimer}
+              </p>
+              <div className="grid gap-3 md:grid-cols-2">
+                <div className="rounded border border-slate-800 p-3">
+                  <p className="text-[11px] uppercase tracking-wide text-sky-300">
+                    Historical (Phase 2)
+                  </p>
+                  <p className="text-xs text-slate-500 mt-1">
+                    {data.comparison.historical.notice}
+                  </p>
+                  <p className="text-sm text-slate-200 mt-2">
+                    Status {data.comparison.historical.status || "—"} · trades{" "}
+                    {data.comparison.historical.validationSplit?.totalTrades ??
+                      "—"}
+                  </p>
+                  <p className="text-xs text-slate-400 mt-1">
+                    Exp{" "}
+                    {fmtNum(
+                      data.comparison.historical.validationSplit?.expectancy
+                    )}{" "}
+                    · PF{" "}
+                    {fmtNum(
+                      data.comparison.historical.validationSplit?.profitFactor
+                    )}{" "}
+                    · WR{" "}
+                    {fmtPct(
+                      data.comparison.historical.validationSplit?.winRate
+                    )}{" "}
+                    · DD{" "}
+                    {fmtPct(
+                      data.comparison.historical.validationSplit?.maxDrawdown
+                    )}
+                  </p>
+                </div>
+                <div className="rounded border border-amber-500/30 p-3">
+                  <p className="text-[11px] uppercase tracking-wide text-amber-200">
+                    Forward (Phase 4 paper)
+                  </p>
+                  <p className="text-xs text-slate-500 mt-1">
+                    {data.comparison.forward.notice}
+                  </p>
+                  <p className="text-sm text-slate-200 mt-2">
+                    {data.evaluation?.closedTrades ?? 0} closed sim trades ·{" "}
+                    {formatPnl(data.evaluation?.realizedPnl)}
+                  </p>
+                  <p className="text-xs text-slate-400 mt-1">
+                    Exp {fmtNum(data.evaluation?.expectancy)} · PF{" "}
+                    {fmtNum(data.evaluation?.profitFactor)} · WR{" "}
+                    {fmtPct(data.evaluation?.winRate)} · DD{" "}
+                    {fmtPct(data.evaluation?.maxDrawdown)}
+                  </p>
+                </div>
+              </div>
+            </div>
+          )}
+
+          {data?.reviewEligible && (
+            <div className="rounded-lg border border-emerald-500/40 bg-emerald-500/10 p-4 space-y-3">
+              <h3 className="text-sm font-semibold text-white">
+                Human review (READY_FOR_REVIEW)
+              </h3>
+              <p className="text-xs text-emerald-100/80">
+                {data.reviewAction?.notice ||
+                  "Approval marks the frozen version eligible for a future live phase. It does not place an exchange order."}
+              </p>
+              <textarea
+                value={reviewNotes}
+                onChange={(e) => setReviewNotes(e.target.value)}
+                placeholder="Review notes (audited)"
+                className="w-full rounded-lg border border-slate-700 bg-slate-950 px-3 py-2 text-sm text-white"
+                rows={3}
+              />
+              <div className="flex flex-wrap gap-2">
+                <Btn
+                  disabled={!!busy}
+                  onClick={() =>
+                    act(
+                      `/api/paper-forward/sessions/${sessionId}/review`,
+                      "approve",
+                      {
+                        decision: "APPROVE_FUTURE_LIVE_ELIGIBLE",
+                        notes: reviewNotes,
+                      }
+                    )
+                  }
+                >
+                  {busy === "approve"
+                    ? "Saving…"
+                    : "Approve future-live eligibility"}
+                </Btn>
+                <Btn
+                  disabled={!!busy}
+                  tone="danger"
+                  onClick={() =>
+                    act(
+                      `/api/paper-forward/sessions/${sessionId}/review`,
+                      "reject-review",
+                      {
+                        decision: "REJECT_REVIEW",
+                        notes: reviewNotes,
+                      }
+                    )
+                  }
+                >
+                  Reject review
+                </Btn>
+              </div>
+            </div>
+          )}
+
+          {data?.reviews && data.reviews.length > 0 && (
+            <div className="rounded-lg border border-slate-800 bg-slate-900/60 p-4">
+              <h3 className="text-sm font-semibold text-white mb-2">
+                Review audit
+              </h3>
+              <ul className="space-y-2 text-sm text-slate-300">
+                {data.reviews.map((r) => (
+                  <li key={r.id}>
+                    <span className="text-white">{r.decision}</span> · {r.actor}
+                    {r.notes ? ` · ${r.notes}` : ""}
+                    <div className="text-xs text-slate-500">
+                      {fmtTs(r.created_at)}
+                    </div>
+                  </li>
+                ))}
+              </ul>
+            </div>
           )}
 
           {position && (
@@ -387,6 +684,16 @@ export default function PaperForwardSessionPanel({
       )}
     </section>
   );
+}
+
+function fmtNum(v?: number | null) {
+  if (v == null || Number.isNaN(Number(v))) return "—";
+  return Number(v).toFixed(3);
+}
+
+function fmtPct(v?: number | null) {
+  if (v == null || Number.isNaN(Number(v))) return "—";
+  return `${(Number(v) * 100).toFixed(1)}%`;
 }
 
 function Stat({

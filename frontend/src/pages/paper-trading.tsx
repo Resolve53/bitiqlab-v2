@@ -73,8 +73,14 @@ export default function PaperTradingPage() {
       strategy_version?: number;
       current_balance?: number;
       paper_metrics?: { currentEquity?: number; realizedPnl?: number };
+      readiness_status?: string | null;
+      realized_pnl?: number | null;
+      max_drawdown?: number | null;
     }>
   >([]);
+  const [forwardFilter, setForwardFilter] = useState<
+    "all" | "RUNNING" | "PAUSED" | "COMPLETED"
+  >("all");
 
   async function handleDeleteSession(sessionId: string) {
     if (
@@ -159,8 +165,35 @@ export default function PaperTradingPage() {
           <h2 className="text-lg font-semibold text-white">
             PAPER / SIMULATED forward sessions
           </h2>
+          <div className="flex flex-wrap gap-2">
+            {(["all", "RUNNING", "PAUSED", "COMPLETED"] as const).map((f) => (
+              <button
+                key={f}
+                type="button"
+                onClick={() => setForwardFilter(f)}
+                className={`rounded-lg px-3 py-1.5 text-xs font-medium ${
+                  forwardFilter === f
+                    ? "bg-amber-500/30 text-amber-100"
+                    : "border border-slate-700 text-slate-400"
+                }`}
+              >
+                {f === "all" ? "All" : f} (
+                {f === "all"
+                  ? forwardSessions.length
+                  : forwardSessions.filter((s) => s.lifecycle_status === f)
+                      .length}
+                )
+              </button>
+            ))}
+          </div>
           <div className="space-y-2">
-            {forwardSessions.map((s) => (
+            {forwardSessions
+              .filter((s) =>
+                forwardFilter === "all"
+                  ? true
+                  : s.lifecycle_status === forwardFilter
+              )
+              .map((s) => (
               <Link
                 key={s.id}
                 href={`/paper-trading/${s.id}/dashboard`}
@@ -173,10 +206,18 @@ export default function PaperTradingPage() {
                       <span className="ml-2 rounded bg-amber-500/20 px-2 py-0.5 text-[11px] text-amber-100">
                         PAPER / SIMULATED
                       </span>
+                      {s.readiness_status ? (
+                        <span className="ml-2 rounded bg-slate-800 px-2 py-0.5 text-[11px] text-slate-200">
+                          {s.readiness_status}
+                        </span>
+                      ) : null}
                     </p>
                     <p className="text-xs text-slate-400 mt-1">
                       {s.lifecycle_status} · {s.symbol} {s.timeframe} · v
                       {s.strategy_version ?? "—"}
+                      {s.max_drawdown != null
+                        ? ` · DD ${(Number(s.max_drawdown) * 100).toFixed(1)}%`
+                        : ""}
                     </p>
                   </div>
                   <p className="text-sm text-slate-300">
