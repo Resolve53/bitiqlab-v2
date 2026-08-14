@@ -75,14 +75,20 @@ async function callMCPTool(toolName, args) {
   switch (toolName) {
     case 'pine_set_source':
       return await setPineSource(args.source);
+    case 'pine_get_source':
+      return await getPineSource();
     case 'chart_set_symbol':
       return await setChartSymbol(args.symbol);
+    case 'chart_set_timeframe':
+      return await setChartTimeframe(args.timeframe);
     case 'pine_smart_compile':
       return await compilePineScript();
     case 'chart_get_state':
       return await getChartState();
     case 'quote_get':
       return await getQuote(args.symbol);
+    case 'alert_setup_strategy_webhook':
+      return await setupStrategyWebhookAlert(args);
     default:
       throw new Error(`Unknown tool: ${toolName}`);
   }
@@ -90,7 +96,7 @@ async function callMCPTool(toolName, args) {
 
 async function setPineSource(source) {
   console.log('[MCP] Setting Pine Script source...');
-
+  const escaped = JSON.stringify(source);
   const script = `
     (async () => {
       const editor = document.querySelector('[data-testid="pine-editor"]') ||
@@ -98,23 +104,45 @@ async function setPineSource(source) {
                     document.querySelector('textarea[class*="pine" i]');
 
       if (!editor) {
-        return { error: 'Pine Script editor not found' };
+        return { success: false, error: 'Pine Script editor not found' };
       }
 
-      const textarea = editor.querySelector('textarea') || editor.querySelector('[contenteditable="true"]');
-      if (textarea) {
-        textarea.value = \`${source.replace(/`/g, '\\`')}\`;
+      const textarea = editor.querySelector('textarea') || editor.querySelector('[contenteditable="true"]') || editor;
+      const source = ${escaped};
+      if (textarea && 'value' in textarea) {
+        textarea.value = source;
         textarea.dispatchEvent(new Event('input', { bubbles: true }));
         textarea.dispatchEvent(new Event('change', { bubbles: true }));
-        return { success: true, message: 'Pine Script source set' };
+        return { success: true, message: 'Pine Script source set', length: source.length };
       }
-
-      return { error: 'Could not set source code' };
+      if (textarea && textarea.isContentEditable) {
+        textarea.textContent = source;
+        textarea.dispatchEvent(new Event('input', { bubbles: true }));
+        return { success: true, message: 'Pine Script source set (contenteditable)', length: source.length };
+      }
+      return { success: false, error: 'Could not set source code' };
     })();
   `;
 
   const result = await executeScriptOnChart(script);
-  return result || { error: 'No result from script' };
+  return result || { success: false, error: 'No result from script' };
+}
+
+async function getPineSource() {
+  console.log('[MCP] Reading Pine Script source...');
+  const script = `
+    (async () => {
+      const editor = document.querySelector('[data-testid="pine-editor"]') ||
+                    document.querySelector('[class*="PineEditor"]') ||
+                    document.querySelector('textarea[class*="pine" i]');
+      if (!editor) return { success: false, error: 'Pine Script editor not found' };
+      const textarea = editor.querySelector('textarea') || editor.querySelector('[contenteditable="true"]') || editor;
+      const source = (textarea && 'value' in textarea) ? textarea.value : (textarea ? textarea.textContent : '');
+      return { success: true, source: source || '', length: (source || '').length };
+    })();
+  `;
+  const result = await executeScriptOnChart(script);
+  return result || { success: false, error: 'No result from script' };
 }
 
 async function setChartSymbol(symbol) {
@@ -127,7 +155,7 @@ async function setChartSymbol(symbol) {
                          document.querySelector('[data-testid="symbol-search-input"]');
 
       if (!symbolInput) {
-        return { error: 'Symbol input not found' };
+        return { success: false, error: 'Symbol input not found' };
       }
 
       symbolInput.value = '${symbol}';
@@ -149,7 +177,101 @@ async function setChartSymbol(symbol) {
   `;
 
   const result = await executeScriptOnChart(script);
-  return result || { error: 'No result from script' };
+  return result || { success: false, error: 'No result from script' };
+}
+
+async function setChartTimeframe(timeframe) {
+  console.log(`[MCP] Setting chart timeframe to ${timeframe}...`);
+  const tf = String(timeframe).replace(/'/g, '');
+  const script = `
+    (async () => {
+      const buttons = Array.from(document.querySelectorAll('button, div[role="button"]'));
+      const match = buttons.find(b => {
+        const t = (b.textContent || b.getAttribute('aria-label') || '').trim();
+        return t === '${tf}' || t === '${tf}m' || t === '${tf}h' || t.toLowerCase() === '${tf}'.toLowerCase();
+      });
+      if (match) {
+        match.click();
+        return { success: true, message: 'Timeframe clicked ' + '${tf}' };
+      }
+      return { success: false, error: 'Timeframe control not found for ${tf}' };
+    })();
+  `;
+  const result = await executeScriptOnChart(script);
+  return result || { success: false, error: 'No result from script' };
+}
+
+async function setupStrategyWebhookAlert(args) {
+  const webhookUrl = JSON.stringify(args.webhook_url || '');
+  const script = `
+    (async () => {
+      const result = {
+        success: false,
+        webhook_url_set: false,
+        once_per_bar_close: false,
+        condition_is_alert_function: false,
+        message_is_json: false,
+        verified_in_list: false,
+        source: 'dom_attempt',
+      };
+      const openBtn = document.querySelector('[aria-label="Create Alert"]')
+        || document.querySelector('[data-name="alerts"]');
+      if (openBtn) openBtn.click();
+      await new Promise(r => setTimeout(r, 800));
+
+      const webhookInput = Array.from(document.querySelectorAll('input')).find(i =>
+        /webhook/i.test(i.placeholder || '') || /webhook/i.test(i.getAttribute('aria-label') || '') ||
+        /webhook/i.test(i.closest('label')?.textContent || i.closest('[class*="row"]')?.textContent || '')
+      );
+      if (webhookInput) {
+        const nativeSet = Object.getOwnPropertyDescriptor(HTMLInputElement.prototype, 'value').set;
+        nativeSet.call(webhookInput, ${webhookUrl});
+        webhookInput.dispatchEvent(new Event('input', { bubbles: true }));
+        webhookInput.dispatchEvent(new Event('change', { bubbles: true }));
+        result.webhook_url_set = true;
+      }
+
+      const onceClose = Array.from(document.querySelectorAll('input[type="radio"], input[type="checkbox"], button, span, div')).find(el =>
+        /once per bar close/i.test(el.textContent || el.getAttribute('aria-label') || '')
+      );
+      if (onceClose) {
+        onceClose.click();
+        result.once_per_bar_close = true;
+      }
+
+      const alertFn = Array.from(document.querySelectorAll('div, span, option, button')).find(el =>
+        /alert\\(\\) function/i.test(el.textContent || '')
+      );
+      if (alertFn) {
+        alertFn.click();
+        result.condition_is_alert_function = true;
+      }
+
+      result.success = result.webhook_url_set && result.once_per_bar_close && result.condition_is_alert_function;
+      if (!result.success) {
+        result.error = 'Could not fully configure a strategy webhook alert via DOM. Manual setup required.';
+      }
+      return result;
+    })();
+  `;
+  try {
+    const result = await executeScriptOnChart(script);
+    return result || {
+      success: false,
+      error: 'No result from alert setup script',
+      webhook_url_set: false,
+      once_per_bar_close: false,
+      condition_is_alert_function: false,
+    };
+  } catch (error) {
+    return {
+      success: false,
+      error: error instanceof Error ? error.message : String(error),
+      webhook_url_set: false,
+      once_per_bar_close: false,
+      condition_is_alert_function: false,
+    };
+  }
 }
 
 async function compilePineScript() {
@@ -162,7 +284,7 @@ async function compilePineScript() {
                         Array.from(document.querySelectorAll('button')).find(b => b.textContent.toLowerCase().includes('compile'));
 
       if (!compileBtn) {
-        return { error: 'Compile button not found' };
+        return { success: false, error: 'Compile button not found' };
       }
 
       compileBtn.click();
@@ -170,15 +292,15 @@ async function compilePineScript() {
 
       const errors = document.querySelectorAll('[class*="error" i]');
       if (errors.length > 0) {
-        return { error: 'Compilation failed with errors' };
+        return { success: false, error: 'Compilation failed with errors', has_errors: true };
       }
 
-      return { success: true, message: 'Pine Script compiled successfully' };
+      return { success: true, message: 'Pine Script compiled successfully', has_errors: false };
     })();
   `;
 
   const result = await executeScriptOnChart(script);
-  return result || { error: 'No result from script' };
+  return result || { success: false, error: 'No result from script' };
 }
 
 async function getChartState() {
@@ -195,6 +317,7 @@ async function getChartState() {
                          Array.from(document.querySelectorAll('button')).find(b => /^[0-9]+(M|H|D|W|mo)$/i.test(b.textContent));
 
       return {
+        success: true,
         symbol: symbolEl?.textContent?.trim() || 'UNKNOWN',
         timeframe: timeframeEl?.textContent?.trim() || '1D',
         timestamp: Date.now(),
@@ -203,7 +326,7 @@ async function getChartState() {
   `;
 
   const result = await executeScriptOnChart(script);
-  return result || { symbol: 'UNKNOWN', timeframe: '1D' };
+  return result || { success: false, error: 'No result from script', symbol: 'UNKNOWN', timeframe: '1D' };
 }
 
 async function getQuote(symbol) {
@@ -227,7 +350,7 @@ async function getQuote(symbol) {
   }
 }
 
-app.use(express.json());
+app.use(express.json({ limit: '1mb' }));
 
 // ============================================
 // Health Check
@@ -441,21 +564,120 @@ app.get('/api/chart/:symbol/:timeframe', async (req, res) => {
 });
 
 // ============================================
-// Monitor Alerts
+// Stage 1: deploy frozen Pine (no Claude reinterpretation)
+// Returns tool FACTS. Never claims status=deployed.
+// ============================================
+app.post('/api/tradingview/deploy', async (req, res) => {
+  try {
+    const {
+      strategy_id,
+      strategy_version_id,
+      snapshot_hash,
+      symbol,
+      timeframe,
+      pine_script,
+    } = req.body || {};
+
+    if (!pine_script || !symbol) {
+      return res.status(400).json({
+        steps: {},
+        error: 'pine_script and symbol are required',
+      });
+    }
+
+    const steps = {};
+    let pine_source;
+    let chart_state;
+
+    steps.chart_set_symbol = await callMCPTool('chart_set_symbol', {
+      symbol: String(symbol).toUpperCase(),
+    });
+    try {
+      steps.chart_set_timeframe = await callMCPTool('chart_set_timeframe', {
+        timeframe,
+      });
+    } catch (err) {
+      steps.chart_set_timeframe = {
+        success: false,
+        error: err instanceof Error ? err.message : String(err),
+      };
+    }
+    steps.pine_set_source = await callMCPTool('pine_set_source', {
+      source: pine_script,
+    });
+    steps.pine_smart_compile = await callMCPTool('pine_smart_compile', {});
+    try {
+      steps.pine_get_source = await callMCPTool('pine_get_source', {});
+      pine_source = steps.pine_get_source && steps.pine_get_source.source;
+    } catch (err) {
+      steps.pine_get_source = {
+        success: false,
+        error: err instanceof Error ? err.message : String(err),
+      };
+    }
+    try {
+      chart_state = await callMCPTool('chart_get_state', {});
+      steps.chart_get_state = chart_state;
+    } catch (err) {
+      steps.chart_get_state = {
+        success: false,
+        error: err instanceof Error ? err.message : String(err),
+      };
+    }
+
+    res.json({
+      strategy_id,
+      strategy_version_id,
+      snapshot_hash,
+      symbol,
+      timeframe,
+      steps,
+      pine_source: pine_source || pine_script,
+      chart_state,
+      status: 'facts',
+      notice: 'This endpoint returns MCP facts only. The Bitiq backend decides compile/verify. Compiled Pine is not monitoring.',
+    });
+  } catch (error) {
+    res.status(500).json({
+      steps: {},
+      error: error instanceof Error ? error.message : 'MCP deploy failed',
+    });
+  }
+});
+
+app.post('/api/tradingview/alerts/setup', async (req, res) => {
+  try {
+    const result = await callMCPTool('alert_setup_strategy_webhook', req.body || {});
+    res.json(result);
+  } catch (error) {
+    res.json({
+      success: false,
+      webhook_url_set: false,
+      once_per_bar_close: false,
+      condition_is_alert_function: false,
+      verified_in_list: false,
+      error: error instanceof Error ? error.message : 'Alert setup failed',
+    });
+  }
+});
+
+// ============================================
+// Monitor Alerts — do NOT fake monitoring:true
 // ============================================
 app.post('/api/alerts/monitor', async (req, res) => {
   try {
-    const { strategy_id, session_id, symbol } = req.body;
-
-    console.log(`[MCP] Monitoring ${symbol} for strategy ${strategy_id}`);
-
-    res.json({
-      success: true,
+    const { strategy_id, session_id, symbol } = req.body || {};
+    res.status(409).json({
+      success: false,
+      monitoring: false,
+      monitoring_complete: false,
+      alert_status: 'ALERT_SETUP_REQUIRED',
+      error: 'ALERT_SETUP_REQUIRED',
       strategy_id,
       session_id,
       symbol,
-      monitoring: true,
-      message: `Now monitoring ${symbol} for signals`,
+      message:
+        'Compiled Pine is not TradingView monitoring. Create a real candle-close strategy alert (POST /api/tradingview/alerts/setup or follow ALERT_SETUP_REQUIRED instructions). A candidate must reach POST /api/tradingview/candidates.',
     });
   } catch (error) {
     res.status(500).json({
