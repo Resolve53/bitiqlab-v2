@@ -101,14 +101,36 @@ Headless Chromium cannot complete a TradingView captcha/login UI reliably. Do th
 
 ```bash
 cd backend
+# 0. Quit every Chrome that was launched with this profile.
+#    pgrep -fl 'user-data-dir=.*tv-profile'
+
+# 1. Safe first retry — one spawn + one probe, then inspect counts.
+TRADINGVIEW_BOOTSTRAP_ONCE=1 \
+TRADINGVIEW_BROWSER_HEADLESS=false \
+TRADINGVIEW_BROWSER_USER_DATA_DIR=./.tv-profile \
+npm run tv:bootstrap
+```
+
+Confirm logs show `spawn_count=0` (adopted) or `spawn_count=1`, and `targets=` is a small number (typically 1–3). If you see many `/chart/` tabs, Ctrl+C immediately. Then quit Chrome and retry with `TRADINGVIEW_BROWSER_RESET_SESSION=true` (clears session-restore files only; cookies/login stay).
+
+Do **not** leave the 5-second poll running until those counts look right.
+
+```bash
+# 2. Only after counts look safe — full bootstrap poll
 TRADINGVIEW_BROWSER_HEADLESS=false \
 TRADINGVIEW_BROWSER_USER_DATA_DIR=./.tv-profile \
 npm run tv:bootstrap
 ```
 
 2. Sign in to TradingView in the opened window. Wait until the process logs `authenticated=yes`.
-3. Stop the process (`Ctrl+C`).
+3. Stop the process (`Ctrl+C`). SIGINT/SIGTERM now stop the runtime and close the adopted browser via CDP.
 4. Copy `./.tv-profile` onto the Railway volume at `/data/tradingview-profile` (Railway volume browser, `railway run`, or a one-off debug session). Do not commit the profile.
+
+### Browser / tab lifecycle (do not skip)
+
+One bootstrap invocation launches **at most one** Chromium instance and maintains **at most one intended** TradingView chart target (a pre-existing valid chart tab is reused). The 5-second poll only lists CDP targets and evaluates JavaScript; it never navigates, never creates a target, and never respawns Chrome.
+
+A previous bug could accumulate `/chart/` tabs: every spawn appended the chart URL, Chrome also restored prior session tabs from `.tv-profile`, and a macOS Chrome launcher exit was treated as a crash so the runtime spawned again. Those mechanisms can operate together. Session restore from an already-swollen profile can also reopen many tabs on a single launch. Use `TRADINGVIEW_BOOTSTRAP_ONCE=1` to tell the two apart before polling.
 
 ### Option B — temporary headful on Railway
 

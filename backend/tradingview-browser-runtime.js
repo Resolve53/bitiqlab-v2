@@ -47,8 +47,11 @@ function browserConfig(env = process.env) {
     extraArgs: String(env.TRADINGVIEW_BROWSER_EXTRA_ARGS || "")
       .split(/\s+/)
       .filter(Boolean),
+    resetSessionRestore: readFlag(env, "TRADINGVIEW_BROWSER_RESET_SESSION", false),
   };
 }
+
+const MAX_RESTART_ATTEMPTS = 3;
 
 function resolveExecutable(cfg, existsSyncFn = fs.existsSync) {
   const candidates = [
@@ -64,7 +67,7 @@ function resolveExecutable(cfg, existsSyncFn = fs.existsSync) {
   return cfg.executable || candidates[1] || "chromium";
 }
 
-function chromiumArgs(cfg) {
+function chromiumArgs(cfg, opts = {}) {
   const args = [
     `--remote-debugging-port=${cfg.cdpPort}`,
     `--remote-debugging-address=127.0.0.1`,
@@ -83,8 +86,35 @@ function chromiumArgs(cfg) {
   ];
   if (cfg.headless) args.push("--headless=new");
   args.push(...cfg.extraArgs);
-  args.push(cfg.url);
+  // Never pass the chart URL on every launch. A persistent profile restores
+  // previous tabs; a URL argument opens an *additional* /chart/ tab.
+  if (opts.includeUrl) args.push(cfg.url);
   return args;
+}
+
+const SESSION_RESTORE_RELATIVE = [
+  "Default/Current Session",
+  "Default/Current Tabs",
+  "Default/Last Session",
+  "Default/Last Tabs",
+  "Default/Sessions",
+];
+
+function resetChromeSessionRestore(userDataDir, fsMod = fs) {
+  if (!userDataDir) return [];
+  const removed = [];
+  for (const rel of SESSION_RESTORE_RELATIVE) {
+    const full = path.join(userDataDir, rel);
+    try {
+      if (fsMod.existsSync(full)) {
+        fsMod.rmSync(full, { recursive: true, force: true });
+        removed.push(rel);
+      }
+    } catch {
+      /* ignore */
+    }
+  }
+  return removed;
 }
 
 function ensureUserDataDir(dir, mkdirFn = fs.mkdirSync) {
@@ -194,6 +224,100 @@ async function listCdpTargets(cfg, opts = {}) {
     return { targets: [], error: `http_${status}` };
   }
   return { targets: Array.isArray(json) ? json : [] };
+}
+
+function isNavigableBlankTarget(url) {
+  const u = String(url || "");
+  if (/^(chrome-extension|devtools|edge|brave):/i.test(u)) return false;
+  return /^(about:blank)$/i.test(u) || /newtab|new-tab-page|chrome\/newtab/i.test(u);
+}
+
+async function probeCdpOnce(cfg, opts = {}) {
+  const timeoutMs = opts.timeoutMs ?? 400;
+  try {
+    const { status, json } = await fetchJson(
+      `http://127.0.0.1:${cfg.cdpPort}/json/version`,
+      timeoutMs,
+      opts.http || http
+    );
+    return Boolean(status >= 200 && status < 300 && json);
+  } catch {
+    return false;
+  }
+}
+
+async function navigateTarget(target, url, cfg, CDPImpl) {
+  const CDP = CDPImpl || require("chrome-remote-interface");
+  const client = await CDP({
+    host: "127.0.0.1",
+    port: cfg.cdpPort,
+    target: target.id || target,
+  });
+  try {
+    if (client.Page && typeof client.Page.navigate === "function") {
+      await client.Page.enable();
+      await client.Page.navigate({ url });
+    }
+  } finally {
+    try {
+      await client.close();
+    } catch {
+      /* ignore */
+    }
+  }
+}
+
+async function createChartTarget(url, cfg, CDPImpl) {
+  const CDP = CDPImpl || require("chrome-remote-interface");
+  const client = await CDP({ host: "127.0.0.1", port: cfg.cdpPort });
+  try {
+    if (client.Target && typeof client.Target.createTarget === "function") {
+      return await client.Target.createTarget({ url });
+    }
+    return null;
+  } finally {
+    try {
+      await client.close();
+    } catch {
+      /* ignore */
+    }
+  }
+}
+
+async function closeBrowserViaCdp(cfg, CDPImpl) {
+  const CDP = CDPImpl || require("chrome-remote-interface");
+  let client;
+  try {
+    client = await CDP({ host: "127.0.0.1", port: cfg.cdpPort });
+    if (client.Browser && typeof client.Browser.close === "function") {
+      await client.Browser.close();
+    }
+  } catch {
+    /* CDP already gone */
+  } finally {
+    try {
+      if (client) client.close();
+    } catch {
+      /* ignore */
+    }
+  }
+}
+
+function killChildTree(child) {
+  if (!child) return;
+  try {
+    child.kill("SIGTERM");
+  } catch {
+    /* ignore */
+  }
+  const pid = child.pid;
+  if (pid) {
+    try {
+      process.kill(-pid, "SIGTERM");
+    } catch {
+      /* not a process-group leader, or already gone */
+    }
+  }
 }
 
 function truthyAuthFlag(value) {
@@ -388,6 +512,12 @@ function createRuntime(deps = {}) {
     child: null,
     restarting: false,
     stopping: false,
+    adoptedCdp: false,
+    ensuredChartPage: false,
+    spawnCount: 0,
+    restartAttempts: 0,
+    pendingRestart: null,
+    lastExitHandled: null,
   };
 
   function snapshot() {
@@ -433,32 +563,14 @@ function createRuntime(deps = {}) {
       detection_reason: state.page.reason || null,
       page_target_count: state.page.targetCount ?? null,
       auth_signals: state.page.authSignals || null,
+      spawn_count: state.spawnCount,
+      restart_attempts: state.restartAttempts,
+      adopted_cdp: Boolean(state.adoptedCdp),
+      ensured_chart_page: Boolean(state.ensuredChartPage),
     };
   }
 
-  async function start() {
-    const cfg = browserConfig(deps.env || process.env);
-    state.browserEnabled = cfg.enabled;
-    state.stopping = false;
-    if (!cfg.enabled) {
-      log("[browser] TRADINGVIEW_BROWSER_ENABLED=false — not launching Chromium");
-      return snapshot();
-    }
-    if (String(cfg.cdpHost) !== "127.0.0.1" && String(cfg.cdpHost) !== "localhost") {
-      log(
-        `[browser] CDP_HOST=${cfg.cdpHost} ignored for bind; Chromium listens on 127.0.0.1 only`
-      );
-    }
-    state.userDataDir = ensureUserDataDir(cfg.userDataDir, mkdirFn);
-    state.executable = resolveExecutable(cfg, existsSyncFn);
-    const args = chromiumArgs(cfg);
-    log(
-      `[browser] launching ${state.executable} cdp=127.0.0.1:${cfg.cdpPort} profile=${state.userDataDir} headless=${cfg.headless}`
-    );
-    const child = spawnFn(state.executable, args, {
-      stdio: ["ignore", "pipe", "pipe"],
-      env: { ...process.env, HOME: state.userDataDir },
-    });
+  function attachChild(child) {
     state.child = child;
     state.browserPid = child.pid || null;
     state.browserRunning = true;
@@ -472,24 +584,169 @@ function createRuntime(deps = {}) {
       }
     });
     child.on("exit", (code, signal) => {
+      state.lastExitHandled = handleChildExit(code, signal).catch((err) => {
+        log(`[browser] exit handler failed: ${sanitizeLogValue(err instanceof Error ? err.message : err)}`);
+      });
+    });
+  }
+
+  async function handleChildExit(code, signal) {
+    state.lastExitCode = code;
+    state.lastExitSignal = signal;
+    state.child = null;
+    state.browserPid = null;
+    log(`[browser] process exited code=${code} signal=${signal || ""}`);
+    if (state.stopping) {
       state.browserRunning = false;
       state.cdpReady = false;
-      state.lastExitCode = code;
-      state.lastExitSignal = signal;
-      state.browserPid = null;
-      log(`[browser] process exited code=${code} signal=${signal || ""}`);
-      const restartDelayMs = deps.restartDelayMs ?? 1000;
-      if (!state.stopping && cfg.enabled && !state.restarting) {
-        log("[browser] unexpected exit — scheduling restart");
-        setTimeout(() => {
-          if (!state.stopping) {
-            restart().catch((err) => {
-              log(`[browser] restart failed: ${sanitizeLogValue(err instanceof Error ? err.message : err)}`);
-            });
-          }
-        }, restartDelayMs);
+      return;
+    }
+    const cfg = browserConfig(deps.env || process.env);
+    if (await probeCdpOnce(cfg, { http: httpMod })) {
+      // macOS Google Chrome often exits the launcher after handing off to an
+      // already-running Chrome. CDP is still live — adopt it. Do not spawn.
+      state.adoptedCdp = true;
+      state.browserRunning = true;
+      state.cdpReady = true;
+      state.lastCdpError = null;
+      log("[browser] launcher exited but CDP is still live — adopting existing browser (no respawn)");
+      return;
+    }
+    state.browserRunning = false;
+    state.cdpReady = false;
+    if (!cfg.enabled) return;
+    scheduleRestart("unexpected exit and CDP is down");
+  }
+
+  function scheduleRestart(reason) {
+    if (state.stopping || state.pendingRestart) return;
+    if (state.restartAttempts >= MAX_RESTART_ATTEMPTS) {
+      log(
+        `[browser] restart storm protection: refusing further restarts after ${state.restartAttempts} attempts`
+      );
+      return;
+    }
+    const delayMs = Math.min(
+      (deps.restartDelayMs ?? 1000) * Math.pow(2, state.restartAttempts),
+      30_000
+    );
+    state.restartAttempts += 1;
+    log(
+      `[browser] ${reason} — scheduling restart ${state.restartAttempts}/${MAX_RESTART_ATTEMPTS} in ${delayMs}ms`
+    );
+    state.pendingRestart = setTimeout(() => {
+      state.pendingRestart = null;
+      if (state.stopping) return;
+      restart().catch((err) => {
+        log(`[browser] restart failed: ${sanitizeLogValue(err instanceof Error ? err.message : err)}`);
+      });
+    }, delayMs);
+  }
+
+  async function ensureSingleChartPage(cfg) {
+    if (state.ensuredChartPage) {
+      log("[browser] chart page already ensured — not creating another tab");
+      return { created: false, reused: true };
+    }
+    let targets = [];
+    try {
+      const listed = await listCdpTargets(cfg, { http: httpMod });
+      targets = listed.targets || [];
+    } catch (err) {
+      log(
+        `[browser] target list failed while ensuring chart: ${sanitizeLogValue(err instanceof Error ? err.message : err)}`
+      );
+      return { created: false, error: true };
+    }
+    const summary = summarizeCdpTargets(targets);
+    state.page.targetCount = summary.page_target_count;
+    const existing = selectChartTarget(targets);
+    if (existing && isTradingViewChartUrl(existing.url)) {
+      state.ensuredChartPage = true;
+      log(`[browser] reusing existing chart target url=${sanitizeTargetUrl(existing.url)}`);
+      return { created: false, reused: true, target: existing };
+    }
+    const pages = targets.filter((t) => t && (t.type === "page" || t.type === "webview"));
+    const blank = pages.find((t) => isNavigableBlankTarget(t.url));
+    const navigateFn = deps.navigatePage || ((target, url) => navigateTarget(target, url, cfg, deps.CDP));
+    const createFn = deps.createTarget || ((url) => createChartTarget(url, cfg, deps.CDP));
+    try {
+      if (blank) {
+        log("[browser] navigating existing blank/newtab to chart (no extra tab)");
+        await navigateFn(blank, cfg.url);
+        state.ensuredChartPage = true;
+        return { created: false, navigated: true };
       }
+      log("[browser] no chart or blank tab — creating one chart target");
+      await createFn(cfg.url);
+      state.ensuredChartPage = true;
+      return { created: true };
+    } catch (err) {
+      log(
+        `[browser] failed to open a single chart page: ${sanitizeLogValue(err instanceof Error ? err.message : err)}`
+      );
+      return { created: false, error: true };
+    }
+  }
+
+  async function adoptExistingCdp(cfg) {
+    if (!(await probeCdpOnce(cfg, { http: httpMod }))) return false;
+    state.adoptedCdp = true;
+    state.browserRunning = true;
+    state.cdpReady = true;
+    state.lastCdpError = null;
+    state.startedAt = state.startedAt || Date.now();
+    state.userDataDir = state.userDataDir || cfg.userDataDir;
+    log("[browser] adopting already-running Chromium on 127.0.0.1 (no second spawn)");
+    await ensureSingleChartPage(cfg);
+    return true;
+  }
+
+  async function start(opts = {}) {
+    const cfg = browserConfig(deps.env || process.env);
+    state.browserEnabled = cfg.enabled;
+    if (!cfg.enabled) {
+      log("[browser] TRADINGVIEW_BROWSER_ENABLED=false — not launching Chromium");
+      return snapshot();
+    }
+    if (state.restarting) {
+      return snapshot();
+    }
+    if (state.browserRunning && (state.child || state.adoptedCdp || state.cdpReady)) {
+      log("[browser] start() is a no-op — browser already running");
+      return snapshot();
+    }
+    state.stopping = false;
+    if (String(cfg.cdpHost) !== "127.0.0.1" && String(cfg.cdpHost) !== "localhost") {
+      log(
+        `[browser] CDP_HOST=${cfg.cdpHost} ignored for bind; Chromium listens on 127.0.0.1 only`
+      );
+    }
+    const preferAdopt = opts.preferAdopt !== false;
+    if (preferAdopt && (await adoptExistingCdp(cfg))) {
+      return snapshot();
+    }
+    state.userDataDir = ensureUserDataDir(cfg.userDataDir, mkdirFn);
+    state.executable = resolveExecutable(cfg, existsSyncFn);
+    if (cfg.resetSessionRestore) {
+      const removed = resetChromeSessionRestore(state.userDataDir, deps.fs || fs);
+      if (removed.length) {
+        log(`[browser] reset session restore files: ${removed.join(",")}`);
+      }
+    }
+    // Never pass the chart URL here. Persistent profiles restore prior tabs;
+    // appending the URL would add another /chart/ tab on every spawn.
+    const args = chromiumArgs(cfg, { includeUrl: false });
+    log(
+      `[browser] launching ${state.executable} cdp=127.0.0.1:${cfg.cdpPort} profile=${state.userDataDir} headless=${cfg.headless} spawn=${state.spawnCount + 1}`
+    );
+    const child = spawnFn(state.executable, args, {
+      stdio: ["ignore", "pipe", "pipe"],
+      env: { ...process.env, HOME: state.userDataDir },
     });
+    state.spawnCount += 1;
+    state.adoptedCdp = false;
+    attachChild(child);
 
     const cdp = await waitForCdp(cfg, { http: httpMod, timeoutMs: cfg.startupTimeoutMs });
     state.cdpReady = cdp.ok;
@@ -498,17 +755,27 @@ function createRuntime(deps = {}) {
       log(`[browser] CDP startup failed: ${sanitizeLogValue(cdp.error)}`);
     } else {
       log("[browser] CDP is ready on 127.0.0.1");
+      await ensureSingleChartPage(cfg);
     }
     return snapshot();
   }
 
   async function stop() {
     state.stopping = true;
+    if (state.pendingRestart) {
+      clearTimeout(state.pendingRestart);
+      state.pendingRestart = null;
+    }
+    const cfg = browserConfig(deps.env || process.env);
     const child = state.child;
     state.child = null;
-    if (child && state.browserRunning) {
+    if (child) {
+      killChildTree(child);
+    }
+    if (state.adoptedCdp || state.cdpReady) {
+      const closer = deps.closeBrowser || ((c) => closeBrowserViaCdp(c, deps.CDP));
       try {
-        child.kill("SIGTERM");
+        await closer(cfg);
       } catch {
         /* ignore */
       }
@@ -516,15 +783,30 @@ function createRuntime(deps = {}) {
     state.browserRunning = false;
     state.cdpReady = false;
     state.browserPid = null;
+    state.adoptedCdp = false;
+    state.ensuredChartPage = false;
   }
 
   async function restart() {
     if (state.restarting) return snapshot();
+    if (state.restartAttempts > MAX_RESTART_ATTEMPTS) {
+      log("[browser] restart storm protection: max attempts exceeded");
+      return snapshot();
+    }
     state.restarting = true;
     try {
+      const wasStopping = state.stopping;
       await stop();
-      await new Promise((r) => setTimeout(r, 400));
-      return await start();
+      state.stopping = wasStopping;
+      if (state.stopping) return snapshot();
+      await new Promise((r) => setTimeout(r, deps.restartGapMs ?? 400));
+      const cfg = browserConfig(deps.env || process.env);
+      if (await probeCdpOnce(cfg, { http: httpMod })) {
+        log("[browser] previous browser still owns CDP — adopting instead of spawning another instance");
+        await adoptExistingCdp(cfg);
+        return snapshot();
+      }
+      return await start({ preferAdopt: false });
     } finally {
       state.restarting = false;
     }
@@ -627,6 +909,7 @@ function createRuntime(deps = {}) {
     restart,
     applyPageProbe,
     probeAndApply,
+    ensureSingleChartPage,
     assertReadyForTools,
     config: () => browserConfig(deps.env || process.env),
     waitForCdp: (cfg, opts) => waitForCdp(cfg || browserConfig(deps.env || process.env), { ...opts, http: httpMod }),
@@ -803,6 +1086,11 @@ module.exports = {
   fetchJson,
   createRuntime,
   tradingViewProbeScript,
+  resetChromeSessionRestore,
+  SESSION_RESTORE_RELATIVE,
+  MAX_RESTART_ATTEMPTS,
+  probeCdpOnce,
+  isNavigableBlankTarget,
   sanitizeTargetUrl,
   isIgnoredTargetUrl,
   isTradingViewChartUrl,

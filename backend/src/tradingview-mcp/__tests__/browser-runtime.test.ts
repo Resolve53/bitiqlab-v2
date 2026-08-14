@@ -26,14 +26,17 @@ function mockChild(pid = 4242) {
   return child;
 }
 
-function cdpHttpOk() {
+function cdpHttpOk(listTargets: unknown[] = []) {
   return {
-    get: (_url: string, cb: (res: EventEmitter & { statusCode: number }) => void) => {
+    get: (url: string, cb: (res: EventEmitter & { statusCode: number }) => void) => {
       const res = new EventEmitter() as EventEmitter & { statusCode: number };
       res.statusCode = 200;
+      const body = String(url).includes("/json/list")
+        ? JSON.stringify(listTargets)
+        : JSON.stringify({ Browser: "Chromium/120" });
       process.nextTick(() => {
         cb(res);
-        res.emit("data", JSON.stringify({ Browser: "Chromium/120" }));
+        res.emit("data", body);
         res.emit("end");
       });
       const req = new EventEmitter() as EventEmitter & {
@@ -44,6 +47,15 @@ function cdpHttpOk() {
       req.destroy = () => {};
       return req;
     },
+  };
+}
+
+function lifecycleDeps(overrides: Record<string, unknown> = {}) {
+  return {
+    createTarget: vi.fn(async () => ({ id: "created" })),
+    navigatePage: vi.fn(async () => undefined),
+    closeBrowser: vi.fn(async () => undefined),
+    ...overrides,
   };
 }
 
@@ -85,8 +97,9 @@ describe("A. Browser lifecycle", () => {
       },
       log: () => {},
       restartDelayMs: 60_000,
+      ...lifecycleDeps(),
     });
-    const snap = await rt.start();
+    const snap = await rt.start({ preferAdopt: false });
     expect(spawn).toHaveBeenCalledTimes(1);
     expect(snap.browser).toBe("ok");
     expect(snap.cdp).toBe("ok");
@@ -110,8 +123,9 @@ describe("A. Browser lifecycle", () => {
       },
       log: () => {},
       restartDelayMs: 60_000,
+      ...lifecycleDeps(),
     });
-    const snap = await rt.start();
+    const snap = await rt.start({ preferAdopt: false });
     expect(snap.status).toBe("degraded");
     expect(snap.browser).toBe("ok");
     expect(snap.cdp).toBe("fail");
@@ -120,34 +134,9 @@ describe("A. Browser lifecycle", () => {
     await rt.stop();
   });
 
-  it("detects a browser crash", async () => {
+  it("adopts a live CDP when the launcher process exits", async () => {
     const child = mockChild();
-    const rt = createRuntime({
-      spawn: () => child,
-      http: cdpHttpOk(),
-      existsSync: () => true,
-      mkdirSync: () => undefined,
-      env: {
-        TRADINGVIEW_BROWSER_ENABLED: "true",
-        TRADINGVIEW_BROWSER_EXECUTABLE: "/usr/bin/chromium",
-        TRADINGVIEW_BROWSER_USER_DATA_DIR: "/tmp/tv-profile-test",
-      },
-      log: () => {},
-      restartDelayMs: 60_000,
-    });
-    await rt.start();
-    child.emit("exit", 1, null);
-    expect(rt.state.browserRunning).toBe(false);
-    expect(rt.state.cdpReady).toBe(false);
-    expect(rt.state.lastExitCode).toBe(1);
-    expect(rt.snapshot().browser).toBe("fail");
-    expect(rt.snapshot().error_class).toBe("BROWSER_NOT_RUNNING");
-    await rt.stop();
-  });
-
-  it("restart path respawns Chromium", async () => {
-    const children = [mockChild(1), mockChild(2)];
-    const spawn = vi.fn(() => children.shift() || mockChild(3));
+    const spawn = vi.fn(() => child);
     const rt = createRuntime({
       spawn,
       http: cdpHttpOk(),
@@ -160,10 +149,89 @@ describe("A. Browser lifecycle", () => {
       },
       log: () => {},
       restartDelayMs: 60_000,
+      ...lifecycleDeps(),
     });
-    await rt.start();
+    await rt.start({ preferAdopt: false });
+    child.emit("exit", 0, null);
+    await rt.state.lastExitHandled;
+    expect(rt.state.browserRunning).toBe(true);
+    expect(rt.state.cdpReady).toBe(true);
+    expect(rt.state.adoptedCdp).toBe(true);
     expect(spawn).toHaveBeenCalledTimes(1);
+    expect(rt.snapshot().browser).toBe("ok");
+    await rt.stop();
+  });
+
+  it("detects a real browser crash when CDP is also down", async () => {
+    const child = mockChild();
+    const rt = createRuntime({
+      spawn: () => child,
+      http: cdpHttpFail(),
+      existsSync: () => true,
+      mkdirSync: () => undefined,
+      env: {
+        TRADINGVIEW_BROWSER_ENABLED: "true",
+        TRADINGVIEW_BROWSER_EXECUTABLE: "/usr/bin/chromium",
+        TRADINGVIEW_BROWSER_USER_DATA_DIR: "/tmp/tv-profile-test",
+        TRADINGVIEW_BROWSER_STARTUP_TIMEOUT_MS: "40",
+      },
+      log: () => {},
+      restartDelayMs: 60_000,
+      ...lifecycleDeps(),
+    });
+    await rt.start({ preferAdopt: false });
+    child.emit("exit", 1, null);
+    await rt.state.lastExitHandled;
+    expect(rt.state.browserRunning).toBe(false);
+    expect(rt.state.cdpReady).toBe(false);
+    expect(rt.state.lastExitCode).toBe(1);
+    expect(rt.snapshot().browser).toBe("fail");
+    expect(rt.snapshot().error_class).toBe("BROWSER_NOT_RUNNING");
+    await rt.stop();
+  });
+
+  it("restart path respawns Chromium only after the previous instance is gone", async () => {
+    const children = [mockChild(1), mockChild(2)];
+    let versionOk = true;
+    const http = {
+      get: (url: string, cb: (res: EventEmitter & { statusCode: number }) => void) => {
+        if (!versionOk && String(url).includes("/json/version")) {
+          return cdpHttpFail().get();
+        }
+        return cdpHttpOk().get(url, cb);
+      },
+    };
+    const spawn = vi.fn(() => {
+      versionOk = true;
+      return children.shift() || mockChild(3);
+    });
+    const first = children[0];
+    const rt = createRuntime({
+      spawn,
+      http,
+      existsSync: () => true,
+      mkdirSync: () => undefined,
+      env: {
+        TRADINGVIEW_BROWSER_ENABLED: "true",
+        TRADINGVIEW_BROWSER_EXECUTABLE: "/usr/bin/chromium",
+        TRADINGVIEW_BROWSER_USER_DATA_DIR: "/tmp/tv-profile-test",
+      },
+      log: () => {},
+      restartDelayMs: 60_000,
+      restartGapMs: 5,
+      ...lifecycleDeps({
+        closeBrowser: async () => {
+          versionOk = false;
+        },
+      }),
+    });
+    await rt.start({ preferAdopt: false });
+    expect(spawn).toHaveBeenCalledTimes(1);
+    first.kill = vi.fn(() => {
+      versionOk = false;
+    });
     const snap = await rt.restart();
+    expect(first.kill).toHaveBeenCalled();
     expect(spawn).toHaveBeenCalledTimes(2);
     expect(snap.browser).toBe("ok");
     await rt.stop();
@@ -193,6 +261,18 @@ describe("D. Persistent profile config", () => {
     expect(args).toContain("--remote-debugging-address=127.0.0.1");
     expect(args).toContain("--remote-debugging-port=9333");
     expect(args.join(" ")).not.toMatch(/0\.0\.0\.0/);
+  });
+
+  it("does not pass the chart URL on launch unless includeUrl is set", () => {
+    const cfg = browserConfig({
+      TRADINGVIEW_BROWSER_URL: "https://www.tradingview.com/chart/",
+    });
+    expect(chromiumArgs(cfg).join(" ")).not.toMatch(/tradingview\.com/);
+    expect(
+      chromiumArgs(cfg, { includeUrl: true }).some((a: string) =>
+        a.includes("https://www.tradingview.com/chart/")
+      )
+    ).toBe(true);
   });
 
   it("resolveExecutable prefers env override when the file exists", () => {
