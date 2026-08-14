@@ -2,8 +2,8 @@ import { createRequire } from "module";
 import path from "path";
 import { describe, expect, it } from "vitest";
 
-const require = createRequire(import.meta.url);
-const { createRuntime } = require(
+const requireCjs = createRequire(path.join(process.cwd(), "package.json"));
+const { createRuntime } = requireCjs(
   path.join(process.cwd(), "tradingview-browser-runtime.js")
 );
 

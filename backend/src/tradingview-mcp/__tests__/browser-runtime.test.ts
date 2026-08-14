@@ -3,14 +3,14 @@ import { createRequire } from "module";
 import path from "path";
 import { afterEach, describe, expect, it, vi } from "vitest";
 
-const require = createRequire(import.meta.url);
+const requireCjs = createRequire(path.join(process.cwd(), "package.json"));
 const {
   browserConfig,
   chromiumArgs,
   createRuntime,
   resolveExecutable,
   waitForCdp,
-} = require(path.join(process.cwd(), "tradingview-browser-runtime.js"));
+} = requireCjs(path.join(process.cwd(), "tradingview-browser-runtime.js"));
 
 function mockChild(pid = 4242) {
   const child = new EventEmitter() as EventEmitter & {

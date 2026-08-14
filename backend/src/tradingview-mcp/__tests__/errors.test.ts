@@ -7,14 +7,14 @@ import {
 } from "@/tradingview-pipeline/mcp-client";
 import { MCP_RUNTIME_ERROR_CLASSES } from "@/tradingview-pipeline/errors";
 
-const require = createRequire(import.meta.url);
+const requireCjs = createRequire(path.join(process.cwd(), "package.json"));
 const {
   MCP_ERROR_CLASSES,
   classifyConnectError,
   classifyPageState,
   asToolError,
   sanitizeLogValue,
-} = require(path.join(process.cwd(), "tradingview-mcp-errors.js"));
+} = requireCjs(path.join(process.cwd(), "tradingview-mcp-errors.js"));
 
 describe("C. Error classification", () => {
   it("CDP ECONNREFUSED is CDP_UNREACHABLE, not MCP_HTTP_UNREACHABLE", () => {
