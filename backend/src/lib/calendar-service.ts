@@ -172,6 +172,78 @@ export async function getEventImpact(
   };
 }
 
+export async function fetchEconomicCalendarResult(
+  startDate: string,
+  endDate: string
+): Promise<{
+  ok: boolean;
+  events: EconomicEvent[];
+  fetchedAt: number;
+  error?: string;
+  cacheHit: boolean;
+}> {
+  if (calendarCache.fetchedAt > 0 && Date.now() - calendarCache.fetchedAt < CACHE_DURATION) {
+    return {
+      ok: true,
+      events: filterEventsByDateRange(calendarCache.events, startDate, endDate),
+      fetchedAt: calendarCache.fetchedAt,
+      cacheHit: true,
+    };
+  }
+
+  try {
+    const response = await axios.get(ECONOMIC_CALENDAR_URL, {
+      params: {
+        function: "ECONOMIC_CALENDAR",
+        apikey: ALPHA_VANTAGE_API_KEY,
+      },
+      timeout: 8000,
+    });
+
+    if (!response.data?.data) {
+      return {
+        ok: false,
+        events: [],
+        fetchedAt: Date.now(),
+        error: "alpha_vantage_empty_payload",
+        cacheHit: false,
+      };
+    }
+
+    const events: EconomicEvent[] = (response.data.data as any[])
+      .map((event: any) => ({
+        id: `${event.event}_${event.date}`,
+        eventName: event.event,
+        country: event.country,
+        eventDate: event.date,
+        importance: mapImportance(event.importance),
+        forecastValue: event.forecast,
+        actualValue: event.actual,
+        previousValue: event.previous,
+        affectedSymbols: getAffectedCryptos(event.country),
+      }))
+      .filter((event) => HIGH_IMPACT_EVENTS.some((h) => event.eventName.includes(h)));
+
+    calendarCache = { events, fetchedAt: Date.now() };
+    return {
+      ok: true,
+      events: filterEventsByDateRange(events, startDate, endDate),
+      fetchedAt: calendarCache.fetchedAt,
+      cacheHit: false,
+    };
+  } catch (error) {
+    return {
+      ok: false,
+      events: [],
+      fetchedAt: Date.now(),
+      error: error instanceof Error ? error.message : "calendar_network_error",
+      cacheHit: false,
+    };
+  }
+}
+
+export type { EconomicEvent };
+
 function filterEventsByDateRange(events: EconomicEvent[], startDate: string, endDate: string) {
   return events.filter((e) => e.eventDate >= startDate && e.eventDate <= endDate);
 }

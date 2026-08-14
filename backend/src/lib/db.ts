@@ -1521,6 +1521,121 @@ export class DatabaseService {
     return data;
   }
 
+  async updateTradingViewCandidateStatus(id: string, status: string) {
+    const { data, error } = await this.client
+      .from("tradingview_candidates")
+      .update({ status })
+      .eq("id", id)
+      .select()
+      .single();
+    if (error) {
+      throwIfMissingPhase4Schema("tradingview_candidates", error.message);
+      throw new Phase4PersistenceError(
+        `Failed to update tradingview candidate status: ${error.message}`
+      );
+    }
+    if (!data?.id) {
+      throw new Phase4PersistenceError(
+        "updateTradingViewCandidateStatus returned no row"
+      );
+    }
+    return data;
+  }
+
+  async nextIntelligenceVersion(candidateId: string): Promise<number> {
+    const { data, error } = await this.client
+      .from("candidate_intelligence_snapshots")
+      .select("enrichment_version")
+      .eq("candidate_id", candidateId)
+      .order("enrichment_version", { ascending: false })
+      .limit(1)
+      .maybeSingle();
+    if (error) {
+      throwIfMissingPhase4Schema("candidate_intelligence_snapshots", error.message);
+      throw new Phase4PersistenceError(
+        `Failed to read intelligence version: ${error.message}`
+      );
+    }
+    const current = data?.enrichment_version;
+    return (typeof current === "number" ? current : 0) + 1;
+  }
+
+  async insertIntelligenceSnapshot(row: {
+    candidate_id: string;
+    candidate_row_id: string;
+    strategy_id: string;
+    strategy_version_id: string;
+    snapshot_hash: string;
+    enrichment_version: number;
+    symbol: string;
+    timeframe: string;
+    direction: string;
+    market_type: string;
+    market_data: unknown;
+    derivatives_data: unknown;
+    microstructure_data: unknown;
+    sentiment_data: unknown;
+    macro_data: unknown;
+    freshness: unknown;
+    provider_status: unknown;
+    score_breakdown: unknown;
+    quality_score: string;
+    status: string;
+    observability: unknown;
+    intelligence: unknown;
+    fetched_at: string;
+  }) {
+    const { data, error } = await this.client
+      .from("candidate_intelligence_snapshots")
+      .insert([row])
+      .select("id, enrichment_version")
+      .single();
+    if (error) {
+      throwIfMissingPhase4Schema("candidate_intelligence_snapshots", error.message);
+      throw new Phase4PersistenceError(
+        `Failed to insert intelligence snapshot: ${error.message}`
+      );
+    }
+    if (!data?.id) {
+      throw new Phase4PersistenceError(
+        "insertIntelligenceSnapshot returned no persisted id"
+      );
+    }
+    return data;
+  }
+
+  async listIntelligenceSnapshots(candidateId: string) {
+    const { data, error } = await this.client
+      .from("candidate_intelligence_snapshots")
+      .select("*")
+      .eq("candidate_id", candidateId)
+      .order("enrichment_version", { ascending: false });
+    if (error) {
+      throwIfMissingPhase4Schema("candidate_intelligence_snapshots", error.message);
+      throw new Phase4PersistenceError(
+        `Failed to list intelligence snapshots: ${error.message}`
+      );
+    }
+    return data || [];
+  }
+
+  async getLatestIntelligenceSnapshot(candidateId: string) {
+    const { data, error } = await this.client
+      .from("candidate_intelligence_snapshots")
+      .select("*")
+      .eq("candidate_id", candidateId)
+      .order("enrichment_version", { ascending: false })
+      .limit(1)
+      .maybeSingle();
+    if (error) {
+      throwIfMissingPhase4Schema("candidate_intelligence_snapshots", error.message);
+      throw new Phase4PersistenceError(
+        `Failed to get latest intelligence snapshot: ${error.message}`
+      );
+    }
+    return data;
+  }
+
 }
 
 /**
