@@ -518,10 +518,25 @@ function createRuntime(deps = {}) {
     restartAttempts: 0,
     pendingRestart: null,
     lastExitHandled: null,
+    sessionBootstrap: null,
   };
+
+  function sessionTransfer() {
+    return deps.sessionTransfer || require("./tradingview-session-transfer");
+  }
 
   function snapshot() {
     const cfg = browserConfig(deps.env || process.env);
+    const transfer = sessionTransfer();
+    const files =
+      typeof transfer.inspectBootstrapFiles === "function"
+        ? transfer.inspectBootstrapFiles({ env: deps.env || process.env, fs: deps.fs || fs })
+        : {};
+    const bootstrap =
+      state.sessionBootstrap ||
+      (typeof transfer.emptyBootstrapSummary === "function"
+        ? transfer.emptyBootstrapSummary(files)
+        : { status: "none", items: null });
     const browser = !cfg.enabled
       ? "disabled"
       : state.browserRunning
@@ -567,6 +582,15 @@ function createRuntime(deps = {}) {
       restart_attempts: state.restartAttempts,
       adopted_cdp: Boolean(state.adoptedCdp),
       ensured_chart_page: Boolean(state.ensuredChartPage),
+      session_bootstrap: {
+        status: bootstrap.status || "none",
+        artifact_present: Boolean(files.artifact_present),
+        consumed: Boolean(files.consumed || bootstrap.consumed),
+        secret_configured: Boolean(files.secret_configured),
+        items: bootstrap.items == null ? null : bootstrap.items,
+        reason: bootstrap.reason || null,
+      },
+      profile_copy_required: false,
     };
   }
 
@@ -698,8 +722,101 @@ function createRuntime(deps = {}) {
     state.startedAt = state.startedAt || Date.now();
     state.userDataDir = state.userDataDir || cfg.userDataDir;
     log("[browser] adopting already-running Chromium on 127.0.0.1 (no second spawn)");
-    await ensureSingleChartPage(cfg);
     return true;
+  }
+
+  async function reloadSelectedChart(cfg) {
+    let targets = [];
+    try {
+      const listed = await listCdpTargets(cfg, { http: httpMod });
+      targets = listed.targets || [];
+    } catch (err) {
+      log(
+        `[browser] reload target list failed: ${sanitizeLogValue(err instanceof Error ? err.message : err)}`
+      );
+      return { reloaded: false };
+    }
+    const selected = selectChartTarget(targets);
+    if (!selected) return { reloaded: false };
+    const navigateFn = deps.navigatePage || ((target, url) => navigateTarget(target, url, cfg, deps.CDP));
+    log(`[browser] reloading chart after session import url=${sanitizeTargetUrl(selected.url)}`);
+    await navigateFn(selected, cfg.url);
+    return { reloaded: true };
+  }
+
+  async function importSessionIfPresent(cfg) {
+    const transfer = sessionTransfer();
+    if (typeof transfer.resolveImportRequest !== "function") {
+      return { applied: false, skipped: true, reason: "NO_TRANSFER" };
+    }
+    const env = deps.env || process.env;
+    const fsMod = deps.fs || fs;
+    let request;
+    try {
+      request = transfer.resolveImportRequest({ env, fs: fsMod });
+    } catch (err) {
+      const reason = err && err.code ? err.code : "IMPORT_FAILED";
+      state.sessionBootstrap = { status: "failed", reason, items: null };
+      log(`[session-import] fail closed: ${reason}`);
+      return { applied: false, error: reason };
+    }
+    if (!request.shouldImport) {
+      if (request.failClosed) {
+        state.sessionBootstrap = {
+          status: "failed",
+          reason: "SECRET_REQUIRED",
+          items: null,
+          artifact_present: true,
+        };
+        log("[session-import] fail closed: artifact present but TRADINGVIEW_SESSION_BOOTSTRAP_SECRET is unset");
+        return { applied: false, error: "SECRET_REQUIRED" };
+      }
+      state.sessionBootstrap = {
+        status: request.reason === "ALREADY_CONSUMED" ? "consumed" : "none",
+        reason: request.reason,
+        items: null,
+      };
+      return { applied: false, skipped: true, reason: request.reason };
+    }
+    try {
+      const imported = await transfer.importSessionFromArtifact({
+        env,
+        fs: fsMod,
+        request,
+        log,
+        host: "127.0.0.1",
+        port: cfg.cdpPort,
+        CDP: deps.CDP,
+        applyCookies: deps.applyCookies,
+      });
+      state.sessionBootstrap = {
+        ...(imported.summary || {}),
+        status: imported.applied ? "imported" : imported.summary?.status || "none",
+        reason: imported.reason,
+        items: imported.summary?.items ?? null,
+      };
+      return imported;
+    } catch (err) {
+      const reason = err && err.code ? err.code : "IMPORT_FAILED";
+      state.sessionBootstrap = { status: "failed", reason, items: null };
+      log(`[session-import] fail closed: ${reason}`);
+      return { applied: false, error: reason };
+    }
+  }
+
+  async function importThenOpenChart(cfg) {
+    const imported = await importSessionIfPresent(cfg);
+    const ensured = await ensureSingleChartPage(cfg);
+    if (imported && imported.applied && ensured && ensured.reused) {
+      await reloadSelectedChart(cfg);
+    }
+    if (imported && imported.applied) {
+      const settleMs = deps.importSettleMs ?? 0;
+      if (settleMs > 0) {
+        await new Promise((r) => setTimeout(r, settleMs));
+      }
+    }
+    return imported;
   }
 
   async function start(opts = {}) {
@@ -724,6 +841,7 @@ function createRuntime(deps = {}) {
     }
     const preferAdopt = opts.preferAdopt !== false;
     if (preferAdopt && (await adoptExistingCdp(cfg))) {
+      await importThenOpenChart(cfg);
       return snapshot();
     }
     state.userDataDir = ensureUserDataDir(cfg.userDataDir, mkdirFn);
@@ -755,7 +873,7 @@ function createRuntime(deps = {}) {
       log(`[browser] CDP startup failed: ${sanitizeLogValue(cdp.error)}`);
     } else {
       log("[browser] CDP is ready on 127.0.0.1");
-      await ensureSingleChartPage(cfg);
+      await importThenOpenChart(cfg);
     }
     return snapshot();
   }
@@ -804,6 +922,7 @@ function createRuntime(deps = {}) {
       if (await probeCdpOnce(cfg, { http: httpMod })) {
         log("[browser] previous browser still owns CDP — adopting instead of spawning another instance");
         await adoptExistingCdp(cfg);
+        await importThenOpenChart(cfg);
         return snapshot();
       }
       return await start({ preferAdopt: false });
@@ -910,6 +1029,9 @@ function createRuntime(deps = {}) {
     applyPageProbe,
     probeAndApply,
     ensureSingleChartPage,
+    importSessionIfPresent,
+    importThenOpenChart,
+    reloadSelectedChart,
     assertReadyForTools,
     config: () => browserConfig(deps.env || process.env),
     waitForCdp: (cfg, opts) => waitForCdp(cfg || browserConfig(deps.env || process.env), { ...opts, http: httpMod }),

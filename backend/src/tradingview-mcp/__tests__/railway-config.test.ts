@@ -42,6 +42,13 @@ describe("Railway config isolation — tradingview-mcp vs backend", () => {
     expect(docker).not.toMatch(/CMD \["node", "server\.js"\]/);
   });
 
+  it("package.json exposes session export/import instead of profile copy", () => {
+    const pkg = JSON.parse(readRepo("backend/package.json"));
+    expect(pkg.scripts["tv:session-export"]).toBe("node tradingview-session-export.js");
+    expect(pkg.scripts["tv:session-import"]).toBe("node tradingview-session-import.js");
+    expect(pkg.scripts["tv:bootstrap"]).toBe("node tradingview-browser-bootstrap.js");
+  });
+
   it("backend.Dockerfile still starts Next.js and is unused by the MCP toml", () => {
     const docker = readRepo("backend.Dockerfile");
     expect(docker).toContain('CMD ["npm", "start"]');

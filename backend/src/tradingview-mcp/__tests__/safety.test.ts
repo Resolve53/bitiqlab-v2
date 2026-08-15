@@ -23,6 +23,9 @@ const STAGE_1C_FILES = [
   "tradingview-browser-runtime.js",
   "tradingview-mcp-errors.js",
   "tradingview-browser-bootstrap.js",
+  "tradingview-session-transfer.js",
+  "tradingview-session-export.js",
+  "tradingview-session-import.js",
   "src/tradingview-pipeline/mcp-client.ts",
   "src/tradingview-pipeline/deploy-service.ts",
   "src/tradingview-pipeline/mcp-deploy.ts",
@@ -82,5 +85,25 @@ describe("E. MCP tool safety — no execution", () => {
     expect(src).toMatch(/PINE_EDITOR_SETUP_REQUIRED/);
     expect(src).toMatch(/COMPILE_FAILED/);
     expect(src).not.toMatch(/fake DOM success/i);
+  });
+
+  it("has no public HTTP session import/export endpoint", () => {
+    const src = read("mcp-http-server.js");
+    expect(src).not.toMatch(/app\.(post|put|patch)\(\s*['"`]\/(session|bootstrap|import)/);
+    expect(src).toMatch(/There is no public HTTP import\/export endpoint/);
+    expect(src).toMatch(/profile_copy_required: false/);
+  });
+
+  it("session transfer never logs cookie values and does not copy profiles", () => {
+    const transfer = read("tradingview-session-transfer.js");
+    const exp = read("tradingview-session-export.js");
+    const imp = read("tradingview-session-import.js");
+    expect(transfer).toMatch(/Never logs cookie values/);
+    expect(transfer).toMatch(/Full-profile copy is unsupported|full-profile copy is unsupported/i);
+    expect(exp).toMatch(/Full Chrome profile copy is not required/);
+    expect(imp).toMatch(/There is no public HTTP import endpoint/);
+    expect(transfer).not.toMatch(/console\.log\([^)]*cookie\.value/);
+    expect(exp).not.toMatch(/JSON\.stringify\(cookies\)/);
+    expect(imp).not.toMatch(/JSON\.stringify\(cookies\)/);
   });
 });

@@ -77,5 +77,7 @@ describe("B. Health snapshots", () => {
     expect(snap.tradingview).toBe("ready");
     expect(snap.authenticated).toBe("yes");
     expect(snap.error_class).toBeNull();
+    expect(snap.profile_copy_required).toBe(false);
+    expect(snap.session_bootstrap.status).toBe("none");
   });
 });

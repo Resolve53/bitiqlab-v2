@@ -52,6 +52,13 @@ temp/
 .tv-profile/
 backend/.tv-profile/
 
+# Stage 1C session bootstrap artifact (encrypted cookies — treat as a secret)
+.tv-session-bootstrap.enc
+backend/.tv-session-bootstrap.enc
+tv-session-bootstrap.enc
+*.tv-session-bootstrap.enc
+*.tv-session-bootstrap.enc.consumed
+
 # OS
 .DS_Store
 Thumbs.db
