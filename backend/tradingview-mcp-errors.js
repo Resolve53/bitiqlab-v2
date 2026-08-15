@@ -87,9 +87,19 @@ function asToolError(err) {
   };
 }
 
+/**
+ * CDP API method names contain the substring "cookie" but are safe to log.
+ * Strip them before scanning so Storage.setCookies does not false-positive.
+ */
+const CDP_COOKIE_API_NAMES =
+  /\b(?:Storage\.setCookies|Network\.setCookies?|Network\.deleteCookies|Network\.getAllCookies|Network\.getCookies)\b/gi;
+
 function looksLikeSecret(text) {
-  return /cookie|authorization|bearer |sessionid|webhook_token|password|api[_-]?key/i.test(
-    String(text || "")
+  const scanned = String(text || "").replace(CDP_COOKIE_API_NAMES, "[cdp-api]");
+  // Match secret-bearing text: cookie dumps, cookie names (sessionid), auth, tokens.
+  // Bare "cookie(s)" still redacts; CDP method labels were stripped above.
+  return /\bcookies?\b|authorization|bearer |sessionid|webhook_token|password|api[_-]?key/i.test(
+    scanned
   );
 }
 
@@ -106,5 +116,6 @@ module.exports = {
   classifyConnectError,
   classifyPageState,
   asToolError,
+  looksLikeSecret,
   sanitizeLogValue,
 };
