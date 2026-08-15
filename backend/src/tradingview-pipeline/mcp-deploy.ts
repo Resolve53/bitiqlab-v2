@@ -32,6 +32,12 @@ function toolFailed(result: McpToolResult | undefined): boolean {
   return false;
 }
 
+function toolErrorClass(result: McpToolResult | undefined): string | undefined {
+  return typeof result?.error_class === "string" && result.error_class
+    ? result.error_class
+    : undefined;
+}
+
 function sourceText(result: McpToolResult | undefined, fallback: string): string {
   const src = result?.source;
   return typeof src === "string" && src.length > 0 ? src : fallback;
@@ -91,6 +97,7 @@ export async function runMcpDeployPipeline(
     expected_hash_match: extra.expected_hash_match ?? false,
     steps,
     failure,
+    error_class: extra.error_class,
     alert: baseAlert,
   });
 
@@ -107,7 +114,8 @@ export async function runMcpDeployPipeline(
   if (toolFailed(symbolResult)) {
     return fail(
       "symbol_failed",
-      `chart_set_symbol failed: ${symbolResult.error || "unknown error"}`
+      `chart_set_symbol failed: ${symbolResult.error || "unknown error"}`,
+      { error_class: toolErrorClass(symbolResult) }
     );
   }
 
@@ -140,7 +148,11 @@ export async function runMcpDeployPipeline(
     return fail(
       "source_failed",
       `pine_set_source failed: ${sourceResult.error || "unknown error"}`,
-      { symbol_set: true, timeframe_set: timeframeSet }
+      {
+        symbol_set: true,
+        timeframe_set: timeframeSet,
+        error_class: toolErrorClass(sourceResult),
+      }
     );
   }
 
@@ -158,7 +170,12 @@ export async function runMcpDeployPipeline(
     return fail(
       "compile_failed",
       `pine_smart_compile failed: ${compileResult.error || "compilation errors"}`,
-      { symbol_set: true, timeframe_set: timeframeSet, source_set: true }
+      {
+        symbol_set: true,
+        timeframe_set: timeframeSet,
+        source_set: true,
+        error_class: toolErrorClass(compileResult),
+      }
     );
   }
 

@@ -1,14 +1,31 @@
-FROM node:18-alpine
+# Local / smoke-test image for tradingview-mcp (same runtime as production).
+# CDP is bound to 127.0.0.1 inside the container and is NOT published.
+FROM node:18-bookworm-slim
+
+RUN apt-get update && apt-get install -y --no-install-recommends \
+    chromium \
+    fonts-liberation \
+    fonts-noto-color-emoji \
+    ca-certificates \
+    && rm -rf /var/lib/apt/lists/*
+
+ENV TRADINGVIEW_BROWSER_ENABLED=true \
+    TRADINGVIEW_BROWSER_HEADLESS=true \
+    TRADINGVIEW_BROWSER_USER_DATA_DIR=/data/tradingview-profile \
+    TRADINGVIEW_BROWSER_STARTUP_TIMEOUT_MS=30000 \
+    TRADINGVIEW_BROWSER_URL=https://www.tradingview.com/chart/ \
+    TRADINGVIEW_BROWSER_EXECUTABLE=/usr/bin/chromium \
+    CDP_HOST=127.0.0.1 \
+    CDP_PORT=9222
 
 WORKDIR /app
 
-# Copy backend
 COPY backend/ ./
-
-# Install dependencies
 RUN npm install
 
+RUN mkdir -p /data/tradingview-profile
+
+# HTTP only. Do NOT expose 9222.
 EXPOSE 3000
 
-# Start MCP HTTP server (local version with actual TradingView connection)
 CMD ["node", "mcp-http-server.js"]

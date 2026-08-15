@@ -1,5 +1,9 @@
 # TradingView MCP Pine Script Deployment Guide
 
+> **Stage 1C (production):** `tradingview-mcp` launches Chromium in the Railway container and talks to TradingView Web over loopback CDP. Do **not** use Omar’s laptop, TradingView Desktop, or ngrok for normal production. See [STAGE_1C_BROWSER_RUNTIME.md](./STAGE_1C_BROWSER_RUNTIME.md).
+>
+> The laptop + ngrok steps below are **legacy local-dev only**.
+
 ## What Was Fixed
 
 The system now properly deploys Pine Scripts to TradingView Desktop instead of just generating them. When you create a strategy:

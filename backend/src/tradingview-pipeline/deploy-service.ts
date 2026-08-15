@@ -7,7 +7,12 @@ import { generatePineFromFrozen, pineContainsProvenance } from "./pine-translato
 import { runMcpDeployPipeline } from "./mcp-deploy";
 import { setupTradingViewAlert } from "./alert-setup";
 import { candidateWebhookUrl, getConfiguredWebhookToken } from "./webhook-security";
-import { mcpAttemptStrategyAlert, mcpDeployPine, mcpHealth } from "./mcp-client";
+import {
+  errorFromMcpHealth,
+  mcpAttemptStrategyAlert,
+  mcpDeployPine,
+  mcpHealthDetails,
+} from "./mcp-client";
 import { BITIQ_ENGINE_ID, BITIQ_PINE_VERSION } from "./constants";
 import { McpDeployError, PineAuthorityError } from "./errors";
 import type {
@@ -123,21 +128,25 @@ export async function deployFrozenPine(
   if (tools) {
     deploy = await runMcpDeployPipeline(tools, input, alert);
   } else {
-    const healthy = await mcpHealth();
-    if (!healthy) {
+    const health = await mcpHealthDetails();
+    if (!health.reachable) {
+      const classified = errorFromMcpHealth(health);
       deploy = await runMcpDeployPipeline(
         {
           chart_set_symbol: async () => ({
             success: false,
-            error: "MCP server unreachable",
+            error: classified.error,
+            error_class: classified.error_class,
           }),
           pine_set_source: async () => ({
             success: false,
-            error: "MCP server unreachable",
+            error: classified.error,
+            error_class: classified.error_class,
           }),
           pine_smart_compile: async () => ({
             success: false,
-            error: "MCP server unreachable",
+            error: classified.error,
+            error_class: classified.error_class,
           }),
         },
         input,
@@ -152,6 +161,7 @@ export async function deployFrozenPine(
           facts.steps.chart_set_symbol || {
             success: !facts.error,
             error: facts.error,
+            error_class: facts.error_class,
           },
         chart_set_timeframe: async () =>
           facts.steps.chart_set_timeframe || { success: true },
@@ -159,11 +169,13 @@ export async function deployFrozenPine(
           facts.steps.pine_set_source || {
             success: !facts.error,
             error: facts.error,
+            error_class: facts.error_class,
           },
         pine_smart_compile: async () =>
           facts.steps.pine_smart_compile || {
             success: !facts.error,
             error: facts.error,
+            error_class: facts.error_class,
           },
         pine_get_source: async () => ({
           success: true,

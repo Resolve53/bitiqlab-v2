@@ -53,23 +53,32 @@
 
 4. **Deploy TradingView MCP Service**:
    - **Name**: `tradingview-mcp`
-   - **Dockerfile**: `Dockerfile.mcp`
+   - **Config File Path:** `/railway.tradingview-mcp.toml` (required — root `/railway.toml` would force `backend.Dockerfile`)
+   - **Dockerfile**: `./Dockerfile.mcp` (from that config file)
+   - **Start command**: `node mcp-http-server.js`
    - **Root Directory**: `/`
-   - **Port**: 3000
+   - **Port**: Railway `PORT` (HTTP only). Do **not** publish `9222`.
+   - **Volume (required):** mount path `/data` — Chromium profile is `/data/tradingview-profile`
    - **Environment Variables**:
      ```
      ANTHROPIC_API_KEY=sk-ant-<your-key>
      NODE_ENV=production
+     TRADINGVIEW_BROWSER_ENABLED=true
+     TRADINGVIEW_BROWSER_HEADLESS=true
+     TRADINGVIEW_BROWSER_USER_DATA_DIR=/data/tradingview-profile
+     TRADINGVIEW_BROWSER_STARTUP_TIMEOUT_MS=30000
+     TRADINGVIEW_BROWSER_URL=https://www.tradingview.com/chart/
+     TRADINGVIEW_BROWSER_EXECUTABLE=/usr/bin/chromium
+     CDP_HOST=127.0.0.1
+     CDP_PORT=9222
      ```
+   - First-login and smoke tests: [STAGE_1C_BROWSER_RUNTIME.md](./STAGE_1C_BROWSER_RUNTIME.md)
 
-### Option B: Using `railway.toml` (Infrastructure as Code)
+### Option B: Config-as-code (per service)
 
-Railway automatically detects `railway.toml` and deploys both services:
+Root `/railway.toml` applies only to services that do **not** set a custom Config File Path. It builds `./backend.Dockerfile` (Next.js API).
 
-```bash
-# Just push to main and Railway deploys both automatically
-git push origin main
-```
+`tradingview-mcp` must set Config File Path to `/railway.tradingview-mcp.toml`. Railway will not infer that file from the service name.
 
 ---
 
@@ -85,7 +94,9 @@ curl https://bitiqlab-backend-production.up.railway.app/api/health
 curl https://tradingview-mcp-production.up.railway.app/health
 ```
 
-Both should return `{"status":"ok"}`.
+Backend health should return HTTP 200.
+
+MCP `/health` is HTTP 200 whenever the HTTP wrapper is up. `status` is `"ok"` only when Chromium, CDP, and an authenticated TradingView page are ready; otherwise `status` is `"degraded"` with `error_class` set (see Stage 1C).
 
 ---
 
@@ -267,4 +278,29 @@ Header: x-enrichment-worker-key: $ENRICHMENT_WORKER_SECRET
 ```
 
 `ENRICHMENT_WORKER_SECRET` must be set on the API; the route fails closed if it is missing.
+
+---
+
+## Stage 1C — TradingView browser runtime (tradingview-mcp)
+
+Production MCP no longer uses a laptop CDP endpoint.
+
+**Critical:** root `/railway.toml` forces `./backend.Dockerfile` (Next.js). Railway cannot pick a per-service Dockerfile from that single file.
+
+On **tradingview-mcp only**:
+
+1. Settings → Config-as-code → **Config File Path** = `/railway.tradingview-mcp.toml`
+2. Root Directory = repository root (do not set `/backend`)
+3. Redeploy
+4. Confirm Settings → Build shows `./Dockerfile.mcp` (not `./backend.Dockerfile`)
+5. Confirm deploy logs start with `node mcp-http-server.js`, **not** `node server.js`
+
+- **Image:** `Dockerfile.mcp` (Debian slim + Chromium)
+- **Start:** `node mcp-http-server.js`
+- **HTTP:** Railway `PORT` (public/private as you already expose)
+- **CDP:** `127.0.0.1:9222` inside the container only — never add a public TCP proxy for 9222
+- **Volume:** mount `/data` so `/data/tradingview-profile` survives redeploys
+- **Bootstrap:** one-time TradingView login into that profile (`npm run tv:bootstrap` locally, then copy the profile). Details: [STAGE_1C_BROWSER_RUNTIME.md](./STAGE_1C_BROWSER_RUNTIME.md)
+
+This section does not change the Stage 2B enrichment worker.
 

@@ -1,0 +1,25 @@
+# Isolated Railway config for the "tradingview-mcp" service ONLY.
+#
+# Repo-level /railway.toml forces dockerfilePath = ./backend.Dockerfile
+# (Next.js API: npm start → node server.js). Railway cannot pick a
+# different Dockerfile per service from a single railway.toml.
+#
+# REQUIRED manual step (cannot be expressed in this file):
+#   Railway → tradingview-mcp → Settings → Config-as-code
+#   Config File Path = /railway.tradingview-mcp.toml
+#
+# Root Directory must stay the repository root (empty or /).
+# Do NOT set Root Directory to /backend — Dockerfile.mcp copies backend/.
+
+[build]
+builder = "dockerfile"
+dockerfilePath = "./Dockerfile.mcp"
+
+[deploy]
+# Dockerfile.mcp WORKDIR is /app (contents of backend/).
+# Do NOT use "npm start" — that starts Next.js (node server.js).
+startCommand = "node mcp-http-server.js"
+healthcheckPath = "/health"
+healthcheckTimeout = 120
+restartPolicyType = "ON_FAILURE"
+restartPolicyMaxRetries = 5

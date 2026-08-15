@@ -40,6 +40,27 @@ services:
       - BINANCE_TESTNET_API_SECRET=${BINANCE_TESTNET_API_SECRET}
     restart: unless-stopped
 
+  tradingview-mcp:
+    build:
+      context: .
+      dockerfile: Dockerfile.mcp
+    ports:
+      - "3002:3000"
+    environment:
+      - NODE_ENV=production
+      - PORT=3000
+      - TRADINGVIEW_BROWSER_ENABLED=true
+      - TRADINGVIEW_BROWSER_HEADLESS=true
+      - TRADINGVIEW_BROWSER_USER_DATA_DIR=/data/tradingview-profile
+      - TRADINGVIEW_BROWSER_STARTUP_TIMEOUT_MS=30000
+      - TRADINGVIEW_BROWSER_URL=https://www.tradingview.com/chart/
+      - CDP_HOST=127.0.0.1
+      - CDP_PORT=9222
+    volumes:
+      - tradingview-profile:/data
+    restart: unless-stopped
+    # CDP (9222) is intentionally not published.
+
   analysis-service:
     build:
       context: .
@@ -53,3 +74,6 @@ services:
       - SUPABASE_SERVICE_ROLE_KEY=${SUPABASE_SERVICE_ROLE_KEY}
       - ANTHROPIC_API_KEY=${ANTHROPIC_API_KEY}
     restart: unless-stopped
+
+volumes:
+  tradingview-profile:

@@ -48,6 +48,10 @@ tmp/
 temp/
 .tmp/
 
+# Local TradingView Chromium profile (never commit cookies/session)
+.tv-profile/
+backend/.tv-profile/
+
 # OS
 .DS_Store
 Thumbs.db

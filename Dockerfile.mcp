@@ -1,14 +1,33 @@
-FROM node:18-alpine
+# tradingview-mcp — Chromium + MCP HTTP in one container.
+# CDP is bound to 127.0.0.1 inside the container and is NOT published.
+FROM node:18-bookworm-slim
+
+RUN apt-get update && apt-get install -y --no-install-recommends \
+    chromium \
+    fonts-liberation \
+    fonts-noto-color-emoji \
+    ca-certificates \
+    && rm -rf /var/lib/apt/lists/*
+
+ENV TRADINGVIEW_BROWSER_ENABLED=true \
+    TRADINGVIEW_BROWSER_HEADLESS=true \
+    TRADINGVIEW_BROWSER_USER_DATA_DIR=/data/tradingview-profile \
+    TRADINGVIEW_BROWSER_STARTUP_TIMEOUT_MS=30000 \
+    TRADINGVIEW_BROWSER_URL=https://www.tradingview.com/chart/ \
+    TRADINGVIEW_BROWSER_EXECUTABLE=/usr/bin/chromium \
+    CDP_HOST=127.0.0.1 \
+    CDP_PORT=9222 \
+    NODE_ENV=production
 
 WORKDIR /app
 
-# Copy backend
 COPY backend/ ./
+RUN npm install --omit=dev
 
-# Install dependencies
-RUN npm install
+# Persistent Chromium profile (overlay with a Railway volume mounted at /data)
+RUN mkdir -p /data/tradingview-profile
 
+# HTTP only. Do NOT expose 9222 — CDP stays loopback-only.
 EXPOSE 3000
 
-# Start MCP HTTP server
 CMD ["node", "mcp-http-server.js"]

@@ -9,9 +9,24 @@ const express = require('express');
 const axios = require('axios');
 const { Anthropic } = require('@anthropic-ai/sdk');
 const CDP = require('chrome-remote-interface');
+const {
+  createRuntime,
+  tradingViewProbeScript,
+  selectChartTarget,
+  summarizeCdpTargets,
+  sanitizeTargetUrl,
+} = require('./tradingview-browser-runtime');
+const {
+  MCP_ERROR_CLASSES,
+  McpRuntimeError,
+  classifyConnectError,
+  asToolError,
+  sanitizeLogValue,
+} = require('./tradingview-mcp-errors');
 
 const app = express();
 const port = process.env.PORT || 3000;
+const browserRuntime = createRuntime();
 
 // Initialize Claude client to use MCP tools
 const client = new Anthropic({
@@ -25,53 +40,107 @@ let cdpClient = null;
 
 async function connectTradingView() {
   if (cdpClient) {
-    return cdpClient;
+    try {
+      await cdpClient.Runtime.evaluate({ expression: '1', returnByValue: true });
+      return cdpClient;
+    } catch {
+      try {
+        await cdpClient.close();
+      } catch {
+        /* ignore */
+      }
+      cdpClient = null;
+    }
   }
 
   try {
-    const cdpPort = process.env.CDP_PORT || 9222;
-    const cdpHost = process.env.CDP_HOST || 'localhost';
-    console.log(`[MCP] Connecting to TradingView at ${cdpHost}:${cdpPort}...`);
+    const snap = browserRuntime.snapshot();
+    if (snap.browser === 'fail' && browserRuntime.config().enabled) {
+      throw classifyConnectError(new Error('browser down'), {
+        browserEnabled: true,
+        browserRunning: false,
+        cdpReady: false,
+      });
+    }
+    const cdpPort = Number(process.env.CDP_PORT || 9222);
+    console.log(`[MCP] Connecting to in-container CDP at 127.0.0.1:${cdpPort}...`);
 
     cdpClient = await CDP({
-      host: cdpHost,
+      host: '127.0.0.1',
       port: cdpPort,
+      target: (targets) => {
+        const summary = summarizeCdpTargets(targets);
+        console.log(
+          `[MCP] cdp page targets=${summary.page_target_count} urls=${summary.target_urls.join(' | ') || '(none)'}`
+        );
+        const selected = selectChartTarget(targets);
+        if (!selected) {
+          throw new Error('No TradingView chart CDP target (ignored chrome:// / new-tab / extension pages)');
+        }
+        console.log(`[MCP] selected target url=${sanitizeTargetUrl(selected.url)}`);
+        return selected;
+      },
     });
 
     const { Page, Runtime } = cdpClient;
     await Page.enable();
     await Runtime.enable();
-
-    console.log('[MCP] ✓ Connected to TradingView Desktop via CDP');
+    browserRuntime.state.cdpReady = true;
+    console.log('[MCP] Connected to Chromium via internal CDP (chart target)');
     return cdpClient;
   } catch (error) {
-    console.error('[MCP] ✗ Failed to connect to TradingView:', error.message);
-    console.error('[MCP] Make sure TradingView Desktop is running with: --remote-debugging-port=9222');
     cdpClient = null;
-    throw error;
+    browserRuntime.state.cdpReady = false;
+    if (error instanceof McpRuntimeError) throw error;
+    throw classifyConnectError(error, {
+      browserEnabled: browserRuntime.config().enabled,
+      browserRunning: browserRuntime.state.browserRunning,
+      cdpReady: false,
+    });
   }
 }
 
 async function executeScriptOnChart(script) {
+  const client = await connectTradingView();
+  const { Runtime } = client;
+  const result = await Runtime.evaluate({
+    expression: script,
+    returnByValue: true,
+    awaitPromise: true,
+  });
+
+  if (result.exceptionDetails) {
+    throw new Error(result.exceptionDetails.text || 'Runtime.evaluate failed');
+  }
+
+  return result.result.value;
+}
+
+async function probeTradingViewPage() {
   try {
-    const client = await connectTradingView();
-    const { Runtime } = client;
-    const result = await Runtime.evaluate({
-      expression: script,
-      returnByValue: true,
-    });
-
-    if (result.exceptionDetails) {
-      throw new Error(result.exceptionDetails.text);
-    }
-
-    return result.result.value;
+    const probe = await executeScriptOnChart(tradingViewProbeScript());
+    return browserRuntime.applyPageProbe(probe || {});
   } catch (error) {
+    browserRuntime.applyPageProbe({ ready: false, authenticated: 'unknown' });
     throw error;
   }
 }
 
+async function ensureTradingViewReady() {
+  browserRuntime.assertReadyForTools();
+  await probeTradingViewPage();
+  browserRuntime.assertReadyForTools();
+}
+
 async function callMCPTool(toolName, args) {
+  try {
+    if (toolName !== 'quote_get') {
+      await ensureTradingViewReady();
+    }
+  } catch (error) {
+    return asToolError(error);
+  }
+  try {
   switch (toolName) {
     case 'pine_set_source':
       return await setPineSource(args.source);
@@ -92,6 +161,9 @@ async function callMCPTool(toolName, args) {
     default:
       throw new Error(`Unknown tool: ${toolName}`);
   }
+  } catch (error) {
+    return asToolError(error);
+  }
 }
 
 async function setPineSource(source) {
@@ -99,14 +171,30 @@ async function setPineSource(source) {
   const escaped = JSON.stringify(source);
   const script = `
     (async () => {
-      const editor = document.querySelector('[data-testid="pine-editor"]') ||
-                    document.querySelector('[class*="PineEditor"]') ||
-                    document.querySelector('textarea[class*="pine" i]');
-
-      if (!editor) {
-        return { success: false, error: 'Pine Script editor not found' };
+      function findEditor() {
+        return document.querySelector('[data-testid="pine-editor"]') ||
+               document.querySelector('.monaco-editor.pine-editor-monaco') ||
+               document.querySelector('[class*="PineEditor"]') ||
+               document.querySelector('textarea[class*="pine" i]');
       }
-
+      let editor = findEditor();
+      if (!editor) {
+        const openBtn = Array.from(document.querySelectorAll('button, div[role="button"]')).find(b =>
+          /pine editor|open pine/i.test(b.textContent || b.getAttribute('aria-label') || '')
+        );
+        if (openBtn) {
+          openBtn.click();
+          await new Promise(r => setTimeout(r, 800));
+          editor = findEditor();
+        }
+      }
+      if (!editor) {
+        return {
+          success: false,
+          error: 'PINE_EDITOR_SETUP_REQUIRED',
+          error_class: 'PINE_EDITOR_SETUP_REQUIRED',
+        };
+      }
       const textarea = editor.querySelector('textarea') || editor.querySelector('[contenteditable="true"]') || editor;
       const source = ${escaped};
       if (textarea && 'value' in textarea) {
@@ -120,12 +208,29 @@ async function setPineSource(source) {
         textarea.dispatchEvent(new Event('input', { bubbles: true }));
         return { success: true, message: 'Pine Script source set (contenteditable)', length: source.length };
       }
-      return { success: false, error: 'Could not set source code' };
+      return {
+        success: false,
+        error: 'PINE_EDITOR_NOT_FOUND',
+        error_class: 'PINE_EDITOR_NOT_FOUND',
+      };
     })();
   `;
 
   const result = await executeScriptOnChart(script);
-  return result || { success: false, error: 'No result from script' };
+  if (!result) {
+    return {
+      success: false,
+      error: 'PINE_EDITOR_NOT_FOUND',
+      error_class: MCP_ERROR_CLASSES.PINE_EDITOR_NOT_FOUND,
+    };
+  }
+  if (result.success === false) {
+    return {
+      ...result,
+      error_class: result.error_class || MCP_ERROR_CLASSES.PINE_EDITOR_NOT_FOUND,
+    };
+  }
+  return result;
 }
 
 async function getPineSource() {
@@ -135,14 +240,27 @@ async function getPineSource() {
       const editor = document.querySelector('[data-testid="pine-editor"]') ||
                     document.querySelector('[class*="PineEditor"]') ||
                     document.querySelector('textarea[class*="pine" i]');
-      if (!editor) return { success: false, error: 'Pine Script editor not found' };
+      if (!editor) {
+        return {
+          success: false,
+          error: 'PINE_EDITOR_NOT_FOUND',
+          error_class: 'PINE_EDITOR_NOT_FOUND',
+        };
+      }
       const textarea = editor.querySelector('textarea') || editor.querySelector('[contenteditable="true"]') || editor;
       const source = (textarea && 'value' in textarea) ? textarea.value : (textarea ? textarea.textContent : '');
       return { success: true, source: source || '', length: (source || '').length };
     })();
   `;
   const result = await executeScriptOnChart(script);
-  return result || { success: false, error: 'No result from script' };
+  if (!result || result.success === false) {
+    return {
+      success: false,
+      error: (result && result.error) || 'PINE_EDITOR_NOT_FOUND',
+      error_class: (result && result.error_class) || MCP_ERROR_CLASSES.PINE_EDITOR_NOT_FOUND,
+    };
+  }
+  return result;
 }
 
 async function setChartSymbol(symbol) {
@@ -155,7 +273,11 @@ async function setChartSymbol(symbol) {
                          document.querySelector('[data-testid="symbol-search-input"]');
 
       if (!symbolInput) {
-        return { success: false, error: 'Symbol input not found' };
+        return {
+          success: false,
+          error: 'TRADINGVIEW_SELECTOR_NOT_FOUND',
+          error_class: 'TRADINGVIEW_SELECTOR_NOT_FOUND',
+        };
       }
 
       symbolInput.value = '${symbol}';
@@ -177,7 +299,14 @@ async function setChartSymbol(symbol) {
   `;
 
   const result = await executeScriptOnChart(script);
-  return result || { success: false, error: 'No result from script' };
+  if (!result || result.success === false) {
+    return {
+      success: false,
+      error: (result && result.error) || MCP_ERROR_CLASSES.TRADINGVIEW_SELECTOR_NOT_FOUND,
+      error_class: (result && result.error_class) || MCP_ERROR_CLASSES.TRADINGVIEW_SELECTOR_NOT_FOUND,
+    };
+  }
+  return result;
 }
 
 async function setChartTimeframe(timeframe) {
@@ -194,11 +323,22 @@ async function setChartTimeframe(timeframe) {
         match.click();
         return { success: true, message: 'Timeframe clicked ' + '${tf}' };
       }
-      return { success: false, error: 'Timeframe control not found for ${tf}' };
+      return {
+        success: false,
+        error: 'TRADINGVIEW_SELECTOR_NOT_FOUND',
+        error_class: 'TRADINGVIEW_SELECTOR_NOT_FOUND',
+      };
     })();
   `;
   const result = await executeScriptOnChart(script);
-  return result || { success: false, error: 'No result from script' };
+  if (!result || result.success === false) {
+    return {
+      success: false,
+      error: (result && result.error) || MCP_ERROR_CLASSES.TRADINGVIEW_SELECTOR_NOT_FOUND,
+      error_class: (result && result.error_class) || MCP_ERROR_CLASSES.TRADINGVIEW_SELECTOR_NOT_FOUND,
+    };
+  }
+  return result;
 }
 
 async function setupStrategyWebhookAlert(args) {
@@ -284,15 +424,33 @@ async function compilePineScript() {
                         Array.from(document.querySelectorAll('button')).find(b => b.textContent.toLowerCase().includes('compile'));
 
       if (!compileBtn) {
-        return { success: false, error: 'Compile button not found' };
+        const addBtn = Array.from(document.querySelectorAll('button')).find(b =>
+          /add to chart|save and add|update on chart/i.test(b.textContent || b.getAttribute('aria-label') || '')
+        );
+        if (!addBtn) {
+          return {
+            success: false,
+            error: 'COMPILE_FAILED',
+            error_class: 'COMPILE_FAILED',
+            has_errors: true,
+          };
+        }
+        addBtn.click();
+      } else {
+        compileBtn.click();
       }
-
-      compileBtn.click();
       await new Promise(resolve => setTimeout(resolve, 2000));
 
-      const errors = document.querySelectorAll('[class*="error" i]');
-      if (errors.length > 0) {
-        return { success: false, error: 'Compilation failed with errors', has_errors: true };
+      const pineErrors = document.querySelectorAll(
+        '[class*="pine"] [class*="error"], .tv-script-error, [data-name="pine-console-error"]'
+      );
+      if (pineErrors.length > 0) {
+        return {
+          success: false,
+          error: 'COMPILE_FAILED',
+          error_class: 'COMPILE_FAILED',
+          has_errors: true,
+        };
       }
 
       return { success: true, message: 'Pine Script compiled successfully', has_errors: false };
@@ -300,7 +458,13 @@ async function compilePineScript() {
   `;
 
   const result = await executeScriptOnChart(script);
-  return result || { success: false, error: 'No result from script' };
+  if (result && result.success) return result;
+  return {
+    success: false,
+    error: (result && result.error) || 'Compile result unknown',
+    error_class: (result && result.error_class) || MCP_ERROR_CLASSES.COMPILE_FAILED,
+    has_errors: true,
+  };
 }
 
 async function getChartState() {
@@ -356,7 +520,30 @@ app.use(express.json({ limit: '1mb' }));
 // Health Check
 // ============================================
 app.get('/health', (req, res) => {
-  res.json({ status: 'ok', service: 'tradingview-mcp' });
+  const snap = browserRuntime.snapshot();
+  res.json({
+    ...snap,
+    service: 'tradingview-mcp',
+    mcp_http: 'ok',
+  });
+});
+
+app.get('/bootstrap', (req, res) => {
+  const snap = browserRuntime.snapshot();
+  res.json({
+    authenticated: snap.authenticated,
+    status: snap.status,
+    user_data_dir: snap.user_data_dir,
+    headless: snap.headless,
+    instructions: [
+      'Mount a Railway volume at /data so the Chromium profile persists.',
+      'Profile path: /data/tradingview-profile',
+      'If authenticated is no: run a one-time local/headful bootstrap against the same profile, or set TRADINGVIEW_BROWSER_HEADLESS=false with an interactive display, sign in once, then restart headless.',
+      'Do not paste cookies, passwords, or session tokens into logs or source.',
+    ],
+    error_class:
+      snap.authenticated === 'no' ? MCP_ERROR_CLASSES.TRADINGVIEW_AUTH_REQUIRED : snap.error_class,
+  });
 });
 
 // ============================================
@@ -638,9 +825,11 @@ app.post('/api/tradingview/deploy', async (req, res) => {
       notice: 'This endpoint returns MCP facts only. The Bitiq backend decides compile/verify. Compiled Pine is not monitoring.',
     });
   } catch (error) {
-    res.status(500).json({
+    const classified = asToolError(error);
+    res.status(503).json({
       steps: {},
-      error: error instanceof Error ? error.message : 'MCP deploy failed',
+      error: classified.error,
+      error_class: classified.error_class,
     });
   }
 });
@@ -691,13 +880,34 @@ app.post('/api/alerts/monitor', async (req, res) => {
 // Start Server
 // ============================================
 const server = app.listen(port, '0.0.0.0', () => {
-  console.log(
-    `🚀 TradingView MCP HTTP Server running on http://0.0.0.0:${port}`
-  );
-  console.log(`✓ Health check: http://localhost:${port}/health`);
-  console.log(`✓ API ready to receive strategy creation requests`);
-  console.log(`✓ CDP port: ${process.env.CDP_PORT || 9222}`);
-  console.log(`✓ CDP host: ${process.env.CDP_HOST || 'localhost'}`);
+  console.log(`TradingView MCP HTTP Server listening on 0.0.0.0:${port}`);
+  console.log('CDP is internal-only at 127.0.0.1 (not published)');
+  browserRuntime
+    .start()
+    .then(async (snap) => {
+      console.log(
+        `[browser] startup status=${snap.status} browser=${snap.browser} cdp=${snap.cdp}`
+      );
+      if (snap.cdp === 'ok') {
+        try {
+          const after = await browserRuntime.probeAndApply();
+          console.log(
+            `[browser] tradingview=${after.tradingview} authenticated=${after.authenticated} reason=${after.detection_reason || ''}`
+          );
+        } catch (err) {
+          console.log(
+            `[browser] page probe failed: ${sanitizeLogValue(err instanceof Error ? err.message : err)}`
+          );
+        }
+      }
+    })
+    .catch((err) => {
+      console.error(
+        `[browser] startup failed (MCP HTTP stays up, health=degraded): ${sanitizeLogValue(
+          err instanceof Error ? err.message : err
+        )}`
+      );
+    });
 });
 
 server.on('error', (err) => {
@@ -705,11 +915,14 @@ server.on('error', (err) => {
   process.exit(1);
 });
 
-// Handle graceful shutdown
-process.on('SIGTERM', () => {
+function shutdown() {
   console.log('Shutting down...');
   if (cdpClient) {
     cdpClient.close().catch(() => {});
   }
+  browserRuntime.stop().catch(() => {});
   server.close();
-});
+}
+
+process.on('SIGTERM', shutdown);
+process.on('SIGINT', shutdown);
