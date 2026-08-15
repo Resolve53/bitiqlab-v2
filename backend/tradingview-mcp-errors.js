@@ -63,7 +63,7 @@ function classifyPageState(page) {
   if (page.authenticated === "no") {
     return new McpRuntimeError(
       MCP_ERROR_CLASSES.TRADINGVIEW_AUTH_REQUIRED,
-      "TradingView session is not authenticated. Complete one-time login against the persistent browser profile."
+      "TradingView session is not authenticated. Export a local CDP session (npm run tv:session-export) and import it on Railway (npm run tv:session-import). Do not copy a macOS Chrome profile onto Linux."
     );
   }
   if (!page.ready) {

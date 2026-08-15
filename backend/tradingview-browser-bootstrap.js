@@ -90,7 +90,7 @@ async function main() {
   }
 
   if (probed.authenticated === "yes" && probed.tradingview === "ready") {
-    console.log("[bootstrap] Session looks authenticated. You can stop this process; the profile on disk will be reused.");
+    console.log("[bootstrap] Session looks authenticated. Next: npm run tv:session-export (do not copy this profile onto Linux).");
     return;
   }
 
@@ -107,7 +107,7 @@ async function main() {
       return;
     }
     if (next.authenticated === "yes" && next.tradingview === "ready") {
-      console.log("[bootstrap] Session looks authenticated. You can stop this process; the profile on disk will be reused.");
+      console.log("[bootstrap] Session looks authenticated. Next: npm run tv:session-export (do not copy this profile onto Linux).");
       break;
     }
   }

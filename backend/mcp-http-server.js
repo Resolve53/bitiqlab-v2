@@ -533,13 +533,19 @@ app.get('/bootstrap', (req, res) => {
   res.json({
     authenticated: snap.authenticated,
     status: snap.status,
+    tradingview: snap.tradingview,
     user_data_dir: snap.user_data_dir,
     headless: snap.headless,
+    profile_copy_required: false,
+    session_bootstrap: snap.session_bootstrap,
     instructions: [
-      'Mount a Railway volume at /data so the Chromium profile persists.',
-      'Profile path: /data/tradingview-profile',
-      'If authenticated is no: run a one-time local/headful bootstrap against the same profile, or set TRADINGVIEW_BROWSER_HEADLESS=false with an interactive display, sign in once, then restart headless.',
-      'Do not paste cookies, passwords, or session tokens into logs or source.',
+      'Do NOT copy a macOS Chrome profile onto Railway Linux. Cookie encryption is OS-specific and that transfer is unsupported.',
+      'Local: sign in with npm run tv:bootstrap, then export with npm run tv:session-export.',
+      'Copy only the encrypted artifact to /data/tv-session-bootstrap.enc (never the profile directory).',
+      'Set TRADINGVIEW_SESSION_BOOTSTRAP_SECRET (one-time) and restart tradingview-mcp, or run npm run tv:session-import inside the container.',
+      'Import applies TradingView cookies via CDP before opening the chart. The Linux profile then persists at /data/tradingview-profile.',
+      'After tradingview=ready authenticated=yes, unset TRADINGVIEW_SESSION_BOOTSTRAP_SECRET. The artifact is deleted on success.',
+      'There is no public HTTP import/export endpoint. Do not paste cookies, passwords, or session tokens into logs or source.',
     ],
     error_class:
       snap.authenticated === 'no' ? MCP_ERROR_CLASSES.TRADINGVIEW_AUTH_REQUIRED : snap.error_class,
@@ -890,6 +896,12 @@ const server = app.listen(port, '0.0.0.0', () => {
       );
       if (snap.cdp === 'ok') {
         try {
+          if (snap.session_bootstrap && snap.session_bootstrap.status === 'imported') {
+            const settleMs = Number(process.env.TRADINGVIEW_SESSION_IMPORT_SETTLE_MS || 2500);
+            if (settleMs > 0) {
+              await new Promise((r) => setTimeout(r, settleMs));
+            }
+          }
           const after = await browserRuntime.probeAndApply();
           console.log(
             `[browser] tradingview=${after.tradingview} authenticated=${after.authenticated} reason=${after.detection_reason || ''}`

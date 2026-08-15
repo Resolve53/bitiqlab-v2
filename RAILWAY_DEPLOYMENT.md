@@ -300,7 +300,7 @@ On **tradingview-mcp only**:
 - **HTTP:** Railway `PORT` (public/private as you already expose)
 - **CDP:** `127.0.0.1:9222` inside the container only — never add a public TCP proxy for 9222
 - **Volume:** mount `/data` so `/data/tradingview-profile` survives redeploys
-- **Bootstrap:** one-time TradingView login into that profile (`npm run tv:bootstrap` locally, then copy the profile). Details: [STAGE_1C_BROWSER_RUNTIME.md](./STAGE_1C_BROWSER_RUNTIME.md)
+- **Bootstrap:** local `npm run tv:bootstrap` + `npm run tv:session-export`, then import the encrypted artifact on Railway with `npm run tv:session-import` (or a one-time `TRADINGVIEW_SESSION_BOOTSTRAP_SECRET`). Do **not** copy a macOS Chrome profile onto Linux. Details: [STAGE_1C_BROWSER_RUNTIME.md](./STAGE_1C_BROWSER_RUNTIME.md)
 
 This section does not change the Stage 2B enrichment worker.
 

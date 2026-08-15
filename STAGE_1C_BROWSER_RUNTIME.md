@@ -93,11 +93,21 @@ Do not put TradingView passwords, cookies, or webhook tokens in source or logs.
 
 ## First-login / session bootstrap
 
-Headless Chromium cannot complete a TradingView captcha/login UI reliably. Do this once:
+Headless Chromium cannot complete a TradingView captcha/login UI reliably. **Do not copy a macOS Chrome profile onto Railway Linux.** Cookie encryption is OS-specific (macOS Keychain vs Linux Chromium key storage). Full-profile copy is unsupported.
 
-### Option A — copy a local profile onto the volume (preferred)
+Transfer only TradingView session cookies through CDP:
 
-1. On a trusted machine with Chromium/Chrome:
+```
+local authenticated Chrome
+  → npm run tv:session-export   (CDP Network/Storage, tradingview.com only)
+  → encrypted one-time artifact
+  → npm run tv:session-import   (inside the Railway container, CDP 127.0.0.1)
+  → Linux profile persists at /data/tradingview-profile
+```
+
+### Option A — CDP session transfer (required)
+
+1. On a trusted machine with Chromium/Chrome, sign in locally:
 
 ```bash
 cd backend
@@ -122,9 +132,40 @@ TRADINGVIEW_BROWSER_USER_DATA_DIR=./.tv-profile \
 npm run tv:bootstrap
 ```
 
-2. Sign in to TradingView in the opened window. Wait until the process logs `authenticated=yes`.
-3. Stop the process (`Ctrl+C`). SIGINT/SIGTERM now stop the runtime and close the adopted browser via CDP.
-4. Copy `./.tv-profile` onto the Railway volume at `/data/tradingview-profile` (Railway volume browser, `railway run`, or a one-off debug session). Do not commit the profile.
+2. Sign in to TradingView in the opened window. Wait until the process logs `authenticated=yes` and `tradingview=ready`.
+3. Export **only** TradingView cookies (including HttpOnly) via CDP. This does **not** copy `.tv-profile`:
+
+```bash
+# Exact local export command
+cd backend
+TRADINGVIEW_BROWSER_USER_DATA_DIR=./.tv-profile \
+npm run tv:session-export -- --out ./tv-session-bootstrap.enc
+```
+
+The command prints `items=`, `httpOnly=`, `domains=`, the artifact path, and a **one-time secret**. It never prints cookie values. Treat the `.enc` file and the secret as credentials. The artifact is gitignored.
+
+4. Copy **only** `tv-session-bootstrap.enc` onto the Railway volume at `/data/tv-session-bootstrap.enc` (Railway volume browser or `railway ssh`). Do **not** copy `.tv-profile`. Do not commit the artifact.
+
+5. Import inside the `tradingview-mcp` container (CDP is loopback-only; there is no public HTTP import endpoint):
+
+```bash
+# Exact Railway import command (operator CLI, same container as Chromium)
+TRADINGVIEW_SESSION_BOOTSTRAP_SECRET='<one-time-secret-from-export>' \
+TRADINGVIEW_SESSION_BOOTSTRAP_PATH=/data/tv-session-bootstrap.enc \
+TRADINGVIEW_BROWSER_USER_DATA_DIR=/data/tradingview-profile \
+npm run tv:session-import
+```
+
+Or set `TRADINGVIEW_SESSION_BOOTSTRAP_SECRET` on the **tradingview-mcp** service and restart. On CDP-ready the runtime decrypts the artifact, applies cookies via CDP, **then** opens/reloads TradingView.
+
+6. Confirm health:
+
+```bash
+curl -sS "$TRADINGVIEW_MCP_URL/health"
+# expect tradingview=ready authenticated=yes status=ok
+```
+
+7. On success the artifact is shredded and deleted. Unset `TRADINGVIEW_SESSION_BOOTSTRAP_SECRET`. The Linux Chromium profile at `/data/tradingview-profile` now holds the session and is reused on redeploy.
 
 ### Browser / tab lifecycle (do not skip)
 
@@ -142,7 +183,7 @@ TRADINGVIEW_BROWSER_HEADLESS=false
 
 Sign in once, then set `TRADINGVIEW_BROWSER_HEADLESS=true` and restart.
 
-`GET /bootstrap` on the MCP service repeats these instructions and reports `authenticated` without leaking cookies.
+`GET /bootstrap` on the MCP service repeats these instructions and reports `authenticated` plus `session_bootstrap` metadata (`items`, artifact present/consumed) **without** cookie values, secrets, or a public import endpoint. `profile_copy_required` is always `false`.
 
 ## Health schema
 

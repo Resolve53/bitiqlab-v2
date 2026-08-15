@@ -12,7 +12,9 @@
     "test": "vitest run",
     "test:watch": "vitest",
     "worker:enrichment": "tsx src/candidate-intelligence/worker-main.ts",
-    "tv:bootstrap": "node tradingview-browser-bootstrap.js"
+    "tv:bootstrap": "node tradingview-browser-bootstrap.js",
+    "tv:session-export": "node tradingview-session-export.js",
+    "tv:session-import": "node tradingview-session-import.js"
   },
   "dependencies": {
     "@anthropic-ai/sdk": "^0.20.0",

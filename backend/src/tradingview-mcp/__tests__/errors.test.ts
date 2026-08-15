@@ -40,6 +40,8 @@ describe("C. Error classification", () => {
   it("auth required is explicit", () => {
     const err = classifyPageState({ ready: false, authenticated: "no" });
     expect(err.error_class).toBe(MCP_ERROR_CLASSES.TRADINGVIEW_AUTH_REQUIRED);
+    expect(err.message).toMatch(/tv:session-export/);
+    expect(err.message).toMatch(/Do not copy a macOS Chrome profile/);
   });
 
   it("selector failure is explicit", () => {
