@@ -141,6 +141,10 @@ describe("Stage 1C session transfer — cookies only", () => {
     expect(applied.every((c: { httpOnly?: boolean }) => c.httpOnly)).toBe(true);
     expect(logs.join("\n")).not.toContain(SECRET_VALUE);
     expect(logs.join("\n")).toMatch(/items=2/);
+    expect(logs.join("\n")).toMatch(/httpOnly=2/);
+    expect(logs.join("\n")).toMatch(/domains=[\w.,]*tradingview\.com/);
+    expect(logs.join("\n")).not.toMatch(/\[redacted\]/);
+    expect(logs.join("\n")).not.toMatch(/sessionid/);
     expect(fsMock.readFileSync("/data/tv-session-bootstrap.enc.consumed")).not.toContain(SECRET_VALUE);
   });
 

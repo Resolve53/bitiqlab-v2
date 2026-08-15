@@ -87,6 +87,16 @@ describe("C. Error classification", () => {
   it("does not log cookies or tokens", () => {
     expect(sanitizeLogValue("sessionid=abc123 cookie")).toBe("[redacted]");
     expect(sanitizeLogValue("webhook_token=secret")).toBe("[redacted]");
+    expect(sanitizeLogValue("cookie=secretvalue")).toBe("[redacted]");
+    expect(sanitizeLogValue("Authorization: Bearer xyz")).toBe("[redacted]");
     expect(sanitizeLogValue("CDP ready")).toBe("CDP ready");
+    // CDP method labels contain "cookie" but are safe metadata, not secrets.
+    expect(
+      sanitizeLogValue(
+        "[session-import] applied items=2 httpOnly=2 secure=2 domains=tradingview.com via=Storage.setCookies deleted=true"
+      )
+    ).toBe(
+      "[session-import] applied items=2 httpOnly=2 secure=2 domains=tradingview.com via=Storage.setCookies deleted=true"
+    );
   });
 });

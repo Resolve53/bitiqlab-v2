@@ -12,7 +12,7 @@
 const crypto = require("crypto");
 const fs = require("fs");
 const path = require("path");
-const { sanitizeLogValue } = require("./tradingview-mcp-errors");
+const { sanitizeLogValue, looksLikeSecret } = require("./tradingview-mcp-errors");
 
 const ARTIFACT_KIND = "tradingview-session-bootstrap";
 const ENVELOPE_KIND = "tradingview-session-bootstrap-envelope";
@@ -162,11 +162,14 @@ function formatSummary(summary) {
   return `items=${summary.items} httpOnly=${summary.httpOnly} secure=${summary.secure} domains=${domains}`;
 }
 
+/**
+ * Allow safe transfer metadata (item counts, httpOnly/secure counts, domain
+ * hosts, status, CDP via labels). Never pass through cookie values, cookie
+ * names, tokens, or secrets — those still match looksLikeSecret.
+ */
 function assertNoSecretMaterial(text) {
   const s = String(text || "");
-  if (/cookie|sessionid|authorization|bearer |password|api[_-]?key|webhook_token/i.test(s)) {
-    return "[redacted]";
-  }
+  if (looksLikeSecret(s)) return "[redacted]";
   return s;
 }
 
