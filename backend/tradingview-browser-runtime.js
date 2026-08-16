@@ -1007,7 +1007,12 @@ function createRuntime(deps = {}) {
     return after;
   }
 
-  function assertReadyForTools() {
+  /**
+   * Hard gate for browser process + CDP only.
+   * Does NOT inspect TradingView page readiness / auth — those may be stale
+   * until a fresh page probe runs (see ensureReadyForTools).
+   */
+  function assertBrowserCdpReady() {
     const snap = snapshot();
     if (snap.browser === "fail") {
       throw classifyConnectError(new Error("browser down"), {
@@ -1023,9 +1028,27 @@ function createRuntime(deps = {}) {
         cdpReady: false,
       });
     }
+    return snap;
+  }
+
+  function assertReadyForTools() {
+    const snap = assertBrowserCdpReady();
     const pageErr = classifyPageState(state.page);
     if (pageErr) throw pageErr;
     return snap;
+  }
+
+  /**
+   * Tool-path readiness: allow stale tradingview=not_ready to recover via a
+   * fresh probe, but still fail closed on browser/CDP hard failures and on the
+   * post-probe page/auth classification.
+   */
+  async function ensureReadyForTools(probePage) {
+    assertBrowserCdpReady();
+    if (typeof probePage === "function") {
+      await probePage();
+    }
+    return assertReadyForTools();
   }
 
   return {
@@ -1040,7 +1063,9 @@ function createRuntime(deps = {}) {
     importSessionIfPresent,
     importThenOpenChart,
     reloadSelectedChart,
+    assertBrowserCdpReady,
     assertReadyForTools,
+    ensureReadyForTools,
     config: () => browserConfig(deps.env || process.env),
     waitForCdp: (cfg, opts) => waitForCdp(cfg || browserConfig(deps.env || process.env), { ...opts, http: httpMod }),
   };
