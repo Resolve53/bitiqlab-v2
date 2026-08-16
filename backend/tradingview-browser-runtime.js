@@ -13,6 +13,7 @@ const {
   classifyPageState,
   sanitizeLogValue,
 } = require("./tradingview-mcp-errors");
+const { reconcileProfileLocks } = require("./tradingview-profile-lock");
 
 const DEFAULT_URL = "https://www.tradingview.com/chart/";
 const DEFAULT_PROFILE = "/data/tradingview-profile";
@@ -845,6 +846,13 @@ function createRuntime(deps = {}) {
       return snapshot();
     }
     state.userDataDir = ensureUserDataDir(cfg.userDataDir, mkdirFn);
+    reconcileProfileLocks(state.userDataDir, {
+      fs: deps.fs || fs,
+      log,
+      hostname: deps.hostname,
+      readProcessInfo: deps.readProcessInfo,
+      listPids: deps.listPids,
+    });
     state.executable = resolveExecutable(cfg, existsSyncFn);
     if (cfg.resetSessionRestore) {
       const removed = resetChromeSessionRestore(state.userDataDir, deps.fs || fs);
@@ -1211,6 +1219,7 @@ module.exports = {
   resetChromeSessionRestore,
   SESSION_RESTORE_RELATIVE,
   MAX_RESTART_ATTEMPTS,
+  reconcileProfileLocks,
   probeCdpOnce,
   isNavigableBlankTarget,
   sanitizeTargetUrl,
