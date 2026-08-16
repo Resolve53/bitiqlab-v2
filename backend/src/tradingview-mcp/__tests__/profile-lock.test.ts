@@ -1,5 +1,7 @@
 import { EventEmitter } from "events";
 import { createRequire } from "module";
+import fs from "fs";
+import os from "os";
 import path from "path";
 import { afterEach, describe, expect, it, vi } from "vitest";
 
@@ -9,7 +11,10 @@ const { createRuntime } = requireCjs(path.join(process.cwd(), "tradingview-brows
 
 const {
   SINGLETON_FILES,
+  pathEntryExistsLstat,
   parseSingletonLockTarget,
+  listSingletonPresence,
+  readSingletonLockTarget,
   inspectProfileLockState,
   reconcileProfileLocks,
   removeSingletonFiles,
@@ -32,15 +37,37 @@ function memoryFs(initial: Record<string, MemoryEntry> = {}) {
     return path.resolve(p);
   }
 
+  function resolveFollow(p: string): MemoryEntry | undefined {
+    const seen = new Set<string>();
+    let cur = key(p);
+    while (!seen.has(cur)) {
+      seen.add(cur);
+      const entry = store.get(cur);
+      if (!entry) return undefined;
+      if (entry.type !== "symlink") return entry;
+      const target = entry.target || "";
+      cur = path.isAbsolute(target) ? path.resolve(target) : path.resolve(path.dirname(cur), target);
+    }
+    return undefined;
+  }
+
   return {
     store,
-    existsSync: (p: string) => store.has(key(p)),
+    /**
+     * Match Node: existsSync follows symlinks and returns false for dangling ones.
+     * Do not use this mock for dangling-symlink semantics — use real fs tests.
+     */
+    existsSync: (p: string) => Boolean(resolveFollow(p)),
     mkdirSync: (p: string) => {
       store.set(key(p), { type: "dir" });
     },
     lstatSync: (p: string) => {
       const entry = store.get(key(p));
-      if (!entry) throw new Error(`ENOENT ${p}`);
+      if (!entry) {
+        const err = new Error(`ENOENT ${p}`) as NodeJS.ErrnoException;
+        err.code = "ENOENT";
+        throw err;
+      }
       return { isSymbolicLink: () => entry.type === "symlink" };
     },
     readlinkSync: (p: string) => {
@@ -144,6 +171,32 @@ function cdpHttpOk() {
       return req;
     },
   };
+}
+
+function singletonLstatExists(profileDir: string, name: string): boolean {
+  try {
+    fs.lstatSync(path.join(profileDir, name));
+    return true;
+  } catch (err) {
+    return (err as NodeJS.ErrnoException).code !== "ENOENT";
+  }
+}
+
+function seedRealDanglingSingletons(profileDir: string, lockTarget: string) {
+  fs.mkdirSync(path.join(profileDir, "Default", "Local Storage", "leveldb"), {
+    recursive: true,
+  });
+  fs.symlinkSync(lockTarget, path.join(profileDir, "SingletonLock"));
+  fs.symlinkSync("2480223369875263811", path.join(profileDir, "SingletonCookie"));
+  fs.symlinkSync(
+    "/tmp/nonexistent-org.chromium.Chromium.test/SingletonSocket",
+    path.join(profileDir, "SingletonSocket")
+  );
+  fs.writeFileSync(path.join(profileDir, "Default", "Cookies"), "sqlite-cookie-db-bytes");
+  fs.writeFileSync(
+    path.join(profileDir, "Default", "Local Storage", "leveldb", "CURRENT"),
+    "MANIFEST"
+  );
 }
 
 describe("profile lock parsing", () => {
@@ -286,9 +339,11 @@ describe("profile lock inspection", () => {
     });
     expect(removed.stale_lock_removed).toBe(true);
     expect(removed.reason).toBe("malformed_lock_no_live_owner");
-    expect(SINGLETON_FILES.every((name: string) => !fsMock.existsSync(path.join(PROFILE, name)))).toBe(
-      true
-    );
+    expect(
+      SINGLETON_FILES.every(
+        (name: string) => !pathEntryExistsLstat(path.join(PROFILE, name), fsMock)
+      )
+    ).toBe(true);
   });
 });
 
@@ -311,11 +366,13 @@ describe("profile lock reconciliation", () => {
       log: () => {},
     });
 
-    expect(fsMock.existsSync(cookiePath)).toBe(true);
-    expect(fsMock.existsSync(lsPath)).toBe(true);
-    expect(SINGLETON_FILES.every((name: string) => !fsMock.existsSync(path.join(PROFILE, name)))).toBe(
-      true
-    );
+    expect(pathEntryExistsLstat(cookiePath, fsMock)).toBe(true);
+    expect(pathEntryExistsLstat(lsPath, fsMock)).toBe(true);
+    expect(
+      SINGLETON_FILES.every(
+        (name: string) => !pathEntryExistsLstat(path.join(PROFILE, name), fsMock)
+      )
+    ).toBe(true);
   });
 
   it("does not remove singleton files for a live owner", () => {
@@ -332,9 +389,11 @@ describe("profile lock reconciliation", () => {
       listPids: () => [4242],
       log: () => {},
     });
-    expect(SINGLETON_FILES.every((name: string) => fsMock.existsSync(path.join(PROFILE, name)))).toBe(
-      true
-    );
+    expect(
+      SINGLETON_FILES.every((name: string) =>
+        pathEntryExistsLstat(path.join(PROFILE, name), fsMock)
+      )
+    ).toBe(true);
   });
 
   it("logs stale_lock_detected and stale_lock_removed without secrets", () => {
@@ -363,7 +422,7 @@ describe("profile lock reconciliation", () => {
     });
     const removed = removeSingletonFiles(PROFILE, fsMock);
     expect(removed.sort()).toEqual([...SINGLETON_FILES].sort());
-    expect(fsMock.existsSync(path.join(PROFILE, "Default/Preferences"))).toBe(true);
+    expect(pathEntryExistsLstat(path.join(PROFILE, "Default/Preferences"), fsMock)).toBe(true);
   });
 
   it("rejects chromium processes bound to a different profile", () => {
@@ -412,9 +471,141 @@ describe("profile lock reconciliation", () => {
     expect(result.stale_lock_removed).toBe(false);
     expect(result.reason).toBe("live_profile_owner_found_before_delete");
     expect(result.owners).toEqual([6666]);
-    expect(SINGLETON_FILES.every((name: string) => fsMock.existsSync(path.join(PROFILE, name)))).toBe(
-      true
+    expect(
+      SINGLETON_FILES.every((name: string) =>
+        pathEntryExistsLstat(path.join(PROFILE, name), fsMock)
+      )
+    ).toBe(true);
+  });
+});
+
+describe("real filesystem — dangling Chromium Singleton symlinks", () => {
+  let tempProfile = "";
+
+  afterEach(() => {
+    resetProcessTable();
+    if (tempProfile) {
+      fs.rmSync(tempProfile, { recursive: true, force: true });
+      tempProfile = "";
+    }
+  });
+
+  it("A: exact Railway reproduction — stale previous-container dangling locks are cleared", () => {
+    tempProfile = fs.mkdtempSync(path.join(os.tmpdir(), "tv-profile-railway-"));
+    seedRealDanglingSingletons(tempProfile, "0550ef24a716-8");
+
+    // Prove Node existsSync still lies (documents the production bug class).
+    expect(fs.existsSync(path.join(tempProfile, "SingletonLock"))).toBe(false);
+
+    const logs: string[] = [];
+    const result = reconcileProfileLocks(tempProfile, {
+      hostname: HOST,
+      readProcessInfo,
+      listPids: () => [],
+      log: (msg: string) => logs.push(msg),
+    });
+
+    expect(result.reason).not.toBe("no_lock_files");
+    expect(result.reason).toBe("previous_container_hostname");
+    expect(result.stale_lock_detected).toBe(true);
+    expect(result.stale_lock_removed).toBe(true);
+    expect(result.removed.sort()).toEqual([...SINGLETON_FILES].sort());
+    expect(logs.join("\n")).toMatch(/reason=previous_container_hostname/);
+
+    for (const name of SINGLETON_FILES) {
+      expect(singletonLstatExists(tempProfile, name)).toBe(false);
+    }
+    expect(fs.readFileSync(path.join(tempProfile, "Default", "Cookies"), "utf8")).toBe(
+      "sqlite-cookie-db-bytes"
     );
+    expect(
+      fs.readFileSync(
+        path.join(tempProfile, "Default", "Local Storage", "leveldb", "CURRENT"),
+        "utf8"
+      )
+    ).toBe("MANIFEST");
+  });
+
+  it("B: listSingletonPresence includes dangling Singleton symlinks", () => {
+    tempProfile = fs.mkdtempSync(path.join(os.tmpdir(), "tv-profile-presence-"));
+    seedRealDanglingSingletons(tempProfile, "old-container-8");
+    const present = listSingletonPresence(tempProfile);
+    expect(present.sort()).toEqual([...SINGLETON_FILES].sort());
+  });
+
+  it("C: readSingletonLockTarget reads dangling SingletonLock via readlink", () => {
+    tempProfile = fs.mkdtempSync(path.join(os.tmpdir(), "tv-profile-readlink-"));
+    seedRealDanglingSingletons(tempProfile, "0550ef24a716-8");
+    expect(fs.existsSync(path.join(tempProfile, "SingletonLock"))).toBe(false);
+    const lock = readSingletonLockTarget(tempProfile);
+    expect(lock.exists).toBe(true);
+    expect(lock.target).toBe("0550ef24a716-8");
+    expect(lock.malformed).toBeFalsy();
+  });
+
+  it("D: removeSingletonFiles unlinks dangling Singleton symlinks", () => {
+    tempProfile = fs.mkdtempSync(path.join(os.tmpdir(), "tv-profile-remove-"));
+    seedRealDanglingSingletons(tempProfile, "old-host-99");
+    const removed = removeSingletonFiles(tempProfile);
+    expect(removed.sort()).toEqual([...SINGLETON_FILES].sort());
+    for (const name of SINGLETON_FILES) {
+      expect(() => fs.lstatSync(path.join(tempProfile, name))).toThrowError(
+        expect.objectContaining({ code: "ENOENT" })
+      );
+    }
+    expect(fs.existsSync(path.join(tempProfile, "Default", "Cookies"))).toBe(true);
+  });
+
+  it("E: live exact-profile Chromium still prevents deletion of dangling locks", () => {
+    tempProfile = fs.mkdtempSync(path.join(os.tmpdir(), "tv-profile-live-"));
+    seedRealDanglingSingletons(tempProfile, "old-container-8");
+    processTable[4242] = {
+      state: "S",
+      args: ["/usr/bin/chromium", `--user-data-dir=${tempProfile}`],
+    };
+    const result = reconcileProfileLocks(tempProfile, {
+      hostname: HOST,
+      readProcessInfo,
+      listPids: () => [4242],
+      log: () => {},
+    });
+    expect(result.stale_lock_removed).toBe(false);
+    expect(result.reason).toBe("live_profile_owner_found_during_stale_check");
+    expect(
+      SINGLETON_FILES.every((name: string) => singletonLstatExists(tempProfile, name))
+    ).toBe(true);
+  });
+
+  it("F: race — owner appears between inspection and deletion aborts unlink", () => {
+    tempProfile = fs.mkdtempSync(path.join(os.tmpdir(), "tv-profile-race-"));
+    seedRealDanglingSingletons(tempProfile, "old-host-1234");
+    let scanCount = 0;
+    const result = reconcileProfileLocks(tempProfile, {
+      hostname: HOST,
+      readProcessInfo: (pid: number) => {
+        const row = processTable[pid];
+        if (!row) return { exists: false };
+        return { exists: true, state: row.state, args: row.args };
+      },
+      listPids: () => {
+        scanCount++;
+        if (scanCount === 1) return [];
+        if (!processTable[6666]) {
+          processTable[6666] = {
+            state: "S",
+            args: ["/usr/bin/chromium", `--user-data-dir=${tempProfile}`],
+          };
+        }
+        return [6666];
+      },
+      log: () => {},
+    });
+    expect(result.stale_lock_removed).toBe(false);
+    expect(result.reason).toBe("live_profile_owner_found_before_delete");
+    expect(result.owners).toEqual([6666]);
+    expect(
+      SINGLETON_FILES.every((name: string) => singletonLstatExists(tempProfile, name))
+    ).toBe(true);
   });
 });
 
@@ -452,9 +643,11 @@ describe("runtime integration — profile locks before spawn", () => {
     await rt.start({ preferAdopt: false });
     expect(spawn).toHaveBeenCalledTimes(1);
     expect(
-      SINGLETON_FILES.every((name: string) => !fsMock.existsSync(path.join(PROFILE, name)))
+      SINGLETON_FILES.every(
+        (name: string) => !pathEntryExistsLstat(path.join(PROFILE, name), fsMock)
+      )
     ).toBe(true);
-    expect(fsMock.existsSync(path.join(PROFILE, "Default/Cookies"))).toBe(true);
+    expect(pathEntryExistsLstat(path.join(PROFILE, "Default/Cookies"), fsMock)).toBe(true);
     await rt.stop();
   });
 
@@ -492,7 +685,9 @@ describe("runtime integration — profile locks before spawn", () => {
     await rt.start({ preferAdopt: false });
     expect(spawn).toHaveBeenCalledTimes(1);
     expect(
-      SINGLETON_FILES.every((name: string) => fsMock.existsSync(path.join(PROFILE, name)))
+      SINGLETON_FILES.every((name: string) =>
+        pathEntryExistsLstat(path.join(PROFILE, name), fsMock)
+      )
     ).toBe(true);
     await rt.stop();
   });
