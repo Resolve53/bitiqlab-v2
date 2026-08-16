@@ -10,6 +10,25 @@ const path = require("path");
 
 const SINGLETON_FILES = ["SingletonLock", "SingletonCookie", "SingletonSocket"];
 
+/**
+ * Presence via lstat only — never follow symlink targets.
+ * Chromium Singleton* entries are often intentional dangling symlinks
+ * (SingletonLock -> hostname-pid). Node existsSync()/stat() would miss them.
+ */
+function pathEntryExistsLstat(entryPath, fsMod = fs) {
+  try {
+    fsMod.lstatSync(entryPath);
+    return true;
+  } catch (err) {
+    if (err && (err.code === "ENOENT" || err.code === "ENOTDIR")) {
+      return false;
+    }
+    // Conservative: treat unexpected errors as present so we do not
+    // silently skip inspection/removal of locks we cannot probe.
+    return true;
+  }
+}
+
 function normalizeProfilePath(profileDir) {
   if (!profileDir) return "";
   try {
@@ -91,16 +110,28 @@ function listSingletonPresence(userDataDir, fsMod = fs) {
   const present = [];
   for (const name of SINGLETON_FILES) {
     const full = path.join(userDataDir, name);
-    if (fsMod.existsSync(full)) present.push(name);
+    if (pathEntryExistsLstat(full, fsMod)) present.push(name);
   }
   return present;
 }
 
 function readSingletonLockTarget(userDataDir, fsMod = fs) {
   const lockPath = path.join(userDataDir, "SingletonLock");
-  if (!fsMod.existsSync(lockPath)) return { exists: false, target: null };
+  let lstat;
   try {
-    const lstat = fsMod.lstatSync(lockPath);
+    lstat = fsMod.lstatSync(lockPath);
+  } catch (err) {
+    if (err && (err.code === "ENOENT" || err.code === "ENOTDIR")) {
+      return { exists: false, target: null };
+    }
+    return {
+      exists: true,
+      target: null,
+      malformed: true,
+      reason: err instanceof Error ? err.message : "lock_lstat_failed",
+    };
+  }
+  try {
     if (!lstat.isSymbolicLink()) {
       return { exists: true, target: null, malformed: true, reason: "lock_not_symlink" };
     }
@@ -263,10 +294,10 @@ function removeSingletonFiles(userDataDir, fsMod = fs) {
   for (const name of SINGLETON_FILES) {
     const full = path.join(userDataDir, name);
     try {
-      if (fsMod.existsSync(full)) {
-        fsMod.unlinkSync(full);
-        removed.push(name);
-      }
+      // lstat-based: dangling Chromium Singleton symlinks must still unlink.
+      if (!pathEntryExistsLstat(full, fsMod)) continue;
+      fsMod.unlinkSync(full);
+      removed.push(name);
     } catch {
       /* leave file in place */
     }
@@ -325,6 +356,7 @@ function reconcileProfileLocks(userDataDir, deps = {}) {
 
 module.exports = {
   SINGLETON_FILES,
+  pathEntryExistsLstat,
   normalizeProfilePath,
   parseSingletonLockTarget,
   readSingletonLockTarget,
