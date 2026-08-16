@@ -214,6 +214,18 @@ function inspectProfileLockState(userDataDir, deps = {}) {
   }
 
   if (parsed.hostname !== hostname) {
+    const owners = findLiveProfileOwnersViaScan(userDataDir, deps);
+    if (owners.length) {
+      return {
+        stale_lock_detected: true,
+        should_remove: false,
+        reason: "live_profile_owner_found_during_stale_check",
+        present,
+        lock_hostname: parsed.hostname,
+        lock_pid: parsed.pid,
+        owners,
+      };
+    }
     return {
       stale_lock_detected: true,
       should_remove: true,
@@ -280,6 +292,21 @@ function reconcileProfileLocks(userDataDir, deps = {}) {
       ...inspection,
       stale_lock_removed: false,
       removed: [],
+    };
+    logLockDecision(log, out);
+    return out;
+  }
+
+  const owners = findLiveProfileOwnersViaScan(userDataDir, deps);
+  if (owners.length) {
+    const out = {
+      ...inspection,
+      stale_lock_detected: true,
+      should_remove: false,
+      stale_lock_removed: false,
+      reason: "live_profile_owner_found_before_delete",
+      removed: [],
+      owners,
     };
     logLockDecision(log, out);
     return out;

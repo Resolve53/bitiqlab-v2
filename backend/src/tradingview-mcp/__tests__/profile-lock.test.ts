@@ -209,6 +209,24 @@ describe("profile lock inspection", () => {
     expect(result.reason).toBe("previous_container_hostname");
   });
 
+  it("preserves previous-container hostname locks when current live exact-profile Chromium exists", () => {
+    const fsMock = memoryFs();
+    seedSingletonLocks(fsMock, "old-railway-host-4242");
+    processTable[8888] = {
+      state: "S",
+      args: ["/usr/bin/chromium", `--user-data-dir=${PROFILE}`, "--headless=new"],
+    };
+    const result = inspectProfileLockState(PROFILE, {
+      fs: fsMock,
+      hostname: HOST,
+      readProcessInfo,
+      listPids: () => [8888],
+    });
+    expect(result.should_remove).toBe(false);
+    expect(result.reason).toBe("live_profile_owner_found_during_stale_check");
+    expect(result.owners).toEqual([8888]);
+  });
+
   it("marks dead PID locks as stale", () => {
     const fsMock = memoryFs();
     seedSingletonLocks(fsMock, `${HOST}-9999`);
@@ -358,6 +376,45 @@ describe("profile lock reconciliation", () => {
     });
     expect(owner.live).toBe(false);
     expect(owner.reason).toBe("pid_chromium_other_profile");
+  });
+
+  it("aborts deletion when live exact-profile Chromium appears between inspection and deletion", () => {
+    const fsMock = memoryFs();
+    seedSingletonLocks(fsMock, "old-host-1234");
+    let scanCount = 0;
+    const result = reconcileProfileLocks(PROFILE, {
+      fs: fsMock,
+      hostname: HOST,
+      readProcessInfo: (pid: number) => {
+        const row = processTable[pid];
+        if (!row) return { exists: false };
+        return {
+          exists: true,
+          state: row.state,
+          args: row.args,
+        };
+      },
+      listPids: () => {
+        scanCount++;
+        if (scanCount === 1) {
+          return [];
+        }
+        if (!processTable[6666]) {
+          processTable[6666] = {
+            state: "S",
+            args: ["/usr/bin/chromium", `--user-data-dir=${PROFILE}`],
+          };
+        }
+        return [6666];
+      },
+      log: () => {},
+    });
+    expect(result.stale_lock_removed).toBe(false);
+    expect(result.reason).toBe("live_profile_owner_found_before_delete");
+    expect(result.owners).toEqual([6666]);
+    expect(SINGLETON_FILES.every((name: string) => fsMock.existsSync(path.join(PROFILE, name)))).toBe(
+      true
+    );
   });
 });
 
