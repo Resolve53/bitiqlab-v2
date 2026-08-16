@@ -127,9 +127,11 @@ async function probeTradingViewPage() {
 }
 
 async function ensureTradingViewReady() {
-  browserRuntime.assertReadyForTools();
-  await probeTradingViewPage();
-  browserRuntime.assertReadyForTools();
+  // Browser/CDP must be viable first, but do NOT reject on stale
+  // tradingview=not_ready / authenticated=unknown — a separate tv:bootstrap
+  // process can prove the chart is ready without updating this process's
+  // in-memory page state. Probe fresh, then apply the full page/auth gate.
+  await browserRuntime.ensureReadyForTools(probeTradingViewPage);
 }
 
 async function callMCPTool(toolName, args) {
